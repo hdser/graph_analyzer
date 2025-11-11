@@ -39,6 +39,7 @@ env/
 # Output files
 *.csv
 *.log
+cytoscape/trust_graph.cys 
 
 # Jupyter Notebook
 .ipynb_checkpoints
