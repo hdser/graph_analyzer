@@ -37,7 +37,7 @@ env/
 *~
 
 # Output files
-#*.csv
+*.csv
 *.log
 cytoscape/trust_graph.cys 
 
