@@ -1,6 +1,6 @@
 # Graph Analyzer
 
-Computes many graph metrics for directed trust networks using NetworkX.
+Computes multiple graph metrics for directed trust networks using NetworkX with **selective metric computation** for faster targeted analysis.
 
 ## Quick Start
 
@@ -16,262 +16,379 @@ pip install -r requirements.txt
 
 # 3. Configure
 cp .env.example .env
-# Edit .env with your database credentials
+# Edit .env with your database credentials and metrics mode
 
-# 4. Run
+# 4. Run main graph metrics
 python graph_metrics.py
-```
+
+# 5. Get help on available modes
+python graph_metrics.py --help
+````
+
+For blacklist / whitelist analysis commands, see **Blacklist / Whitelist Management** below.
 
 ## Configuration
 
 Create `.env` file:
+
 ```env
 DB_USER=your_username
 DB_PASSWORD=your_password
 DB_HOST=your_host
 DB_NAME=your_database
 OUTPUT_FILE=graph_metrics.csv
+N_JOBS=2  # Number of parallel workers (optional)
+METRICS_MODE=all  # Which metrics to compute (see below)
 ```
+
+## NEW: Selective Metrics Computation
+
+You can now choose which metrics to compute, dramatically reducing computation time for targeted analysis.
+
+### Metrics Modes
+
+#### Preset Modes
+
+* **`basic`**: Quick topology + clustering analysis (~5 seconds)
+
+  * Basic Topology (in/out degree, degree imbalance)
+  * Clustering Metrics (clustering coefficient, triangles)
+
+* **`essential`**: Most important metrics (~1-5 minutes)
+
+  * Basic Topology
+  * Centrality Measures (PageRank, betweenness, etc.)
+  * Clustering Metrics
+  * Community Detection
+
+* **`moderate`**: Balanced comprehensive analysis (~5-15 minutes)
+
+  * Everything in 'essential' plus:
+  * Path Metrics (shortest paths, reachability)
+  * Structural Metrics (structural holes, articulation points)
+
+* **`all`**: Complete analysis (default, ~15-60+ minutes)
+
+  * All 120+ metrics across all 15 categories
+
+#### Individual Categories
+
+You can specify individual categories or combine them:
+
+```env
+# Single category
+METRICS_MODE=topology
+
+# Multiple categories (comma-separated)
+METRICS_MODE=topology,clustering,community
+
+# Mix and match as needed
+METRICS_MODE=topology,centrality,paths,reach
+```
+
+### Available Categories
+
+| Category      | Description                              | Metrics Count |
+| ------------- | ---------------------------------------- | ------------- |
+| `topology`    | Basic degree metrics                     | 4             |
+| `centrality`  | PageRank, betweenness, eigenvector, etc. | 20+           |
+| `clustering`  | Triangles, clustering coefficients       | 6             |
+| `community`   | Louvain communities, k-core              | 5             |
+| `paths`       | Shortest paths, eccentricity             | 10            |
+| `distances`   | Radius, diameter, center/periphery       | 4             |
+| `structural`  | Structural holes, bridges                | 12            |
+| `reciprocity` | Mutual connections                       | 5             |
+| `reach`       | N-hop reach analysis                     | 8             |
+| `components`  | Connected components                     | 3             |
+| `vitality`    | Node importance                          | 1             |
+| `dispersion`  | Node dispersion                          | 2             |
+| `efficiency`  | Network efficiency                       | 1             |
+| `flow`        | Flow hierarchy                           | 1             |
+| `dominance`   | Dominance metrics                        | 2             |
+
+### Usage Examples
+
+```bash
+# Quick topology check (seconds)
+METRICS_MODE=basic python graph_metrics.py
+
+# Just need centrality measures
+METRICS_MODE=centrality python graph_metrics.py  
+
+# Custom analysis for community structure
+METRICS_MODE=topology,clustering,community python graph_metrics.py
+
+# Full analysis (default)
+METRICS_MODE=all python graph_metrics.py
+```
+
+## Blacklist / Whitelist Management
+
+Two helper scripts manage blacklist/whitelist data in `data/blacklist.db` and CSV files.
+
+### 1. Compare CSV blacklists vs existing DB
+
+This script:
+
+* Reads multiple `blacklist_Sheet*.csv` files
+* Applies v1/v2 rules (using `graph_metrics_v1.csv` and `graph_metrics_v2.csv`)
+* Checks overlaps with existing `Blacklist` and `Whitelist` tables
+* Produces a **full updated blacklist CSV** (existing DB reasons take priority)
+
+```bash
+python compare_blacklist_csvs.py \
+  --csv data/blacklist_Sheet1.csv data/blacklist_Sheet2.csv data/blacklist_Sheet3.csv data/blacklist_Sheet4.csv \
+  --db data/blacklist.db \
+  --graph-metrics-v1 data/graph_metrics_v1.csv \
+  --graph-metrics-v2 data/graph_metrics_v2.csv \
+  --output-csv data/blacklist_full_updated.csv \
+  --verbose
+```
+
+Key arguments:
+
+* `--csv` – one or more blacklist CSV sheets
+* `--db` – path to `blacklist.db` (default `data/blacklist.db`)
+* `--graph-metrics-v1` – `graph_metrics_v1.csv` (for v1/v2 logic)
+* `--graph-metrics-v2` – `graph_metrics_v2.csv` (for reporting)
+* `--output-csv` – where to write the merged blacklist
+* `--verbose` – more detailed logging
+
+### 2. Apply CSV updates to Blacklist / Whitelist
+
+This script updates the SQLite DB from a CSV:
+
+* Update **Blacklist** or **Whitelist**
+* Add/update entries (default)
+* Or remove entries with `--remove`
+
+#### Update Blacklist from merged CSV
+
+Typically used after `compare_blacklist_csvs.py`:
+
+```bash
+python update_blacklist.py \
+  --db data/blacklist.db \
+  --list-type blacklist \
+  --csv data/blacklist_full_updated.csv
+```
+
+#### Add to Whitelist
+
+```bash
+python update_blacklist.py \
+  --db data/blacklist.db \
+  --list-type whitelist \
+  --csv data/my_whitelist.csv
+```
+
+#### Remove addresses from Blacklist or Whitelist
+
+```bash
+# Remove from blacklist
+python update_blacklist.py \
+  --db data/blacklist.db \
+  --list-type blacklist \
+  --csv data/remove_from_blacklist.csv \
+  --remove
+
+# Remove from whitelist
+python update_blacklist.py \
+  --db data/blacklist.db \
+  --list-type whitelist \
+  --csv data/remove_from_whitelist.csv \
+  --remove
+```
+
+## Performance Guide
+
+| Mode         | Time Estimate  | Use Case                  |
+| ------------ | -------------- | ------------------------- |
+| `basic`      | 2-5 seconds    | Quick graph overview      |
+| `topology`   | <1 second      | Degree distribution only  |
+| `centrality` | 1-3 minutes    | Node importance analysis  |
+| `essential`  | 1-5 minutes    | Standard network analysis |
+| `moderate`   | 5-15 minutes   | Comprehensive analysis    |
+| `all`        | 15-60+ minutes | Complete metrics suite    |
+
+Times vary based on graph size:
+
+* Small (<1K nodes): Lower estimates
+* Medium (1-10K nodes): Middle estimates
+* Large (>10K nodes): Upper estimates
 
 ## What Gets Computed
 
-**93+ metrics across 15 categories:**
+**120+ metrics across 15 categories:**
 
 ### 1. Basic Topology (4 metrics)
-- `in_degree` - Number of incoming edges
-- `out_degree` - Number of outgoing edges
-- `total_degree` - Sum of in and out degree
-- `degree_imbalance` - Normalized difference between in and out degree
 
-### 2. Centrality Measures (30 metrics)
-**Degree Centrality:**
-- `in_degree_centrality` - Normalized in-degree
-- `out_degree_centrality` - Normalized out-degree
-- `degree_centrality_undirected` - Undirected degree centrality
+* in_degree, out_degree, total_degree
+* degree_imbalance
 
-**Closeness Centrality:**
-- `closeness_centrality` - Average distance to all other nodes (outgoing)
-- `closeness_centrality_in` - Average distance to all other nodes (incoming)
-- `closeness_centrality_undirected` - Closeness in undirected graph
+### 2. Centrality (20+ metrics)
 
-**Betweenness Centrality:**
-- `betweenness_centrality` - Fraction of shortest paths passing through node (directed)
-- `betweenness_centrality_undirected` - Betweenness in undirected graph
-
-**Eigenvector Centrality:**
-- `eigenvector_centrality` - Influence based on connected neighbors (directed)
-- `eigenvector_centrality_undirected` - Eigenvector in undirected graph
-
-**Katz Centrality:**
-- `katz_centrality` - Influence with attenuation factor (directed)
-- `katz_centrality_undirected` - Katz in undirected graph
-
-**PageRank:**
-- `pagerank` - Google's PageRank algorithm (directed)
-- `pagerank_undirected` - PageRank in undirected graph
-
-**HITS Algorithm:**
-- `hub_score` - Quality as a hub (pointing to good authorities)
-- `authority_score` - Quality as an authority (pointed to by good hubs)
-
-**Other Centrality Measures:**
-- `harmonic_centrality` - Sum of inverse distances (directed)
-- `harmonic_centrality_undirected` - Harmonic in undirected graph
-- `load_centrality` - Fraction of shortest paths through node with endpoints
-- `load_centrality_undirected` - Load in undirected graph
-- `subgraph_centrality` - Sum of closed walks weighted by inverse factorials
-- `second_order_centrality` - Sum of inverse eigenvalues of neighbors (n<1000)
-- `percolation_centrality` - Importance in percolation processes
-- `trophic_level` - Position in directed food web hierarchy
-- `current_flow_betweenness` - Betweenness using current flow (n<1000, connected)
-- `current_flow_closeness` - Closeness using current flow (n<1000, connected)
-- `information_centrality` - Harmonic mean of resistance distances (n<1000, connected)
-- `communicability_betweenness` - Betweenness via matrix exponential (n<500)
-- `voterank` - Voting-based node ranking
-- `edge_betweenness_sum` - Sum of edge betweenness for edges incident to node
+* Degree: in_degree_centrality, out_degree_centrality
+* Closeness: closeness_centrality
+* Betweenness: betweenness_centrality
+* Eigenvector: eigenvector_centrality
+* Katz: katz_centrality
+* PageRank: pagerank
+* HITS: hub_score, authority_score
+* Harmonic: harmonic_centrality
+* Load: load_centrality
+* Subgraph: subgraph_centrality
+* Second order: second_order_centrality
+* Percolation: percolation_centrality
+* Trophic: trophic_level
+* Current flow, Information, Communicability, VoteRank, Edge betweenness
 
 ### 3. Clustering (6 metrics)
-- `clustering_coefficient` - Fraction of triangles around node (undirected)
-- `clustering_coefficient_directed` - Clustering in directed graph
-- `triangle_count` - Number of triangles node participates in (undirected)
-- `triangle_count_directed` - Triangles in directed graph
-- `square_clustering` - Fraction of squares (4-cycles) around node
-- `local_transitivity` - Same as clustering coefficient
 
-### 4. Community Detection (5 metrics)
-- `community_id` - Community assignment from Louvain algorithm
-- `community_size` - Size of node's community
-- `core_number` - k-core number (largest k where node is in k-core)
-- `onion_layer` - Layer in onion decomposition
-- `local_reaching_centrality` - Proportion of nodes reachable via neighbors
+* clustering_coefficient (directed & undirected)
+* triangle_count (directed & undirected)
+* square_clustering
+* local_transitivity
+
+### 4. Community (5 metrics)
+
+* community_id (Louvain)
+* community_size
+* core_number (k-core)
+* onion_layer
+* local_reaching_centrality
 
 ### 5. Path Metrics (10 metrics)
-- `avg_shortest_path` - Average shortest path length from node
-- `median_shortest_path` - Median shortest path length from node
-- `max_shortest_path` - Maximum shortest path length from node
-- `path_variance` - Variance in shortest path lengths from node
-- `path_sum` - Sum of all shortest path lengths from node
-- `reachable_nodes` - Number of nodes reachable from node
-- `paths_length_1` - Number of direct connections (out-degree)
-- `paths_length_2_targets` - Number of unique 2-hop targets
-- `eccentricity` - Maximum distance to any other node
-- `wiener_contribution` - Node's contribution to Wiener index (n<500)
+
+* avg_shortest_path, median_shortest_path, max_shortest_path
+* path_variance, path_sum
+* reachable_nodes
+* paths_length_1, paths_length_2_targets
+* eccentricity
+* wiener_contribution (small graphs only)
 
 ### 6. Distance Measures (4 metrics)
-- `graph_radius` - Minimum eccentricity in graph
-- `graph_diameter` - Maximum eccentricity in graph
-- `is_center` - Whether node is in graph center (1/0)
-- `is_periphery` - Whether node is in graph periphery (1/0)
 
-### 7. Structural Properties (11 metrics)
-**Structural Holes (Burt):**
-- `constraint` - Burt's constraint measure (lack of holes)
-- `effective_size` - Effective network size (non-redundant contacts)
-- `redundancy` - Network redundancy (1 - effective_size/degree)
+* graph_radius, graph_diameter
+* is_center, is_periphery
 
-**Network Robustness:**
-- `is_articulation_point` - Whether removal disconnects graph (1/0)
-- `bridge_count` - Number of bridges incident to node
+### 7. Structural (12 metrics)
 
-**Neighbor Properties:**
-- `avg_neighbor_degree` - Average degree of neighbors
-- `min_neighbor_degree` - Minimum neighbor degree
-- `max_neighbor_degree` - Maximum neighbor degree
-- `std_neighbor_degree` - Standard deviation of neighbor degrees
-- `avg_neighbor_degree_undirected` - NetworkX's undirected version
-- `avg_neighbor_degree_directed` - NetworkX's directed version
+* constraint, effective_size, redundancy (Burt's structural holes)
+* is_articulation_point, bridge_count
+* avg_neighbor_degree, min_neighbor_degree, max_neighbor_degree, std_neighbor_degree
+* avg_neighbor_degree_directed, avg_neighbor_degree_undirected
 
 ### 8. Reciprocity (5 metrics)
-- `mutual_count` - Number of reciprocated connections
-- `mutual_ratio` - Fraction of outgoing edges that are reciprocated
-- `mutual_received_ratio` - Fraction of incoming edges that are reciprocated
-- `one_way_out` - Number of non-reciprocated outgoing edges
-- `one_way_in` - Number of non-reciprocated incoming edges
 
-### 9. Reach Metrics (8 metrics)
-- `reach_hop_1` - Nodes reachable in exactly 1 hop
-- `reach_hop_2` - New nodes reachable in exactly 2 hops
-- `reach_hop_3` - New nodes reachable in exactly 3 hops
-- `reach_hop_4` - New nodes reachable in exactly 4 hops
-- `reach_hop_5` - New nodes reachable in exactly 5 hops
-- `reach_hop_6` - New nodes reachable in exactly 6 hops
-- `total_reach` - Total nodes reachable within 6 hops
-- `network_penetration` - Fraction of network reachable within 6 hops
+* mutual_count, mutual_ratio, mutual_received_ratio
+* one_way_out, one_way_in
 
-### 10. Component Membership (3 metrics)
-- `weak_component_size` - Size of weakly connected component
-- `strong_component_size` - Size of strongly connected component
-- `in_largest_component` - Whether in largest weak component (1/0)
+### 9. Reach (8 metrics)
 
-### 11. Vitality (1 metric)
-- `closeness_vitality` - Change in sum of distances if node removed (n<500, connected)
+* reach_hop_1 through reach_hop_6
+* total_reach
+* network_penetration
 
-### 12. Dispersion (2 metrics)
-- `avg_dispersion` - Average dispersion to connected nodes (sampled)
-- `max_dispersion` - Maximum dispersion to connected nodes (sampled)
+### 10. Components (3 metrics)
 
-### 13. Efficiency (1 metric)
-- `local_efficiency` - Efficiency of node's neighborhood (constant for all nodes)
+* weak_component_size, strong_component_size
+* in_largest_component
 
-### 14. Flow (1 metric)
-- `flow_hierarchy` - Hierarchical organization measure (constant for all nodes)
+### 11-15. Additional Categories
 
-### 15. Dominance (2 metrics)
-- `dominated_nodes_count` - Number of nodes reachable via directed paths
-- `dominance_ratio` - Fraction of graph dominated by node
-
-**Total: 93+ metrics** (some metrics are conditional on graph size and connectivity)
+* Vitality: closeness_vitality
+* Dispersion: avg_dispersion, max_dispersion
+* Efficiency: local_efficiency
+* Flow: flow_hierarchy
+* Dominance: dominated_nodes_count, dominance_ratio
 
 ## Output
 
 CSV file with one row per node:
-```
+
+```csv
 avatar,in_degree,pagerank,betweenness_centrality,...
 0x123...,45,0.0023,0.0145,...
 ```
 
 All metrics are numeric (booleans converted to 0/1, NaN filled with 0).
 
-## Performance
+## Parallel Processing
 
-- Small graphs (<1K nodes): 2-5 minutes
-- Medium graphs (1-10K nodes): 5-20 minutes
-- Large graphs (>10K nodes): 20-60 minutes
+The calculator uses parallel processing for expensive operations:
+
+* Path computations
+* Reach analysis
+* Dominance metrics
+* Local reaching centrality
+
+Configure workers in `.env`:
+
+```env
+N_JOBS=4  # Use 4 CPU cores
+N_JOBS=0  # Use all available cores minus 1 (default)
+```
 
 ## Files
 
+```text
+graph_metrics.py           # Main script with selective metrics
+compare_blacklist_csvs.py  # Analyze & merge blacklist CSVs with existing DB
+update_blacklist.py        # Apply CSV changes to SQLite Blacklist / Whitelist
+requirements.txt           # Dependencies
+.env.example               # Configuration template
+README.md                  # This file
+.gitignore                 # Protects sensitive files
 ```
-graph_metrics.py     # Main script
-requirements.txt     # Dependencies
-.env.example         # Config template
-.gitignore          # Protects sensitive files
-README.md           # This file
-```
-
-## NetworkX Algorithms Used
-
-- `networkx.algorithms.centrality.*` - All centrality measures
-- `networkx.algorithms.distance_measures.*` - Radius, diameter, eccentricity
-- `networkx.algorithms.community.*` - Louvain community detection
-- `networkx.algorithms.core.*` - k-core decomposition
-- `networkx.algorithms.components.*` - Connected components
-- `networkx.algorithms.cluster.*` - Clustering coefficients
-- `networkx.algorithms.shortest_paths.*` - Path computations
 
 ## Requirements
 
-- Python 3.8+
-- PostgreSQL database with trust relations
-- 4GB+ RAM for large graphs
+* Python 3.8+
+* PostgreSQL database with trust relations
+* 4GB+ RAM for large graphs
+* NetworkX 3.0+
 
-## Customization
-
-To compute only specific metrics, comment out method calls in `compute_all()`:
-
-```python
-def compute_all(self):
-    # ...
-    self._topology(metrics)
-    self._centrality(metrics)
-    # self._clustering(metrics)  # Skip this
-    # ...
-```
-
-## Virtual Environment Tips
+## Command Line Options
 
 ```bash
-# Activate
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
+# Show help and available metrics modes (graph analysis)
+python graph_metrics.py --help
+python graph_metrics.py -h
 
-# Deactivate
-deactivate
+# Show help for blacklist / whitelist comparison
+python compare_blacklist_csvs.py --help
 
-# Delete and recreate
-rm -rf venv && python3 -m venv venv
+# Show help for applying CSV updates to blacklist/whitelist
+python update_blacklist.py --help
 ```
 
-## Troubleshooting
+## Customization Tips
 
-**Error: Missing DB credentials**
-- Make sure `.env` file exists with all required variables
+### Creating Custom Metric Sets
 
-**Error: Module not found**
-- Activate venv: `source venv/bin/activate`
-- Install deps: `pip install -r requirements.txt`
+Edit the script to define your own presets:
 
-**Script is slow**
-- Comment out expensive metrics (subgraph_centrality, second_order_centrality)
-- Reduce max_hops in `_reach()` method
+```python
+METRIC_PRESETS = {
+    'basic': ['topology', 'clustering'],
+    'my_custom': ['topology', 'centrality', 'reciprocity'],  # Add your own
+    # ...
+}
+```
 
-**Memory error**
-- Close other applications
-- Use a machine with more RAM
-- Process graph in batches
+### Adjusting Performance
 
-**Katz centrality warnings/failures**
-- Katz centrality can fail on large or dense graphs due to numerical overflow
-- The script automatically retries with smaller alpha values (0.5λ, 0.05λ, 0.0001)
-- If all attempts fail, Katz metrics will be skipped but other metrics continue
-- This is expected behavior for certain graph structures
+For very large graphs, consider:
+
+1. Use `basic` or `essential` mode first
+2. Run expensive metrics separately
+3. Increase `N_JOBS` for more parallelism
+4. Comment out metrics with size restrictions in the code
+
+**Want to see what modes are available?**
+
+```bash
+python graph_metrics.py --help
+```
 

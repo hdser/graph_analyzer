@@ -2,6 +2,7 @@
 Graph Metrics Calculator - Comprehensive NetworkX Implementation
 Computes 120+ graph metrics for directed trust networks
 WITH PARALLEL PROCESSING for faster computation
+WITH SELECTIVE METRIC COMPUTATION for faster targeted analysis
 """
 
 import pandas as pd
@@ -16,6 +17,7 @@ from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 import multiprocessing
+import sys
 
 load_dotenv()
 logging.basicConfig(
@@ -23,6 +25,37 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - [%(funcName)s] %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+# ==============================================================================
+# METRIC CATEGORIES CONFIGURATION
+# ==============================================================================
+
+METRIC_CATEGORIES = {
+    'topology': 'Basic Topology (in/out degree, degree imbalance)',
+    'centrality': 'Centrality Measures (pagerank, betweenness, eigenvector, etc.)',
+    'clustering': 'Clustering Metrics (clustering coefficient, triangles, squares)',
+    'community': 'Community Detection (Louvain, core numbers, onion layers)',
+    'paths': 'Path Metrics (shortest paths, reachability, eccentricity)',
+    'distances': 'Distance Measures (radius, diameter, center, periphery)',
+    'structural': 'Structural Metrics (structural holes, articulation points, neighbor stats)',
+    'reciprocity': 'Reciprocity Metrics (mutual connections, one-way connections)',
+    'reach': 'Reach Metrics (n-hop reach, network penetration)',
+    'components': 'Component Metrics (weak/strong components)',
+    'vitality': 'Vitality Metrics (closeness vitality)',
+    'dispersion': 'Dispersion Metrics (node dispersion)',
+    'efficiency': 'Efficiency Metrics (local efficiency)',
+    'flow': 'Flow Metrics (flow hierarchy)',
+    'dominance': 'Dominance Metrics (dominated nodes, dominance ratio)'
+}
+
+# Quick preset groups
+METRIC_PRESETS = {
+    'basic': ['topology', 'clustering'],
+    'essential': ['topology', 'centrality', 'clustering', 'community'],
+    'moderate': ['topology', 'centrality', 'clustering', 'community', 'paths', 'structural'],
+    'all': list(METRIC_CATEGORIES.keys())
+}
 
 
 # ==============================================================================
@@ -128,14 +161,17 @@ def _compute_node_lrc(G, node):
 # ==============================================================================
 
 class GraphMetrics:
-    """Compute comprehensive graph metrics with parallel processing"""
+    """Compute comprehensive graph metrics with parallel processing and selective computation"""
     
-    def __init__(self, graph: nx.DiGraph, n_jobs: int = None):
+    def __init__(self, graph: nx.DiGraph, n_jobs: int = None, metrics_mode: str = 'all'):
         self.G = graph
         self.U = graph.to_undirected()
         self.n = graph.number_of_nodes()
         self.m = graph.number_of_edges()
         self.n_jobs = n_jobs or max(1, multiprocessing.cpu_count() - 1)
+        
+        # Parse metrics mode
+        self.metrics_to_compute = self._parse_metrics_mode(metrics_mode)
         
         logger.info("="*70)
         logger.info("GRAPH METRICS CALCULATOR INITIALIZED")
@@ -149,10 +185,42 @@ class GraphMetrics:
         logger.info(f"Parallel Processing:")
         logger.info(f"  • CPU cores available: {multiprocessing.cpu_count()}")
         logger.info(f"  • Workers to use: {self.n_jobs}")
+        logger.info(f"Metrics Configuration:")
+        logger.info(f"  • Mode: {metrics_mode}")
+        logger.info(f"  • Categories to compute: {len(self.metrics_to_compute)}/{len(METRIC_CATEGORIES)}")
+        for cat in self.metrics_to_compute:
+            logger.info(f"    ✓ {cat}: {METRIC_CATEGORIES[cat]}")
         logger.info("="*70)
+    
+    def _parse_metrics_mode(self, mode: str) -> list:
+        """Parse metrics mode configuration"""
+        mode = mode.lower().strip()
         
+        # Check if it's a preset
+        if mode in METRIC_PRESETS:
+            return METRIC_PRESETS[mode]
+        
+        # Check if it's a comma-separated list of categories
+        if ',' in mode:
+            categories = [cat.strip() for cat in mode.split(',')]
+            valid_categories = []
+            for cat in categories:
+                if cat in METRIC_CATEGORIES:
+                    valid_categories.append(cat)
+                else:
+                    logger.warning(f"Unknown metric category: {cat}")
+            return valid_categories if valid_categories else METRIC_PRESETS['all']
+        
+        # Check if it's a single category
+        if mode in METRIC_CATEGORIES:
+            return [mode]
+        
+        # Default to all
+        logger.warning(f"Unknown metrics mode: {mode}. Using 'all'")
+        return METRIC_PRESETS['all']
+    
     def compute_all(self) -> pd.DataFrame:
-        """Compute all metrics with progress logging"""
+        """Compute selected metrics with progress logging"""
         start_time = time.time()
         metrics = {node: {} for node in self.G.nodes()}
         
@@ -160,95 +228,128 @@ class GraphMetrics:
         logger.info("STARTING METRIC COMPUTATION")
         logger.info("="*70)
         
+        step_num = 1
+        total_steps = len(self.metrics_to_compute)
+        
         # 1. Basic topology
-        step_start = time.time()
-        logger.info("[ 1/15] Computing topology metrics...")
-        self._topology(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'topology' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing topology metrics...")
+            self._topology(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 2. Centrality
-        step_start = time.time()
-        logger.info("[ 2/15] Computing centrality metrics...")
-        self._centrality(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'centrality' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing centrality metrics...")
+            self._centrality(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 3. Clustering
-        step_start = time.time()
-        logger.info("[ 3/15] Computing clustering metrics...")
-        self._clustering(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'clustering' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing clustering metrics...")
+            self._clustering(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 4. Community
-        step_start = time.time()
-        logger.info("[ 4/15] Computing community metrics...")
-        self._community(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'community' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing community metrics...")
+            self._community(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 5. Paths (PARALLEL)
-        step_start = time.time()
-        logger.info("[ 5/15] Computing path metrics (PARALLEL)...")
-        self._paths_parallel(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'paths' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing path metrics (PARALLEL)...")
+            self._paths_parallel(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 6. Distances
-        step_start = time.time()
-        logger.info("[ 6/15] Computing distance measures...")
-        self._distances(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'distances' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing distance measures...")
+            self._distances(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 7. Structural
-        step_start = time.time()
-        logger.info("[ 7/15] Computing structural metrics...")
-        self._structural(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'structural' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing structural metrics...")
+            self._structural(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 8. Reciprocity
-        step_start = time.time()
-        logger.info("[ 8/15] Computing reciprocity metrics...")
-        self._reciprocity(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'reciprocity' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing reciprocity metrics...")
+            self._reciprocity(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 9. Reach (PARALLEL)
-        step_start = time.time()
-        logger.info("[ 9/15] Computing reach metrics (PARALLEL)...")
-        self._reach_parallel(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'reach' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing reach metrics (PARALLEL)...")
+            self._reach_parallel(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 10. Components
-        step_start = time.time()
-        logger.info("[10/15] Computing component metrics...")
-        self._components(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'components' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing component metrics...")
+            self._components(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 11. Vitality
-        step_start = time.time()
-        logger.info("[11/15] Computing vitality metrics...")
-        self._vitality(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'vitality' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing vitality metrics...")
+            self._vitality(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 12. Dispersion
-        step_start = time.time()
-        logger.info("[12/15] Computing dispersion metrics...")
-        self._dispersion(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'dispersion' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing dispersion metrics...")
+            self._dispersion(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 13. Efficiency
-        step_start = time.time()
-        logger.info("[13/15] Computing efficiency metrics...")
-        self._efficiency(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'efficiency' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing efficiency metrics...")
+            self._efficiency(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 14. Flow
-        step_start = time.time()
-        logger.info("[14/15] Computing flow metrics...")
-        self._flow(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'flow' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing flow metrics...")
+            self._flow(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # 15. Dominance (PARALLEL)
-        step_start = time.time()
-        logger.info("[15/15] Computing dominance metrics (PARALLEL)...")
-        self._dominance_parallel(metrics)
-        logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+        if 'dominance' in self.metrics_to_compute:
+            step_start = time.time()
+            logger.info(f"[{step_num:2d}/{total_steps:2d}] Computing dominance metrics (PARALLEL)...")
+            self._dominance_parallel(metrics)
+            logger.info(f"         ✓ Completed in {time.time()-step_start:.2f}s")
+            step_num += 1
         
         # Convert to DataFrame
         logger.info("")
@@ -269,6 +370,7 @@ class GraphMetrics:
         logger.info(f"  • Total time: {total_time:.2f}s ({total_time/60:.1f} minutes)")
         logger.info(f"  • Nodes processed: {len(df):,}")
         logger.info(f"  • Metrics computed: {len(df.columns)-1}")
+        logger.info(f"  • Categories computed: {len(self.metrics_to_compute)}/{len(METRIC_CATEGORIES)}")
         logger.info(f"  • Avg time per node: {total_time/len(df):.3f}s")
         logger.info("="*70)
         
@@ -520,7 +622,7 @@ class GraphMetrics:
         try:
             logger.debug("  Running Louvain community detection...")
             import networkx.algorithms.community as nx_comm
-            communities = nx_comm.louvain_communities(self.U, seed=42)
+            communities = nx_comm.louvain_communities(self.U, threshold=1e-10, seed=42)
             
             comm_map = {}
             comm_sizes = {}
@@ -550,14 +652,15 @@ class GraphMetrics:
             logger.warning(f"  ⚠ Community detection failed: {e}")
         
         try:
-            logger.debug("  Computing local reaching centrality (PARALLEL)...")
-            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
-                func = partial(_compute_node_lrc, self.G)
-                futures = {executor.submit(func, node): node for node in self.G.nodes()}
-                
-                for future in as_completed(futures):
-                    node, lrc = future.result()
-                    metrics[node]['local_reaching_centrality'] = lrc
+            if self.n < 500:
+                logger.debug("  Computing local reaching centrality (PARALLEL)...")
+                with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
+                    func = partial(_compute_node_lrc, self.G)
+                    futures = {executor.submit(func, node): node for node in self.G.nodes()}
+                    
+                    for future in as_completed(futures):
+                        node, lrc = future.result()
+                        metrics[node]['local_reaching_centrality'] = lrc
         except Exception as e:
             logger.warning(f"  ⚠ Local reaching centrality failed: {e}")
     
@@ -911,7 +1014,7 @@ def load_data(user, password, host, database):
     WHERE t1.truster != t1.trustee
     """
 
-    query = """
+    query2 = """
     WITH human_avatars AS (
         SELECT "user" AS avatar 
         FROM public."V_CrcV1_Avatars"
@@ -929,7 +1032,7 @@ def load_data(user, password, host, database):
     logger.info("Executing SQL query...")
     start = time.time()
     df = pd.read_sql_query(query, engine)
-    df.to_csv("trust_graph_v1.csv", index=False)
+    df.to_csv("trust_graph_v2.csv", index=False)
     elapsed = time.time() - start
     
     engine.dispose()
@@ -943,11 +1046,65 @@ def load_data(user, password, host, database):
 
 
 # ==============================================================================
+# HELP AND INFO FUNCTIONS
+# ==============================================================================
+
+def print_help():
+    """Print help information about available metrics modes"""
+    print("\n" + "="*70)
+    print("GRAPH METRICS CALCULATOR - HELP")
+    print("="*70)
+    print("\nUsage: python graph_metrics.py")
+    print("\nMETRICS MODES")
+    print("-" * 40)
+    print("\nSet METRICS_MODE in your .env file to control which metrics to compute.")
+    print("\nAvailable Presets:")
+    for preset, categories in METRIC_PRESETS.items():
+        print(f"\n  {preset:10} - Computes {len(categories)} categories:")
+        if len(categories) <= 6:
+            for cat in categories:
+                print(f"               • {cat}")
+        else:
+            print(f"               • {', '.join(categories[:3])},")
+            print(f"               • {', '.join(categories[3:6])},")
+            print(f"               • ... and {len(categories)-6} more")
+    
+    print("\nIndividual Categories:")
+    for cat, desc in METRIC_CATEGORIES.items():
+        print(f"  {cat:12} - {desc}")
+    
+    print("\nCustom Selection:")
+    print("  You can also use comma-separated categories, e.g.:")
+    print("  METRICS_MODE=topology,clustering,community")
+    
+    print("\nExamples:")
+    print("-" * 40)
+    print("  METRICS_MODE=basic        # Just topology and clustering")
+    print("  METRICS_MODE=essential    # Most important metrics")
+    print("  METRICS_MODE=all          # Compute everything (default)")
+    print("  METRICS_MODE=topology     # Just basic topology")
+    print("  METRICS_MODE=topology,centrality,clustering  # Custom selection")
+    
+    print("\nPerformance Tips:")
+    print("-" * 40)
+    print("  • 'basic' mode: ~2-5 seconds for most graphs")
+    print("  • 'essential' mode: ~1-5 minutes")
+    print("  • 'moderate' mode: ~5-15 minutes")
+    print("  • 'all' mode: ~15-60+ minutes (depends on graph size)")
+    print("\n" + "="*70 + "\n")
+
+
+# ==============================================================================
 # MAIN EXECUTION
 # ==============================================================================
 
 def main():
     overall_start = time.time()
+    
+    # Check for help flag
+    if len(sys.argv) > 1 and sys.argv[1] in ['--help', '-h', 'help']:
+        print_help()
+        sys.exit(0)
     
     logger.info("")
     logger.info("#" * 70)
@@ -965,6 +1122,7 @@ def main():
     DB_NAME = os.getenv("DB_NAME")
     OUTPUT = os.getenv("OUTPUT_FILE", "graph_metrics.csv")
     N_JOBS = int(os.getenv("N_JOBS", "2")) or None
+    METRICS_MODE = os.getenv("METRICS_MODE", "all")
     
     if not all([DB_USER, DB_PASSWORD, DB_HOST, DB_NAME]):
         logger.error("✗ Missing required DB credentials in .env file!")
@@ -973,6 +1131,7 @@ def main():
     
     logger.info("✓ Configuration loaded successfully")
     logger.info(f"  • Output file: {OUTPUT}")
+    logger.info(f"  • Metrics mode: {METRICS_MODE}")
     if N_JOBS:
         logger.info(f"  • Parallel workers: {N_JOBS}")
     
@@ -996,7 +1155,7 @@ def main():
     logger.info("="*70)
     
     # Compute metrics
-    calculator = GraphMetrics(G, n_jobs=N_JOBS)
+    calculator = GraphMetrics(G, n_jobs=N_JOBS, metrics_mode=METRICS_MODE)
     df_metrics = calculator.compute_all()
     
     # Save
@@ -1027,11 +1186,10 @@ def main():
     logger.info(f"Metrics computed: {len(df_metrics.columns)-1}")
     logger.info(f"Time per node: {overall_elapsed/len(df_metrics):.4f}s")
     logger.info("")
+    logger.info("To see available metrics modes, run: python graph_metrics.py --help")
+    logger.info("")
     logger.info("#" * 70)
 
 
 if __name__ == "__main__":
     main()
-
-
-
