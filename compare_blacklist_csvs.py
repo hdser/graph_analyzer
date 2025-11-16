@@ -32,6 +32,11 @@ Phase 2: DB comparison (blacklist.db)
         - currently blacklisted
         - CSV-only blacklist
         - merged blacklist
+- Extra outputs:
+    * list of v2 avatars that would be blacklisted by CSV but are not yet
+      in DB (saved as new_v2_blacklist_not_in_db.csv)
+    * list of v1 avatars that would be newly blacklisted (not in DB)
+      (saved as new_v1_blacklist_not_in_db.csv)
 - Build a "full updated blacklist" CSV:
     * Existing DB blacklist entries are canonical (address, reason)
     * CSV-only addresses (not in DB) are appended with their CSV reason
@@ -410,6 +415,47 @@ def main():
             f"Would be blacklisted with MERGED blacklist (DB + CSV candidates): "
             f"{len(blacklisted_with_merged)}"
         )
+
+        # --- Extra: new v2 & v1 addresses that would be added by CSV ---
+
+        # v2 addresses that are CSV candidates but NOT in DB yet
+        new_v2_not_in_db = (v2_avatars & csv_candidate_addrs) - existing_addrs
+        logger.info("")
+        logger.info("=== NEW v2 BLACKLIST CANDIDATES (from CSV, not in DB yet) ===")
+        logger.info(f"v2 avatars newly blacklisted by CSV (not yet in DB): {len(new_v2_not_in_db)}")
+
+        # v1 addresses that are CSV candidates but NOT in DB yet
+        new_v1_not_in_db = (v1_avatars & csv_candidate_addrs) - existing_addrs
+        logger.info("=== NEW v1 BLACKLIST CANDIDATES (from CSV, not in DB yet) ===")
+        logger.info(f"v1 avatars newly blacklisted by CSV (not yet in DB): {len(new_v1_not_in_db)}")
+
+        # Save lists to CSV for inspection
+        out_dir = args.output_csv.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # v2 new blacklist CSV
+        if new_v2_not_in_db:
+            df_v2_new = pd.DataFrame(
+                [
+                    {"address": addr, "reason": addr_to_reason.get(addr, "Manual Import")}
+                    for addr in sorted(new_v2_not_in_db)
+                ]
+            )
+            v2_out_path = out_dir / "new_v2_blacklist_not_in_db.csv"
+            df_v2_new.to_csv(v2_out_path, index=False)
+            logger.info(f"Wrote new v2 blacklist candidates (not in DB) to: {v2_out_path}")
+
+        # v1 new blacklist CSV
+        if new_v1_not_in_db:
+            df_v1_new = pd.DataFrame(
+                [
+                    {"address": addr, "reason": addr_to_reason.get(addr, "Manual Import")}
+                    for addr in sorted(new_v1_not_in_db)
+                ]
+            )
+            v1_out_path = out_dir / "new_v1_blacklist_not_in_db.csv"
+            df_v1_new.to_csv(v1_out_path, index=False)
+            logger.info(f"Wrote new v1 blacklist candidates (not in DB) to: {v1_out_path}")
 
         # Build full updated blacklist CSV (existing reason wins)
         logger.info("")
