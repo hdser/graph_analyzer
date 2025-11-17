@@ -40,6 +40,8 @@ Phase 2: DB comparison (blacklist.db)
 - Build a "full updated blacklist" CSV:
     * Existing DB blacklist entries are canonical (address, reason)
     * CSV-only addresses (not in DB) are appended with their CSV reason
+    * EXCLUDES addresses that are in the Whitelist
+    * Ensures uniqueness (no duplicate addresses)
     * Written to output CSV (e.g. data/blacklist_full_updated.csv)
 """
 
@@ -192,7 +194,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Compare blacklist CSVs using v1/v2 graph logic, then compare with blacklist.db, "
-            "and produce a full updated blacklist CSV."
+            "and produce a full updated blacklist CSV (excluding whitelisted addresses)."
         )
     )
 
@@ -457,9 +459,9 @@ def main():
             df_v1_new.to_csv(v1_out_path, index=False)
             logger.info(f"Wrote new v1 blacklist candidates (not in DB) to: {v1_out_path}")
 
-        # Build full updated blacklist CSV (existing reason wins)
+        # Build full updated blacklist CSV (existing reason wins, exclude whitelist, ensure uniqueness)
         logger.info("")
-        logger.info("=== BUILDING UPDATED BLACKLIST CSV (existing DB reason wins) ===")
+        logger.info("=== BUILDING UPDATED BLACKLIST CSV (existing DB reason wins, excluding whitelist) ===")
 
         # Existing entries as canonical for overlapping addresses
         existing_map = {
@@ -468,20 +470,37 @@ def main():
         }
 
         updated_entries = []
+        whitelisted_count = 0
 
-        # 1) All existing DB entries
+        # 1) All existing DB entries (except those in whitelist)
         for addr, reason in existing_map.items():
-            updated_entries.append((addr, reason))
+            if addr not in db_whitelist_set:
+                updated_entries.append((addr, reason))
+            else:
+                whitelisted_count += 1
+                logger.warning(f"Excluding from updated CSV (whitelisted): {addr}")
 
-        # 2) CSV-only candidates (not already in DB)
+        # 2) CSV-only candidates (not already in DB and not whitelisted)
         for addr in csv_only:
-            reason = addr_to_reason.get(addr, "Manual Import")
-            updated_entries.append((addr, reason))
+            if addr not in db_whitelist_set:
+                reason = addr_to_reason.get(addr, "Manual Import")
+                updated_entries.append((addr, reason))
+            else:
+                whitelisted_count += 1
+                logger.warning(f"Excluding from updated CSV (whitelisted): {addr}")
 
+        # Create dataframe and ensure uniqueness
         updated_df = pd.DataFrame(updated_entries, columns=["address", "reason"])
+        
+        # Check for duplicates before dropping them
+        duplicates_count = updated_df.duplicated(subset=["address"]).sum()
+        if duplicates_count > 0:
+            logger.warning(f"Found {duplicates_count} duplicate addresses in updated blacklist, keeping first occurrence")
+        
         updated_df = updated_df.drop_duplicates(subset=["address"]).sort_values("address")
 
-        logger.info(f"Updated blacklist size (DB + CSV-only candidates): {len(updated_df)}")
+        logger.info(f"Updated blacklist size (DB + CSV-only candidates, excluding whitelist): {len(updated_df)}")
+        logger.info(f"Excluded addresses (whitelisted): {whitelisted_count}")
 
         # Write to CSV
         args.output_csv.parent.mkdir(parents=True, exist_ok=True)

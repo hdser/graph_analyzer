@@ -53,6 +53,7 @@ def normalize_address(addr) -> Optional[str]:
 def load_addresses_from_csv(path: Path, need_reason: bool) -> List[Tuple]:
     """
     Load addresses (and optional reasons) from CSV.
+    Ensures uniqueness - if duplicates exist, keeps first occurrence.
 
     Returns:
       - if need_reason: list of (address, reason)
@@ -70,12 +71,21 @@ def load_addresses_from_csv(path: Path, need_reason: bool) -> List[Tuple]:
 
     records = []
     skipped = 0
+    seen_addresses = set()
+    duplicates = 0
 
     for _, row in df.iterrows():
         addr = normalize_address(row["address"])
         if not addr:
             skipped += 1
             continue
+
+        # Check for duplicates
+        if addr in seen_addresses:
+            duplicates += 1
+            logger.debug(f"Skipping duplicate address: {addr}")
+            continue
+        seen_addresses.add(addr)
 
         if need_reason:
             raw_reason = row.get("reason", "Manual Import")
@@ -88,26 +98,74 @@ def load_addresses_from_csv(path: Path, need_reason: bool) -> List[Tuple]:
 
     if skipped:
         logger.warning(f"Skipped {skipped} rows with empty/invalid addresses in {path}")
+    
+    if duplicates:
+        logger.warning(f"Skipped {duplicates} duplicate addresses in {path} (kept first occurrence)")
 
     return records
 
 
-def add_or_update_blacklist(conn: sqlite3.Connection, entries: List[Tuple[str, str]]) -> int:
+def add_or_update_blacklist(conn: sqlite3.Connection, entries: List[Tuple[str, str]]) -> Tuple[int, int, int]:
     """
     Upsert blacklist entries: address + reason.
+    Skips addresses that are currently in the Whitelist.
+    Checks for existing addresses and updates them or inserts new ones.
 
-    Returns number of rows affected (best-effort estimate).
+    Returns tuple: (rows_inserted, rows_updated, skipped_due_to_whitelist)
     """
     if not entries:
-        return 0
+        return 0, 0, 0
+    
     cur = conn.cursor()
-    # Requires address to be unique / primary key for best effect.
-    cur.executemany(
-        'INSERT OR REPLACE INTO "Blacklist" (address, reason) VALUES (?, ?)',
-        entries,
-    )
+    
+    # Get all whitelisted addresses
+    cur.execute('SELECT address FROM "Whitelist"')
+    whitelist = {row[0] for row in cur.fetchall()}
+    
+    # Get all existing blacklisted addresses
+    cur.execute('SELECT address FROM "Blacklist"')
+    existing_blacklist = {row[0] for row in cur.fetchall()}
+    
+    # Separate into updates and inserts
+    to_insert = []
+    to_update = []
+    skipped_whitelist = 0
+    skipped_exists = 0
+    
+    for addr, reason in entries:
+        if addr in whitelist:
+            skipped_whitelist += 1
+            logger.warning(f"Skipping blacklist entry (already whitelisted): {addr}")
+        elif addr in existing_blacklist:
+            # Update existing entry
+            to_update.append((reason, addr))
+        else:
+            # Insert new entry
+            to_insert.append((addr, reason))
+    
+    inserted = 0
+    updated = 0
+    
+    # Perform updates
+    if to_update:
+        cur.executemany(
+            'UPDATE "Blacklist" SET reason = ? WHERE address = ?',
+            to_update
+        )
+        updated = cur.rowcount
+        logger.info(f"Updated {updated} existing blacklist entries")
+    
+    # Perform inserts
+    if to_insert:
+        cur.executemany(
+            'INSERT INTO "Blacklist" (address, reason) VALUES (?, ?)',
+            to_insert
+        )
+        inserted = cur.rowcount
+        logger.info(f"Inserted {inserted} new blacklist entries")
+    
     conn.commit()
-    return cur.rowcount
+    return inserted, updated, skipped_whitelist
 
 
 def remove_from_blacklist(conn: sqlite3.Connection, addresses: List[str]) -> int:
@@ -210,9 +268,12 @@ def main():
                 affected = remove_from_blacklist(conn, addresses)
                 logger.info(f"Rows deleted from Blacklist: {affected}")
             else:
-                logger.info(f"Upserting {len(records)} entries into Blacklist...")
-                affected = add_or_update_blacklist(conn, records)
-                logger.info(f"Rows inserted/updated in Blacklist (approx): {affected}")
+                logger.info(f"Processing {len(records)} entries for Blacklist...")
+                inserted, updated, skipped = add_or_update_blacklist(conn, records)
+                logger.info(f"Inserted {inserted} new addresses into Blacklist")
+                logger.info(f"Updated {updated} existing addresses in Blacklist")
+                if skipped > 0:
+                    logger.warning(f"Skipped {skipped} addresses that are in Whitelist")
 
         else:  # whitelist
             # For whitelist, we only care about addresses.
