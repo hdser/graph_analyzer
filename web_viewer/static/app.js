@@ -20,78 +20,119 @@ document.addEventListener('DOMContentLoaded', async () => {
 function initializeDefaultStyle() {
     currentStyle = {
         node: {
-            sizeMetric: 'fixed', sizeMin: 10, sizeMax: 40,
-            colorMetric: 'fixed', colorFixed: '#4A90E2', colorGradient: 'spectral', colorSelected: '#FFD700'
+            sizeMetric: 'fixed', sizeMin: 20, sizeMax: 60,
+            colorMetric: 'fixed', colorFixed: '#4A90E2', colorGradient: 'spectral', colorSelected: '#FF0000'
         },
         edge: {
-            widthMetric: 'fixed', widthMin: 1, widthMax: 5,
-            color: '#999999', colorSelected: '#FF0000', opacity: 0.3
+            widthMetric: 'fixed', widthMin: 2, widthMax: 5,
+            color: '#fcfafa', colorSelected: '#FF0000', opacity: 0.2
         }
     };
 }
 
 const COLOR_GRADIENTS = {
     viridis: [
-        { stop: 0, color: '#440154' },
-        { stop: 0.25, color: '#31688E' },
-        { stop: 0.5, color: '#35B779' },
-        { stop: 0.75, color: '#8FD744' },
-        { stop: 1, color: '#FDE724' }
+        { stop: 0.0,  color: '#440154' },
+        { stop: 0.11, color: '#3C2F6E' },
+        { stop: 0.22, color: '#335D88' },
+        { stop: 0.33, color: '#328287' },
+        { stop: 0.44, color: '#34A57E' },
+        { stop: 0.56, color: '#49BE6D' },
+        { stop: 0.67, color: '#71CC56' },
+        { stop: 0.78, color: '#9BD940' },
+        { stop: 0.89, color: '#CCE032' },
+        { stop: 1.0,  color: '#FDE724' }
     ],
+
     plasma: [
-        { stop: 0, color: '#0D0887' },
-        { stop: 0.25, color: '#7E03A8' },
-        { stop: 0.5, color: '#CC4778' },
-        { stop: 0.75, color: '#F89540' },
-        { stop: 1, color: '#F0F921' }
+        { stop: 0.0,  color: '#0D0887' },
+        { stop: 0.11, color: '#3F0696' },
+        { stop: 0.22, color: '#7104A4' },
+        { stop: 0.33, color: '#981A98' },
+        { stop: 0.44, color: '#BB3883' },
+        { stop: 0.56, color: '#D6586C' },
+        { stop: 0.67, color: '#E97B53' },
+        { stop: 0.78, color: '#F7A03D' },
+        { stop: 0.89, color: '#F4CD2F' },
+        { stop: 1.0,  color: '#F0F921' }
     ],
+
     inferno: [
-        { stop: 0, color: '#000004' },
-        { stop: 0.25, color: '#420A68' },
-        { stop: 0.5, color: '#932667' },
-        { stop: 0.75, color: '#DD513A' },
-        { stop: 1, color: '#FCFFA4' }
+        { stop: 0.0,  color: '#000004' },
+        { stop: 0.11, color: '#1D0430' },
+        { stop: 0.22, color: '#3B095D' },
+        { stop: 0.33, color: '#5D1368' },
+        { stop: 0.44, color: '#812067' },
+        { stop: 0.56, color: '#A3305D' },
+        { stop: 0.67, color: '#C44349' },
+        { stop: 0.78, color: '#E06446' },
+        { stop: 0.89, color: '#EEB275' },
+        { stop: 1.0,  color: '#FCFFA4' }
     ],
+
     magma: [
-        { stop: 0, color: '#000004' },
-        { stop: 0.25, color: '#3B0F70' },
-        { stop: 0.5, color: '#8C2981' },
-        { stop: 0.75, color: '#DE4968' },
-        { stop: 1, color: '#FE9F6D' }
+        { stop: 0.0,  color: '#000004' },
+        { stop: 0.11, color: '#1A0734' },
+        { stop: 0.22, color: '#340D64' },
+        { stop: 0.33, color: '#561876' },
+        { stop: 0.44, color: '#7A237D' },
+        { stop: 0.56, color: '#9E307B' },
+        { stop: 0.67, color: '#C33E70' },
+        { stop: 0.78, color: '#E25369' },
+        { stop: 0.89, color: '#F0796B' },
+        { stop: 1.0,  color: '#FE9F6D' }
     ],
+
     turbo: [
-        { stop: 0, color: '#23171B' },
-        { stop: 0.1, color: '#4076F5' },
-        { stop: 0.3, color: '#26D0CE' },
-        { stop: 0.5, color: '#5EFC82' },
-        { stop: 0.7, color: '#FDB32F' },
-        { stop: 0.9, color: '#ED7953' },
-        { stop: 1, color: '#900C00' }
+        { stop: 0.0,  color: '#23171B' },
+        { stop: 0.11, color: '#3F7BF3' },
+        { stop: 0.22, color: '#30ADDD' },
+        { stop: 0.33, color: '#2FD7C1' },
+        { stop: 0.44, color: '#4EF097' },
+        { stop: 0.56, color: '#8AE86B' },
+        { stop: 0.67, color: '#E3BF3D' },
+        { stop: 0.78, color: '#F79C3D' },
+        { stop: 0.89, color: '#EE7C51' },
+        { stop: 1.0,  color: '#900C00' }
     ],
+
     rainbow: [
-        { stop: 0, color: '#FF0000' },
-        { stop: 0.17, color: '#FF8800' },
-        { stop: 0.33, color: '#FFFF00' },
-        { stop: 0.5, color: '#00FF00' },
-        { stop: 0.67, color: '#00FFFF' },
-        { stop: 0.83, color: '#0000FF' },
-        { stop: 1, color: '#FF00FF' }
+        { stop: 0.0,  color: '#FF0000' },
+        { stop: 0.11, color: '#FF5900' },
+        { stop: 0.22, color: '#FFAF00' },
+        { stop: 0.33, color: '#FAFF00' },
+        { stop: 0.44, color: '#53FF00' },
+        { stop: 0.56, color: '#00FF53' },
+        { stop: 0.67, color: '#00FFFA' },
+        { stop: 0.78, color: '#0053FF' },
+        { stop: 0.89, color: '#5800FF' },
+        { stop: 1.0,  color: '#FF00FF' }
     ],
+
     spectral: [
-        { stop: 0, color: '#5E4FA2' },
-        { stop: 0.2, color: '#3288BD' },
-        { stop: 0.4, color: '#66C2A5' },
-        { stop: 0.5, color: '#E6F598' },
-        { stop: 0.6, color: '#FEE08B' },
-        { stop: 0.8, color: '#F46D43' },
-        { stop: 1, color: '#9E0142' }
+        { stop: 0.0,  color: '#5E4FA2' },
+        { stop: 0.11, color: '#466FB1' },
+        { stop: 0.22, color: '#388EBA' },
+        { stop: 0.33, color: '#55AFAD' },
+        { stop: 0.44, color: '#9FD99F' },
+        { stop: 0.56, color: '#F3E991' },
+        { stop: 0.67, color: '#FBBA73' },
+        { stop: 0.78, color: '#F57A4B' },
+        { stop: 0.89, color: '#CE3D43' },
+        { stop: 1.0,  color: '#9E0142' }
     ],
+
     coolwarm: [
-        { stop: 0, color: '#3B4CC0' },
-        { stop: 0.25, color: '#6F93D9' },
-        { stop: 0.5, color: '#DDDDDD' },
-        { stop: 0.75, color: '#E67E5B' },
-        { stop: 1, color: '#B40426' }
+        { stop: 0.0,  color: '#3B4CC0' },
+        { stop: 0.11, color: '#526CCB' },
+        { stop: 0.22, color: '#698BD6' },
+        { stop: 0.33, color: '#94ACDA' },
+        { stop: 0.44, color: '#C5CDDC' },
+        { stop: 0.56, color: '#DFC8C0' },
+        { stop: 0.67, color: '#E39E86' },
+        { stop: 0.78, color: '#E07055' },
+        { stop: 0.89, color: '#CA3A3E' },
+        { stop: 1.0,  color: '#B40426' }
     ]
 };
 function getColorFromGradient(value, gradientName, minVal, maxVal) {
