@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graph Analyzer Web Viewer</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.0/cytoscape.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <h2>Graph Analyzer</h2>
+            
+            <div class="sidebar-content">
+                <div class="section">
+                    <h3>SQL Files</h3>
+                    <div id="sql-files" class="checkbox-group">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Metrics Mode</h3>
+                    <select id="metrics-mode">
+                        <option value="basic">basic</option>
+                        <option value="essential" selected>essential</option>
+                        <option value="moderate">moderate</option>
+                        <option value="all">all</option>
+                        <option value="custom">Custom Selection</option>
+                    </select>
+                    
+                    <div id="custom-metrics" class="checkbox-group" style="display: none; margin-top: 10px;">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Metrics Graph</h3>
+                    <select id="metrics-graph">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+                
+                <div class="section">
+                    <h3>Layout Algorithm</h3>
+                    <select id="layout-algorithm">
+                        <option value="auto">Auto (Best Available)</option>
+                        <option value="cytoscape-desktop">Cytoscape Desktop (If Running)</option>
+                        <option value="fcose">fCoSE (Force-Directed)</option>
+                        <option value="cose">CoSE (Standard)</option>
+                        <option value="circle">Circle (Fast)</option>
+                        <option value="grid">Grid (Fast)</option>
+                    </select>
+                    
+                    <label style="margin-top: 10px; display: block;">
+                        <input type="checkbox" id="use-cached-layout" checked>
+                        Use cached layout if available
+                    </label>
+                </div>
+            </div>
+            
+            <button id="load-btn" class="primary-btn">Load Graphs</button>
+            
+            <div id="status" class="status" style="display: none;"></div>
+            
+            <div id="graph-selector" class="section" style="display: none; padding: 0 20px 20px 20px;">
+                <h3>Loaded Graphs</h3>
+                <select id="graph-select">
+                    <!-- Populated after loading -->
+                </select>
+            </div>
+            
+            <div id="stats" class="stats" style="display: none;">
+                <!-- Statistics populated here -->
+            </div>
+        </aside>
+        
+        <main class="main-content">
+            <div class="toolbar">
+                <div class="toolbar-info">
+                    <span id="node-count"></span>
+                    <span id="edge-count"></span>
+                </div>
+                <div class="toolbar-actions">
+                    <button id="filter-btn">Filters</button>
+                    <button id="fit-btn">Fit</button>
+                    <button id="center-btn">Center</button>
+                    <button id="export-btn">Export</button>
+                </div>
+            </div>
+            
+            <div id="cy" class="cy-container"></div>
+            
+            <div id="loading" class="loading-overlay" style="display: none;">
+                <div class="spinner"></div>
+                <div class="loading-text">Loading graph...</div>
+            </div>
+        </main>
+        
+        <div id="node-info" class="info-panel" style="display: none;">
+            <div class="info-header">
+                <h3>Information</h3>
+                <button class="close-btn">×</button>
+            </div>
+            <div class="info-content">
+                <h4>Node</h4>
+                <div id="node-id"></div>
+                
+                <h4>Key Metrics</h4>
+                <div id="key-metrics"></div>
+                
+                <h4>Connections</h4>
+                <div id="connections"></div>
+                
+                <h4>Sample Neighbors</h4>
+                <div id="neighbors-list" class="neighbors-list"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/app.js"></script>
+</body>
+</html>
