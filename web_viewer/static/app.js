@@ -169,7 +169,8 @@ function rgbToHex(r, g, b) {
 
 /**
  * Calculate position for nodes without positions based on their neighbors
- * This handles cases where cached layouts don't include new nodes
+ * This handles cases where cached layouts don't include new nodes.
+ * NEW: marks inferred nodes with data.isNew = true so we can layout only them.
  */
 function inferMissingPositions(elements) {
     // Build complete position map from elements that have positions
@@ -198,7 +199,7 @@ function inferMissingPositions(elements) {
     // If no nodes need positions, we're done
     if (nodesWithoutPositions.length === 0) {
         console.log('All nodes have positions from cache');
-        return false;
+        return false;  // no refinement needed
     }
     
     console.log(`Found ${nodesWithoutPositions.length} nodes without positions out of ${totalNodes} total nodes`);
@@ -236,8 +237,14 @@ function inferMissingPositions(elements) {
     const spreadX = hasPositions ? Math.max(100, (maxX - minX) / 4) : 200;
     const spreadY = hasPositions ? Math.max(100, (maxY - minY) / 4) : 200;
     
-    console.log(`Graph bounds: X[${minX.toFixed(0)}, ${maxX.toFixed(0)}], Y[${minY.toFixed(0)}, ${maxY.toFixed(0)}]`);
-    console.log(`Center: (${centerX.toFixed(0)}, ${centerY.toFixed(0)}), Spread: (${spreadX.toFixed(0)}, ${spreadY.toFixed(0)})`);
+    console.log(
+        `Graph bounds: X[${minX.toFixed(0)}, ${maxX.toFixed(0)}], ` +
+        `Y[${minY.toFixed(0)}, ${maxY.toFixed(0)}]`
+    );
+    console.log(
+        `Center: (${centerX.toFixed(0)}, ${centerY.toFixed(0)}), ` +
+        `Spread: (${spreadX.toFixed(0)}, ${spreadY.toFixed(0)})`
+    );
     
     // Process nodes without positions in multiple passes
     let maxIterations = 10;
@@ -289,10 +296,20 @@ function inferMissingPositions(elements) {
                 
                 positionMap[nodeId] = newPos;
                 nodeMap[nodeId].position = newPos;
+                
+                // Mark this node as new so we can move it later while keeping originals rigid
+                if (!nodeMap[nodeId].data) {
+                    nodeMap[nodeId].data = {};
+                }
+                nodeMap[nodeId].data.isNew = true;
+                
                 newlyPlaced.add(nodeId);
                 placedInIteration++;
                 
-                console.log(`Placed node ${nodeId.substring(0, 10)}... near ${positionedNeighbors.length} neighbors at (${newPos.x.toFixed(0)}, ${newPos.y.toFixed(0)})`);
+                console.log(
+                    `Placed node ${nodeId.substring(0, 10)}… near neighbors ` +
+                    `at (${newPos.x.toFixed(0)}, ${newPos.y.toFixed(0)})`
+                );
                 
                 return false; // Successfully placed
             }
@@ -322,9 +339,18 @@ function inferMissingPositions(elements) {
                 
                 positionMap[nodeId] = newPos;
                 nodeMap[nodeId].position = newPos;
+                
+                if (!nodeMap[nodeId].data) {
+                    nodeMap[nodeId].data = {};
+                }
+                nodeMap[nodeId].data.isNew = true;
+                
                 newlyPlaced.add(nodeId);
                 
-                console.log(`Placed orphan node ${nodeId.substring(0, 10)}... at periphery (${newPos.x.toFixed(0)}, ${newPos.y.toFixed(0)})`);
+                console.log(
+                    `Placed orphan node ${nodeId.substring(0, 10)}… at periphery ` +
+                    `(${newPos.x.toFixed(0)}, ${newPos.y.toFixed(0)})`
+                );
             });
         } else {
             // No existing positions at all - arrange in a circle
@@ -340,6 +366,12 @@ function inferMissingPositions(elements) {
                 
                 positionMap[nodeId] = newPos;
                 nodeMap[nodeId].position = newPos;
+                
+                if (!nodeMap[nodeId].data) {
+                    nodeMap[nodeId].data = {};
+                }
+                nodeMap[nodeId].data.isNew = true;
+                
                 newlyPlaced.add(nodeId);
             });
         }
@@ -347,9 +379,36 @@ function inferMissingPositions(elements) {
     
     console.log(`Position inference complete: ${newlyPlaced.size} new positions assigned`);
     
-    // Return true if we placed any new nodes (suggests refinement might help)
-    return newlyPlaced.size > 0;
+    const placedCount = newlyPlaced.size;
+    if (placedCount === 0) {
+        return false;
+    }
+    
+    // Tunable thresholds for deciding whether to run refinement
+    const MAX_REFINEMENT_NODES = 1000;       // absolute cap of new nodes
+    const MAX_REFINEMENT_GRAPH_SIZE = 50000; // if graph bigger than this, skip CoSE
+    const MAX_REFINEMENT_RATIO = 0.2;        // if >20% of nodes are new, skip CoSE
+    
+    const ratio = placedCount / totalNodes;
+    
+    const shouldRefine =
+        totalNodes <= MAX_REFINEMENT_GRAPH_SIZE &&
+        placedCount <= MAX_REFINEMENT_NODES &&
+        ratio <= MAX_REFINEMENT_RATIO;
+    
+    if (!shouldRefine) {
+        console.log(
+            `Skipping refinement: totalNodes=${totalNodes}, placed=${placedCount}, ratio=${ratio.toFixed(3)}`
+        );
+        return false;
+    }
+    
+    console.log(
+        `Refinement requested: totalNodes=${totalNodes}, placed=${placedCount}, ratio=${ratio.toFixed(3)}`
+    );
+    return true;
 }
+
 
 /**
  * Load available configuration from server
@@ -802,7 +861,7 @@ async function loadGraphs() {
         
         // Update UI
         updateStatus(
-            `Loaded ${currentState.loaded_graphs.length} graph(s) with ${currentState.node_count} nodes in ${currentState.computation_time.toFixed(1)}s`, 
+            `Loaded ${currentState.loaded_graphs.length} graph(s) with ${currentState.node_count.toLocaleString()} nodes in ${currentState.computation_time.toFixed(1)}s`, 
             'success'
         );
         
@@ -839,6 +898,7 @@ async function loadGraphs() {
 
 /**
  * Display a specific graph
+ * NEW: original cached-layout nodes are kept rigid; only new nodes + neighborhood are refined.
  */
 async function displayGraph(graphId) {
     console.log(`Displaying graph: ${graphId}`);
@@ -861,7 +921,7 @@ async function displayGraph(graphId) {
         // Store this graph's data separately to avoid mixing
         graphData[graphId] = data.elements;
         
-        // IMPORTANT: Infer positions for nodes without cached positions
+        // Infer positions for nodes without cached positions and decide if refinement is useful
         const needsRefinement = inferMissingPositions(data.elements);
         
         // Count nodes and edges
@@ -869,8 +929,10 @@ async function displayGraph(graphId) {
         const edges = data.elements.filter(el => el.group === 'edges');
         
         // Update toolbar
-        document.getElementById('node-count').textContent = `${nodes.length} nodes`;
-        document.getElementById('edge-count').textContent = `${edges.length} edges`;
+        const nodeCountEl = document.getElementById('node-count');
+        const edgeCountEl = document.getElementById('edge-count');
+        if (nodeCountEl) nodeCountEl.textContent = `${nodes.length} nodes`;
+        if (edgeCountEl) edgeCountEl.textContent = `${edges.length} edges`;
         
         // Destroy previous cytoscape instance completely
         if (cy) {
@@ -900,31 +962,46 @@ async function displayGraph(graphId) {
         });
         
         // OPTIONAL: Run quick layout refinement if we inferred new positions
+        // We keep original nodes rigid and only adjust new nodes plus their local neighborhood
         if (needsRefinement && document.getElementById('use-cached-layout').checked) {
-            console.log('Running quick layout refinement for new nodes...');
+            console.log('Running quick layout refinement for new nodes (original layout frozen)...');
             
             updateStatus('Refining layout for new nodes...', 'info');
             
-            // Run a quick force-directed layout to settle new nodes
-            const layout = cy.layout({
-                name: 'cose',
-                animate: false,
-                randomize: false,  // Don't randomize, use current positions as starting point
-                nodeRepulsion: function(node) { return 400; },
-                idealEdgeLength: function(edge) { return 50; },
-                nodeOverlap: 20,
-                numIter: 20,  // Just 20 iterations for quick refinement
-                initialTemp: 200, // Lower initial temperature for gentler refinement
-                coolingFactor: 0.95,
-                minTemp: 1.0,
-                gravity: 0.25,
-                fit: false, // Don't fit to viewport, maintain current zoom/pan
-                padding: 30
-            });
-            
-            layout.run();
-            
-            console.log('Layout refinement complete');
+            const newNodes = cy.nodes().filter(n => n.data('isNew'));
+            if (newNodes.length > 0) {
+                // Lock all non-new nodes so their positions stay fixed
+                const oldNodes = cy.nodes().not(newNodes);
+                oldNodes.lock();
+                
+                // Build a local subgraph: new nodes + their closed neighborhood (neighbors + edges)
+                const layoutCollection = newNodes.closedNeighborhood();
+                
+                const layout = layoutCollection.layout({
+                    name: 'cose',
+                    animate: false,
+                    randomize: false,  // Don't randomize, use current positions as starting point
+                    nodeRepulsion: function(node) { return 40; },
+                    idealEdgeLength: function(edge) { return 5; },
+                    nodeOverlap: 20,
+                    numIter: 100,  // Just 20 iterations for quick refinement
+                    initialTemp: 200, // Lower initial temperature for gentler refinement
+                    coolingFactor: 0.95,
+                    minTemp: 1.0,
+                    gravity: 0.25,
+                    fit: false, // Don't fit to viewport, maintain current zoom/pan
+                    padding: 30
+                });
+                
+                layout.run();
+                
+                // Unlock original nodes again
+                oldNodes.unlock();
+                
+                console.log('Layout refinement for new nodes complete');
+            } else {
+                console.log('No nodes marked as new; skipping refinement');
+            }
         }
         
         // Apply current style

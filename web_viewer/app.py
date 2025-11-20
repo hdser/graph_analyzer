@@ -619,12 +619,17 @@ class NetworkService:
             
             clean_data['id'] = node
             clean_data['label'] = node[:10] + "..." if len(node) > 12 else node
-            
+
+            # NEW: only attach a position if this node exists in the cached layout
+            pos = layout.get(node)
+
             node_element = {
                 "group": "nodes",
-                "data": clean_data,
-                "position": layout.get(node, {"x": 0, "y": 0})
+                "data": clean_data
             }
+            if pos is not None:
+                node_element["position"] = pos
+
             elements.append(node_element)
         
         # Add edges
@@ -640,6 +645,7 @@ class NetworkService:
             elements.append(edge_element)
         
         return elements
+
     
     def list_cached_layouts(self):
         """List all cached layouts"""
