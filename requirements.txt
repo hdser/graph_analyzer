@@ -11,3 +11,5 @@ scipy>=1.10.0
 
 # Optional: for faster computations
 # numba>=0.57.0
+
+py4cytoscape>=1.12.0

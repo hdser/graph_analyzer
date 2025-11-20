@@ -1,143 +1,410 @@
 # Graph Analyzer
 
-Computes multiple graph metrics for directed trust networks using NetworkX with **selective metric computation** for faster targeted analysis.
+![Graph Analyzer](img/header-graph_analyzer.png)
 
-## Quick Start
+End-to-end toolkit for **trust-network analysis and visualization**:
+
+- Compute 120+ NetworkX metrics on Circles v1/v2 trust graphs  
+- Stream graphs + metrics directly into **Cytoscape Desktop**  
+- View any Cytoscape network in a **browser** via a small FastAPI + Cytoscape.js app  
+- Maintain **blacklist / whitelist** decisions in a SQLite DB
+
+The repo is organized so that the “heavy” graph logic lives in Python, the
+interactive layout lives in Cytoscape Desktop, and the browser viewer is a thin
+layer on top.
+
+---
+
+## 1. Installation
+
+### 1.1 Python environment
+
+From the repo root:
 
 ```bash
-# 1. Create virtual environment
 python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# OR
-venv\Scripts\activate  # Windows
+source venv/bin/activate          # Linux / macOS
+# venv\Scripts\activate           # Windows
 
-# 2. Install dependencies
+# Core dependencies (metrics, streaming, blacklist tools)
 pip install -r requirements.txt
-
-# 3. Configure
-cp .env.example .env
-# Edit .env with your database credentials and metrics mode
-
-# 4. Run main graph metrics
-python graph_metrics.py
-
-# 5. Get help on available modes
-python graph_metrics.py --help
 ````
 
-For blacklist / whitelist analysis commands, see **Blacklist / Whitelist Management** below.
+### 1.2 Cytoscape Desktop
 
-## Configuration
+Install **Cytoscape 3.9+** from the official site and make sure:
 
-Create `.env` file:
+* Cytoscape is running while you use `stream_to_cytoscape.py` or the web viewer.
+* CyREST is enabled (it is by default on `http://127.0.0.1:1234/v1`).
+
+You can open the example session:
+
+```text
+cytoscape/stream_graphs.cys
+```
+
+to get a feel for the layouts/styles used.
+
+### 1.3 Web viewer dependencies (optional, for browser UI)
+
+The web viewer lives in `web_viewer/` and has its own lightweight requirements:
+
+```bash
+# From repo root, with venv activated
+pip install -r web_viewer/requirements.txt
+```
+
+---
+
+## 2. Configuration (`.env`)
+
+Both `graph_metrics.py` and `stream_to_cytoscape.py` use the same DB/metrics
+configuration via a `.env` file in the repo root.
+
+Create it from the example (if present) or from scratch:
+
+```bash
+cp .env.example .env  # if .env.example exists
+# or create .env manually
+```
+
+Example:
 
 ```env
+# PostgreSQL connection
 DB_USER=your_username
 DB_PASSWORD=your_password
 DB_HOST=your_host
 DB_NAME=your_database
+
+# Graph metrics
 OUTPUT_FILE=graph_metrics.csv
-N_JOBS=2  # Number of parallel workers (optional)
-METRICS_MODE=all  # Which metrics to compute (see below)
+N_JOBS=4            # Number of parallel workers (0 or empty = auto cores-1)
+METRICS_MODE=all    # See "Metrics modes" below
 ```
 
-## NEW: Selective Metrics Computation
+`stream_to_cytoscape.py` also accepts `--metrics-mode` on the CLI; that value
+overrides `METRICS_MODE` from `.env` for that run.
 
-You can now choose which metrics to compute, dramatically reducing computation time for targeted analysis.
+---
 
-### Metrics Modes
+## 3. SQL files → networks
 
-#### Preset Modes
+All network construction is driven by **SQL files** in the `sql/` folder.
+Each SQL is expected to return a table with:
 
-* **`basic`**: Quick topology + clustering analysis (~5 seconds)
+* `source` – address / avatar sending or trusting
+* `target` – address / avatar receiving or being trusted
+* (optional) extra columns used as edge attributes, e.g.:
 
-  * Basic Topology (in/out degree, degree imbalance)
-  * Clustering Metrics (clustering coefficient, triangles)
+  * `amount` – for flows / edge width
+  * `timestamp` – for temporal coloring
+  * any other attributes you want in Cytoscape
 
-* **`essential`**: Most important metrics (~1-5 minutes)
+Current files:
 
-  * Basic Topology
-  * Centrality Measures (PageRank, betweenness, etc.)
-  * Clustering Metrics
-  * Community Detection
+```text
+sql/
+  crc_v1_trusts.sql   # Circles v1 trust graph
+  crc_v2_trusts.sql   # Circles v2 trust graph
+  crc_v2_invites.sql  # Invitation graph
+  crc_v2_flows.sql    # Token flow graph
+```
 
-* **`moderate`**: Balanced comprehensive analysis (~5-15 minutes)
+These are used mainly by `stream_to_cytoscape.py`, but you can reuse them
+anywhere else you like.
 
-  * Everything in 'essential' plus:
-  * Path Metrics (shortest paths, reachability)
-  * Structural Metrics (structural holes, articulation points)
+---
 
-* **`all`**: Complete analysis (default, ~15-60+ minutes)
+## 4. Graph metrics: `graph_metrics.py`
 
-  * All 120+ metrics across all 15 categories
+This script computes 120+ metrics on a **directed trust graph** using NetworkX,
+with configurable metric categories and parallel processing.
 
-#### Individual Categories
+### 4.1 Basic usage
 
-You can specify individual categories or combine them:
+```bash
+# Using METRICS_MODE from .env
+python graph_metrics.py
+
+# See supported modes and categories
+python graph_metrics.py --help
+```
+
+Typical config in `.env`:
 
 ```env
-# Single category
-METRICS_MODE=topology
+METRICS_MODE=essential
+N_JOBS=4
+OUTPUT_FILE=data/graph_metrics_v2.csv
+```
 
-# Multiple categories (comma-separated)
-METRICS_MODE=topology,clustering,community
+The script:
 
-# Mix and match as needed
+1. Connects to PostgreSQL using `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_NAME`.
+2. Runs the built-in query (currently v2 trust relations).
+3. Builds an `nx.DiGraph` with `(source, target)` edges.
+4. Computes metrics according to `METRICS_MODE`.
+5. Writes a CSV with one row per node:
+
+   ```csv
+   avatar,in_degree,pagerank,community_id,total_degree,...
+   0xabc...,5,0.00123,54,32,...
+   ```
+
+Booleans are converted to 0/1, `NaN/inf` are replaced by 0.
+
+### 4.2 Metrics modes
+
+You can choose **which categories** to compute using `METRICS_MODE`
+(in `.env` or via `--metrics-mode` in streaming).
+
+Preset modes:
+
+* `basic` – topology + clustering (very fast)
+* `essential` – topology + centrality + clustering + community
+* `moderate` – essential + paths + structural
+* `all` – all 15 categories (120+ metrics, can be expensive)
+
+You can also pass categories directly:
+
+```env
 METRICS_MODE=topology,centrality,paths,reach
 ```
 
-### Available Categories
+Categories include:
 
-| Category      | Description                              | Metrics Count |
-| ------------- | ---------------------------------------- | ------------- |
-| `topology`    | Basic degree metrics                     | 4             |
-| `centrality`  | PageRank, betweenness, eigenvector, etc. | 20+           |
-| `clustering`  | Triangles, clustering coefficients       | 6             |
-| `community`   | Louvain communities, k-core              | 5             |
-| `paths`       | Shortest paths, eccentricity             | 10            |
-| `distances`   | Radius, diameter, center/periphery       | 4             |
-| `structural`  | Structural holes, bridges                | 12            |
-| `reciprocity` | Mutual connections                       | 5             |
-| `reach`       | N-hop reach analysis                     | 8             |
-| `components`  | Connected components                     | 3             |
-| `vitality`    | Node importance                          | 1             |
-| `dispersion`  | Node dispersion                          | 2             |
-| `efficiency`  | Network efficiency                       | 1             |
-| `flow`        | Flow hierarchy                           | 1             |
-| `dominance`   | Dominance metrics                        | 2             |
+* `topology`, `centrality`, `clustering`, `community`, `paths`,
+* `distances`, `structural`, `reciprocity`, `reach`, `components`,
+* `vitality`, `dispersion`, `efficiency`, `flow`, `dominance`.
 
-### Usage Examples
+(See the previous README content if you need the full metric list; the code in
+`graph_metrics.py` matches that description.)
+
+---
+
+## 5. Streaming into Cytoscape: `stream_to_cytoscape.py`
+
+This script is responsible for:
+
+* Running the chosen SQL file(s) to build one or more edge sets
+* Computing node metrics **once** on a chosen “metrics graph”
+* Creating **one Cytoscape network per SQL file**
+* Streaming updates over time if desired
+
+It talks to Cytoscape via `py4cytoscape` and CyREST.
+
+### 5.1 CLI arguments
+
+From the repo root:
 
 ```bash
-# Quick topology check (seconds)
-METRICS_MODE=basic python graph_metrics.py
-
-# Just need centrality measures
-METRICS_MODE=centrality python graph_metrics.py  
-
-# Custom analysis for community structure
-METRICS_MODE=topology,clustering,community python graph_metrics.py
-
-# Full analysis (default)
-METRICS_MODE=all python graph_metrics.py
+python stream_to_cytoscape.py --help
 ```
 
-## Blacklist / Whitelist Management
+Conceptually, the important options are:
 
-Two helper scripts manage blacklist/whitelist data in `data/blacklist.db` and CSV files.
+* `--run-type {once,stream}`
 
-### 1. Compare CSV blacklists vs existing DB
+  * `once` – do a single load into Cytoscape and exit
+  * `stream` – repeat at a fixed interval, updating metrics / networks
+
+* `--sql-files <comma-separated list>`
+  Paths to SQL files that each define a graph layer, e.g.:
+
+  ```bash
+  --sql-files sql/crc_v2_trusts.sql,sql/crc_v2_invites.sql
+  ```
+
+* `--metrics-mode <mode>`
+  Same semantics as in `graph_metrics.py` (`basic`, `essential`, etc.).
+  If omitted, falls back to `METRICS_MODE` in `.env`.
+
+* `--metrics-graph-id <id>`
+  Which graph (by ID derived from SQL filename) to use for metrics.
+  For example, `sql/crc_v2_trusts.sql` will usually map to `crc_v2_trusts`.
+  Metrics are computed on that graph and the resulting node attributes are
+  reused for all layers.
+
+* `--interval <seconds>` (stream mode only)
+  How often to re-run SQL + metrics and update Cytoscape.
+
+### 5.2 Typical workflows
+
+#### One-time network creation
+
+Create just the v2 trust network with metrics and style in Cytoscape:
+
+```bash
+python stream_to_cytoscape.py \
+  --run-type once \
+  --sql-files sql/crc_v2_trusts.sql \
+  --metrics-mode topology,community
+```
+
+This will:
+
+1. Run `crc_v2_trusts.sql` to get `source,target,...` edges.
+2. Build a directed NetworkX graph.
+3. Compute metrics for all avatars.
+4. Push into Cytoscape as one network, with all node columns attached.
+
+#### Multiple layers, shared metrics
+
+Create both trust and invite graphs, computing metrics only on the trust graph:
+
+```bash
+python stream_to_cytoscape.py \
+  --run-type once \
+  --sql-files sql/crc_v2_trusts.sql,sql/crc_v2_invites.sql \
+  --metrics-mode topology,community \
+  --metrics-graph-id crc_v2_trusts
+```
+
+This will:
+
+* Run both SQL files.
+* Build one NetworkX graph for `crc_v2_trusts` and compute metrics.
+* Create **two networks** in Cytoscape:
+
+  * `crc_v2_trusts (shared metrics)`
+  * `crc_v2_invites (shared metrics)`
+* Attach the **same node metrics** (computed from the trust graph) to both
+  networks, so you can compare structure vs trust centrality, etc.
+
+#### Streaming mode
+
+Recompute SQL + metrics and update Cytoscape on a schedule:
+
+```bash
+python stream_to_cytoscape.py \
+  --run-type stream \
+  --sql-files sql/crc_v2_trusts.sql,sql/crc_v2_invites.sql \
+  --metrics-mode topology,community \
+  --metrics-graph-id crc_v2_trusts \
+  --interval 60
+```
+
+* First iteration creates the networks as above.
+* Every 60 seconds:
+
+  * Re-runs the SQL.
+  * Rebuilds graphs and recomputes metrics.
+  * Either updates existing node attributes in Cytoscape, or (depending on how
+    you’ve configured the script) recreates the networks if edge sets change
+    dramatically.
+
+> **Note:** Make sure Cytoscape is open before running the streaming script.
+> You’ll see the networks appear in the left-hand panel as they are created.
+
+---
+
+## 6. Web viewer: `web_viewer/`
+
+The web viewer is a separate, optional component that lets you inspect any
+Cytoscape network in a **browser**, using Cytoscape.js.
+
+It **does not** replace Cytoscape Desktop; it just reads the current state from
+Cytoscape via CyREST and renders it in a web UI.
+
+### 6.1 Running the web app
+
+From the repo root:
+
+```bash
+source venv/bin/activate
+cd web_viewer
+
+# Dependencies should already be installed via:
+# pip install -r requirements.txt
+
+python -m uvicorn app:app --reload
+```
+
+You should see something like:
+
+```text
+Uvicorn running on http://127.0.0.1:8000
+```
+
+Open your browser at:
+
+> [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+### 6.2 How it works
+
+* `web_viewer/app.py` (FastAPI) exposes:
+
+  * `GET /api/networks` – list of networks currently in Cytoscape
+  * `GET /api/networks/{suid}/view` – exports nodes, edges, and positions
+* `web_viewer/static/app.js`:
+
+  * Fetches the list of networks and populates a `<select>` dropdown.
+  * On selection, fetches `/api/networks/{suid}/view`.
+  * Builds a Cytoscape.js instance with:
+
+    * `layout: { name: "preset" }` – uses the exact positions from Desktop.
+    * A **custom Cytoscape.js style** that approximates your
+      `cytoscape/styles_stream.xml`:
+
+      * Dark background (`#191919`).
+      * Nodes sized by `total_degree`.
+      * Nodes colored by `community_id`.
+      * Edge width by `amount`.
+      * Edge color by `timestamp`.
+
+Because Cytoscape Desktop’s vizmap format is different from Cytoscape.js
+styles, the web viewer doesn’t import `styles_stream.xml` directly; instead, it
+uses the same underlying **data columns and ranges** to reproduce a similar look
+on the web.
+
+### 6.3 Performance tweaks for large graphs
+
+The viewer uses several options to keep pan/zoom responsive:
+
+* `pixelRatio: 1` – avoids expensive Retina rendering.
+* `textureOnViewport: true` – caches the canvas as a texture.
+* `motionBlur: true` – smooths panning.
+* `hideEdgesOnViewport: true` – hides edges while moving.
+* `hideLabelsOnViewport: true` – hides labels while moving.
+
+If you want **no labels at all**, edit `web_viewer/static/app.js` and set node
+style:
+
+```javascript
+{
+  selector: "node",
+  style: {
+    // ...
+    label: "",          // no labels
+    "text-opacity": 0
+  }
+}
+```
+
+---
+
+## 7. Blacklist / Whitelist workflow
+
+The repo includes two helper scripts to manage blacklists/whitelists in
+`data/blacklist.db` (SQLite) using CSV files and graph metrics.
+
+### 7.1 Compare CSV blacklists vs DB: `compare_blacklist_csvs.py`
 
 This script:
 
-* Reads multiple `blacklist_Sheet*.csv` files
-* Applies v1/v2 rules (using `graph_metrics_v1.csv` and `graph_metrics_v2.csv`)
-* Checks overlaps with existing `Blacklist` and `Whitelist` tables
-* Produces a **full updated blacklist CSV** (existing DB reasons take priority)
+* Merges multiple CSV blacklist sheets.
+* Cross-checks them with existing `Blacklist` and `Whitelist` tables in
+  `data/blacklist.db`.
+* Uses metrics from `graph_metrics_v1.csv` / `graph_metrics_v2.csv` to apply
+  rules (v1/v2 heuristics).
+* Outputs a consolidated `blacklist_full_updated.csv` with reasons/source.
+
+Example:
 
 ```bash
 python compare_blacklist_csvs.py \
-  --csv data/blacklist_Sheet1.csv data/blacklist_Sheet2.csv data/blacklist_Sheet3.csv data/blacklist_Sheet4.csv \
+  --csv data/blacklist_Sheet1.csv data/blacklist_Sheet2.csv \
   --db data/blacklist.db \
   --graph-metrics-v1 data/graph_metrics_v1.csv \
   --graph-metrics-v2 data/graph_metrics_v2.csv \
@@ -145,26 +412,22 @@ python compare_blacklist_csvs.py \
   --verbose
 ```
 
-Key arguments:
+Key args:
 
-* `--csv` – one or more blacklist CSV sheets
-* `--db` – path to `blacklist.db` (default `data/blacklist.db`)
-* `--graph-metrics-v1` – `graph_metrics_v1.csv` (for v1/v2 logic)
-* `--graph-metrics-v2` – `graph_metrics_v2.csv` (for reporting)
-* `--output-csv` – where to write the merged blacklist
-* `--verbose` – more detailed logging
+* `--csv` – one or more CSV sheets with candidate blacklist entries.
+* `--db` – SQLite DB, default `data/blacklist.db`.
+* `--graph-metrics-v1/2` – metrics CSVs from `graph_metrics.py`.
+* `--output-csv` – merged result.
+* `--verbose` – more logging.
 
-### 2. Apply CSV updates to Blacklist / Whitelist
+### 7.2 Apply CSV updates to DB: `update_blacklist.py`
 
-This script updates the SQLite DB from a CSV:
+This script writes changes into `data/blacklist.db`:
 
-* Update **Blacklist** or **Whitelist**
-* Add/update entries (default)
-* Or remove entries with `--remove`
+* `Blacklist` table
+* `Whitelist` table
 
-#### Update Blacklist from merged CSV
-
-Typically used after `compare_blacklist_csvs.py`:
+Add/update blacklist from a CSV:
 
 ```bash
 python update_blacklist.py \
@@ -173,7 +436,7 @@ python update_blacklist.py \
   --csv data/blacklist_full_updated.csv
 ```
 
-#### Add to Whitelist
+Add to whitelist:
 
 ```bash
 python update_blacklist.py \
@@ -182,7 +445,7 @@ python update_blacklist.py \
   --csv data/my_whitelist.csv
 ```
 
-#### Remove addresses from Blacklist or Whitelist
+Remove entries:
 
 ```bash
 # Remove from blacklist
@@ -200,195 +463,48 @@ python update_blacklist.py \
   --remove
 ```
 
-## Performance Guide
+---
 
-| Mode         | Time Estimate  | Use Case                  |
-| ------------ | -------------- | ------------------------- |
-| `basic`      | 2-5 seconds    | Quick graph overview      |
-| `topology`   | <1 second      | Degree distribution only  |
-| `centrality` | 1-3 minutes    | Node importance analysis  |
-| `essential`  | 1-5 minutes    | Standard network analysis |
-| `moderate`   | 5-15 minutes   | Comprehensive analysis    |
-| `all`        | 15-60+ minutes | Complete metrics suite    |
+## 8. Repository layout
 
-Times vary based on graph size:
-
-* Small (<1K nodes): Lower estimates
-* Medium (1-10K nodes): Middle estimates
-* Large (>10K nodes): Upper estimates
-
-## What Gets Computed
-
-**120+ metrics across 15 categories:**
-
-### 1. Basic Topology (4 metrics)
-
-* in_degree, out_degree, total_degree
-* degree_imbalance
-
-### 2. Centrality (20+ metrics)
-
-* Degree: in_degree_centrality, out_degree_centrality
-* Closeness: closeness_centrality
-* Betweenness: betweenness_centrality
-* Eigenvector: eigenvector_centrality
-* Katz: katz_centrality
-* PageRank: pagerank
-* HITS: hub_score, authority_score
-* Harmonic: harmonic_centrality
-* Load: load_centrality
-* Subgraph: subgraph_centrality
-* Second order: second_order_centrality
-* Percolation: percolation_centrality
-* Trophic: trophic_level
-* Current flow, Information, Communicability, VoteRank, Edge betweenness
-
-### 3. Clustering (6 metrics)
-
-* clustering_coefficient (directed & undirected)
-* triangle_count (directed & undirected)
-* square_clustering
-* local_transitivity
-
-### 4. Community (5 metrics)
-
-* community_id (Louvain)
-* community_size
-* core_number (k-core)
-* onion_layer
-* local_reaching_centrality
-
-### 5. Path Metrics (10 metrics)
-
-* avg_shortest_path, median_shortest_path, max_shortest_path
-* path_variance, path_sum
-* reachable_nodes
-* paths_length_1, paths_length_2_targets
-* eccentricity
-* wiener_contribution (small graphs only)
-
-### 6. Distance Measures (4 metrics)
-
-* graph_radius, graph_diameter
-* is_center, is_periphery
-
-### 7. Structural (12 metrics)
-
-* constraint, effective_size, redundancy (Burt's structural holes)
-* is_articulation_point, bridge_count
-* avg_neighbor_degree, min_neighbor_degree, max_neighbor_degree, std_neighbor_degree
-* avg_neighbor_degree_directed, avg_neighbor_degree_undirected
-
-### 8. Reciprocity (5 metrics)
-
-* mutual_count, mutual_ratio, mutual_received_ratio
-* one_way_out, one_way_in
-
-### 9. Reach (8 metrics)
-
-* reach_hop_1 through reach_hop_6
-* total_reach
-* network_penetration
-
-### 10. Components (3 metrics)
-
-* weak_component_size, strong_component_size
-* in_largest_component
-
-### 11-15. Additional Categories
-
-* Vitality: closeness_vitality
-* Dispersion: avg_dispersion, max_dispersion
-* Efficiency: local_efficiency
-* Flow: flow_hierarchy
-* Dominance: dominated_nodes_count, dominance_ratio
-
-## Output
-
-CSV file with one row per node:
-
-```csv
-avatar,in_degree,pagerank,betweenness_centrality,...
-0x123...,45,0.0023,0.0145,...
-```
-
-All metrics are numeric (booleans converted to 0/1, NaN filled with 0).
-
-## Parallel Processing
-
-The calculator uses parallel processing for expensive operations:
-
-* Path computations
-* Reach analysis
-* Dominance metrics
-* Local reaching centrality
-
-Configure workers in `.env`:
-
-```env
-N_JOBS=4  # Use 4 CPU cores
-N_JOBS=0  # Use all available cores minus 1 (default)
-```
-
-## Files
+For orientation:
 
 ```text
-graph_metrics.py           # Main script with selective metrics
-compare_blacklist_csvs.py  # Analyze & merge blacklist CSVs with existing DB
-update_blacklist.py        # Apply CSV changes to SQLite Blacklist / Whitelist
-requirements.txt           # Dependencies
-.env.example               # Configuration template
-README.md                  # This file
-.gitignore                 # Protects sensitive files
+.
+├── README.md                  # This file
+├── graph_metrics.py           # Core metrics computation
+├── stream_to_cytoscape.py     # Streaming graphs & metrics into Cytoscape
+├── compare_blacklist_csvs.py  # Merge / analyze blacklist CSVs vs DB
+├── update_blacklist.py        # Apply CSV updates to blacklist/whitelist DB
+├── requirements.txt           # Main Python deps
+├── .env                       # DB + metrics config (not committed)
+│
+├── sql/                       # All graph-defining SQL queries
+│   ├── crc_v1_trusts.sql
+│   ├── crc_v2_trusts.sql
+│   ├── crc_v2_invites.sql
+│   └── crc_v2_flows.sql
+│
+├── cytoscape/
+│   ├── stream_graphs.cys      # Example Cytoscape session
+│   ├── styles.xml             # Additional vizmap styles (Desktop only)
+│   └── styles_stream.xml      # Reference style used when designing graphs
+│
+├── data/
+│   ├── blacklist.db           # SQLite DB for black/whitelists
+│   └── blacklist_original.db  # Original DB snapshot
+│
+├── figs/                      # Exported PNGs of graphs
+│   └── ...                    # Trust/Invitation graph images
+│
+└── web_viewer/                # Browser-based viewer
+    ├── app.py                 # FastAPI app, talks to Cytoscape via CyREST
+    ├── requirements.txt       # Web viewer deps (FastAPI, Uvicorn, py4cytoscape)
+    └── static/
+        ├── index.html         # UI shell
+        ├── app.js             # Cytoscape.js glue, custom styles
+        └── style.css          # Layout / colors for the viewer
 ```
 
-## Requirements
 
-* Python 3.8+
-* PostgreSQL database with trust relations
-* 4GB+ RAM for large graphs
-* NetworkX 3.0+
-
-## Command Line Options
-
-```bash
-# Show help and available metrics modes (graph analysis)
-python graph_metrics.py --help
-python graph_metrics.py -h
-
-# Show help for blacklist / whitelist comparison
-python compare_blacklist_csvs.py --help
-
-# Show help for applying CSV updates to blacklist/whitelist
-python update_blacklist.py --help
-```
-
-## Customization Tips
-
-### Creating Custom Metric Sets
-
-Edit the script to define your own presets:
-
-```python
-METRIC_PRESETS = {
-    'basic': ['topology', 'clustering'],
-    'my_custom': ['topology', 'centrality', 'reciprocity'],  # Add your own
-    # ...
-}
-```
-
-### Adjusting Performance
-
-For very large graphs, consider:
-
-1. Use `basic` or `essential` mode first
-2. Run expensive metrics separately
-3. Increase `N_JOBS` for more parallelism
-4. Comment out metrics with size restrictions in the code
-
-**Want to see what modes are available?**
-
-```bash
-python graph_metrics.py --help
-```
 

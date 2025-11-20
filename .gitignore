@@ -39,7 +39,8 @@ env/
 # Output files
 *.csv
 *.log
-cytoscape/trust_graph.cys 
+cytoscape/*.cys 
+logs/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -47,3 +48,6 @@ cytoscape/trust_graph.cys
 # OS
 .DS_Store
 Thumbs.db
+
+# Ignore all cache files but keep the directory
+!.gitignore
