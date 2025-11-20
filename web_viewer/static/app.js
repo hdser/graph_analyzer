@@ -8,6 +8,7 @@ let currentState = null;
 let availableConfig = null;
 let currentStyle = null;
 let graphData = {};
+let neighborHighlightState = 0; // 0: Off, 1: Out, 2: In, 3: Both
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('Initializing Graph Analyzer...');
@@ -129,7 +130,7 @@ const COLOR_GRADIENTS = {
         { stop: 0.33, color: '#94ACDA' },
         { stop: 0.44, color: '#C5CDDC' },
         { stop: 0.56, color: '#DFC8C0' },
-        { stop: 0.67, color: '#E39E86' },
+        { stop: 0.67, color: '#E97B53' },
         { stop: 0.78, color: '#E07055' },
         { stop: 0.89, color: '#CA3A3E' },
         { stop: 1.0,  color: '#B40426' }
@@ -243,7 +244,6 @@ async function loadAvailableConfig() {
             gradientSelect.appendChild(opt);
         });
 
-        // Also populate edge width dropdown with numeric metrics placeholder
         const edgeWidthSelect = document.getElementById('edge-width-metric');
         edgeWidthSelect.innerHTML = '<option value="fixed">Fixed</option>';
 
@@ -255,6 +255,17 @@ async function loadAvailableConfig() {
 
 function setupEventListeners() {
     document.getElementById('load-btn').addEventListener('click', loadGraphs);
+    document.getElementById('metrics-btn').addEventListener('click', runMetrics);
+
+    // Filter Buttons
+    document.getElementById('filter-btn').addEventListener('click', filterNodes);
+    document.getElementById('reset-filter-btn').addEventListener('click', () => {
+        if(cy) cy.elements().unselect();
+        updateStatus('Selection reset', 'info');
+    });
+
+    // Neighbor Toggle
+    document.getElementById('neighbor-toggle-btn').addEventListener('click', toggleNeighborHighlight);
 
     document.getElementById('metrics-mode').addEventListener('change', (e) => {
         document.getElementById('custom-metrics').style.display = e.target.value === 'custom' ? 'block' : 'none';
@@ -315,7 +326,6 @@ function setupEventListeners() {
         document.getElementById('edge-width-max-value').textContent = e.target.value;
     });
 
-    // Close button for info panel (RIGHT PANEL)
     document.querySelector('.close-btn')?.addEventListener('click', () => {
         document.getElementById('info-panel').style.display = 'none';
     });
@@ -325,25 +335,15 @@ async function loadGraphs() {
     const selectedFiles = Array.from(document.querySelectorAll('input[name="sql-file"]:checked')).map(cb => cb.value);
     if (selectedFiles.length === 0) return updateStatus('Select at least one SQL file', 'error');
 
-    let metricsMode = document.getElementById('metrics-mode').value;
-    if (metricsMode === 'custom') {
-        const sels = Array.from(document.querySelectorAll('input[name="custom-metric"]:checked')).map(cb => cb.value);
-        if (sels.length === 0) return updateStatus('Select metric category', 'error');
-        metricsMode = sels.join(',');
-    }
-
     const config = {
         sql_files: selectedFiles,
-        metrics_mode: metricsMode,
-        metrics_graph_id: document.getElementById('metrics-graph').value || null,
-        layout_algorithm: document.getElementById('layout-algorithm').value,
         use_cached_layout: document.getElementById('use-cached-layout').checked
     };
 
     const btn = document.getElementById('load-btn');
     const status = document.getElementById('load-status');
     btn.disabled = true;
-    btn.textContent = "Computing...";
+    btn.textContent = "Loading...";
     status.style.display = 'block';
     
     try {
@@ -367,6 +367,8 @@ async function loadGraphs() {
             select.appendChild(opt);
         });
 
+        document.getElementById('metrics-btn').disabled = false;
+
         if (currentState.loaded_graphs.length > 0) {
             select.value = currentState.loaded_graphs[0];
             await displayGraph(currentState.loaded_graphs[0]);
@@ -377,7 +379,63 @@ async function loadGraphs() {
         updateStatus(err.message, 'error');
     } finally {
         btn.disabled = false;
-        btn.textContent = "Load Graphs";
+        btn.textContent = "Load Networks";
+        status.style.display = 'none';
+    }
+}
+
+async function runMetrics() {
+    let metricsMode = document.getElementById('metrics-mode').value;
+    if (metricsMode === 'custom') {
+        const sels = Array.from(document.querySelectorAll('input[name="custom-metric"]:checked')).map(cb => cb.value);
+        if (sels.length === 0) return updateStatus('Select metric category', 'error');
+        metricsMode = sels.join(',');
+    }
+
+    const config = {
+        metrics_mode: metricsMode,
+        metrics_graph_id: document.getElementById('metrics-graph').value || null
+    };
+
+    const btn = document.getElementById('metrics-btn');
+    const status = document.getElementById('metrics-status');
+    btn.disabled = true;
+    btn.textContent = "Running...";
+    status.style.display = 'block';
+
+    try {
+        const response = await fetch('/api/metrics', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config)
+        });
+
+        if (!response.ok) throw new Error((await response.json()).detail || 'Failed');
+        
+        const result = await response.json();
+        updateStatus(`Computed ${result.metrics_computed.length} metrics`, 'success');
+        
+        if (cy && result.node_data) {
+            cy.batch(() => {
+                result.node_data.forEach(data => {
+                    const node = cy.getElementById(data.id);
+                    if (node.length > 0) {
+                        node.data(data);
+                    }
+                });
+            });
+            
+            const nodes = cy.nodes().map(n => ({ data: n.data() }));
+            populateMetricDropdowns(nodes, null);
+            updateCytoscapeStyle();
+        }
+
+    } catch (err) {
+        console.error(err);
+        updateStatus(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Run Metrics";
         status.style.display = 'none';
     }
 }
@@ -403,11 +461,13 @@ async function displayGraph(graphId) {
         cy = cytoscape({
             container: document.getElementById('cy'),
             elements: graphData[graphId],
-            style: [], // Start with empty style
+            style: [], 
             layout: { name: 'preset' },
             minZoom: 0.1, maxZoom: 10,
             hideEdgesOnViewport: true, 
-            textureOnViewport: true
+            textureOnViewport: true,
+            pixelRatio: 1,
+            motionBlur: false
         });
         
         populateMetricDropdowns(nodes, edges);
@@ -426,14 +486,12 @@ async function displayGraph(graphId) {
 function populateMetricDropdowns(nodes, edges) {
     if (!nodes || nodes.length === 0) return;
     
-    // Extract numeric metrics from nodes
     const firstNodeData = nodes[0].data;
     const nodeMetrics = Object.keys(firstNodeData).filter(k => 
         !['id', 'label', 'isNew', 'x', 'y', 'source', 'target'].includes(k) &&
         typeof firstNodeData[k] === 'number'
     );
     
-    // Extract numeric metrics from edges if available
     let edgeMetrics = [];
     if (edges && edges.length > 0) {
         const firstEdgeData = edges[0].data;
@@ -443,48 +501,62 @@ function populateMetricDropdowns(nodes, edges) {
         );
     }
     
-    // Populate node size dropdown
-    const sizeSelect = document.getElementById('node-size-metric');
-    const rebuildNodeOptions = (select, metrics, defaultVal) => {
+    const rebuildOptions = (select, metrics, defaultVal) => {
         const currentVal = select.value;
-        select.innerHTML = '<option value="fixed">Fixed</option>';
+        select.innerHTML = '<option value="fixed">Fixed / Select...</option>';
         metrics.forEach(m => {
             const opt = document.createElement('option');
             opt.value = m;
             opt.textContent = m.replace(/_/g, ' ');
             select.appendChild(opt);
         });
+        
         if (metrics.includes(currentVal)) select.value = currentVal;
         else if (metrics.includes(defaultVal)) select.value = defaultVal;
     };
 
-    rebuildNodeOptions(sizeSelect, nodeMetrics, 'total_degree');
+    // Populate Style Dropdowns
+    rebuildOptions(document.getElementById('node-size-metric'), nodeMetrics, 'total_degree');
+    rebuildOptions(document.getElementById('node-color-metric'), nodeMetrics, 'community_id');
     
-    // Populate node color dropdown
-    const colorSelect = document.getElementById('node-color-metric');
-    rebuildNodeOptions(colorSelect, nodeMetrics, 'community_id');
-    
-    // Populate edge width dropdown
-    const edgeWidthSelect = document.getElementById('edge-width-metric');
-    const currentEdgeVal = edgeWidthSelect.value;
-    edgeWidthSelect.innerHTML = '<option value="fixed">Fixed</option>';
-    edgeMetrics.forEach(m => {
+    // Populate Filter Dropdown
+    const filterSelect = document.getElementById('filter-metric');
+    // Keep "Select Metric..." prompt at top
+    const currentFilter = filterSelect.value;
+    filterSelect.innerHTML = '<option value="">Select Metric...</option>';
+    nodeMetrics.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m;
         opt.textContent = m.replace(/_/g, ' ');
-        edgeWidthSelect.appendChild(opt);
+        filterSelect.appendChild(opt);
     });
-    if (edgeMetrics.includes(currentEdgeVal)) edgeWidthSelect.value = currentEdgeVal;
-    else if (edgeMetrics.includes('amount')) edgeWidthSelect.value = 'amount';
-    else if (edgeMetrics.includes('weight')) edgeWidthSelect.value = 'weight';
+    if (nodeMetrics.includes(currentFilter)) filterSelect.value = currentFilter;
+
+    if (edges) {
+        const edgeWidthSelect = document.getElementById('edge-width-metric');
+        const currentEdgeVal = edgeWidthSelect.value;
+        edgeWidthSelect.innerHTML = '<option value="fixed">Fixed</option>';
+        edgeMetrics.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m.replace(/_/g, ' ');
+            edgeWidthSelect.appendChild(opt);
+        });
+        if (edgeMetrics.includes(currentEdgeVal)) edgeWidthSelect.value = currentEdgeVal;
+        else if (edgeMetrics.includes('amount')) edgeWidthSelect.value = 'amount';
+    }
     
-    // Trigger change events to update UI
-    colorSelect.dispatchEvent(new Event('change'));
+    const colorElem = document.getElementById('node-color-metric');
+    if(colorElem) colorElem.dispatchEvent(new Event('change'));
 }
 
 function setupCyListeners() {
     cy.on('tap', 'node', evt => {
         const node = evt.target;
+        neighborHighlightState = 0; // Reset neighbor state on new click
+        updateNeighborButtonText();
+        cy.elements().removeClass('highlighted-neighbor');
+        
         hideAllInfo();
         showNodeInfo(node);
     });
@@ -510,6 +582,78 @@ function setupCyListeners() {
             }
         }, 50);
     });
+}
+
+// ==========================================
+// NEW: Filter Logic
+// ==========================================
+function filterNodes() {
+    if (!cy) return;
+    const metric = document.getElementById('filter-metric').value;
+    const op = document.getElementById('filter-operator').value;
+    const rawVal = document.getElementById('filter-value').value;
+    const val = parseFloat(rawVal);
+
+    if (!metric || isNaN(val)) {
+        return updateStatus('Please select a metric and enter a numeric value', 'error');
+    }
+
+    cy.elements().unselect();
+    const matches = cy.nodes().filter(n => {
+        const d = n.data(metric);
+        if (d === undefined) return false;
+        switch(op) {
+            case 'gt': return d > val;
+            case 'lt': return d < val;
+            case 'eq': return d == val;
+            case 'gte': return d >= val;
+            case 'lte': return d <= val;
+            default: return false;
+        }
+    });
+
+    if (matches.length > 0) {
+        matches.select();
+        updateStatus(`Selected ${matches.length} matching nodes`, 'success');
+    } else {
+        updateStatus('No nodes match criteria', 'info');
+    }
+}
+
+// ==========================================
+// NEW: Neighbor Highlight Logic
+// ==========================================
+function toggleNeighborHighlight() {
+    if (!cy) return;
+    const selected = cy.$('node:selected');
+    if (selected.length === 0) return;
+
+    // Cycle state: 0(Off) -> 1(Out) -> 2(In) -> 3(Both) -> 0(Off)
+    neighborHighlightState = (neighborHighlightState + 1) % 4;
+    updateNeighborButtonText();
+
+    cy.elements().removeClass('highlighted-neighbor');
+
+    if (neighborHighlightState === 0) return;
+
+    let neighbors = cy.collection();
+    if (neighborHighlightState === 1 || neighborHighlightState === 3) {
+        neighbors = neighbors.union(selected.outgoers());
+    }
+    if (neighborHighlightState === 2 || neighborHighlightState === 3) {
+        neighbors = neighbors.union(selected.incomers());
+    }
+
+    if (neighbors.length > 0) {
+        neighbors.addClass('highlighted-neighbor');
+        updateStatus(`Highlighted ${neighbors.length} items`, 'info');
+    }
+}
+
+function updateNeighborButtonText() {
+    const btn = document.getElementById('neighbor-toggle-btn');
+    const texts = ["Highlight Neighbors: Off", "Highlight: Outgoing", "Highlight: Incoming", "Highlight: Both"];
+    btn.textContent = texts[neighborHighlightState];
 }
 
 function hideAllInfo() {
@@ -546,6 +690,7 @@ function showEdgeInfo(edge) {
     document.getElementById('edge-info').style.display = 'block';
     
     const data = edge.data();
+    // Apply updated address styling classes via HTML in index.html or here
     document.getElementById('edge-source').textContent = data.source;
     document.getElementById('edge-target').textContent = data.target;
     
@@ -557,13 +702,62 @@ function showEdgeInfo(edge) {
     });
 }
 
-
 function showMultiInfo(collection) {
     hideAllInfo();
     document.getElementById('info-panel').style.display = 'block';
     document.getElementById('multi-info').style.display = 'block';
-    document.getElementById('multi-node-count').textContent = collection.nodes().length;
-    document.getElementById('multi-edge-count').textContent = collection.edges().length;
+    
+    const nodes = collection.nodes();
+    const edges = collection.edges();
+    
+    document.getElementById('multi-node-count').textContent = nodes.length;
+    document.getElementById('multi-edge-count').textContent = edges.length;
+    
+    const metricsList = document.getElementById('multi-metrics-list');
+    metricsList.innerHTML = '';
+
+    // 1. Detailed Counts for Edges
+    if (edges.length > 0) {
+        const sources = new Set(edges.map(e => e.data('source')));
+        const targets = new Set(edges.map(e => e.data('target')));
+        
+        metricsList.innerHTML += `
+            <div class="metric-row"><span class="metric-label">Distinct Sources</span><span class="metric-value">${sources.size}</span></div>
+            <div class="metric-row"><span class="metric-label">Distinct Targets</span><span class="metric-value">${targets.size}</span></div>
+            <div class="metric-row" style="border-bottom: 1px dashed #333; margin: 5px 0;"></div>
+        `;
+    }
+
+    // 2. Aggregate Numeric Metrics for Nodes
+    if (nodes.length > 0) {
+        const firstData = nodes[0].data();
+        const numericKeys = Object.keys(firstData).filter(k => 
+            typeof firstData[k] === 'number' && !['x','y','id'].includes(k)
+        );
+
+        if (numericKeys.length === 0) {
+            metricsList.innerHTML += '<div style="padding:10px; color:#808080; font-style:italic;">No numeric metrics to aggregate.</div>';
+        } else {
+            numericKeys.forEach(key => {
+                const values = nodes.map(n => n.data(key));
+                const sum = values.reduce((a, b) => a + b, 0);
+                const avg = sum / values.length;
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                
+                metricsList.innerHTML += `
+                    <div style="margin-bottom:8px; border-bottom:1px solid #222; padding-bottom:4px;">
+                        <div style="color:#4A90E2; font-size:11px; margin-bottom:2px;">${key.replace(/_/g, ' ')}</div>
+                        <div style="display:flex; justify-content:space-between; font-size:10px; color:#bbb;">
+                            <span>Avg: ${avg.toFixed(2)}</span>
+                            <span>Max: ${max.toFixed(2)}</span>
+                            <span>Sum: ${sum.toFixed(0)}</span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    }
 }
 
 function updateNeighborList(edges, countId, listId, type) {
@@ -635,7 +829,7 @@ function applyStyle() {
             colorMetric: document.getElementById('node-color-metric').value,
             colorFixed: document.getElementById('node-color-fixed').value,
             colorGradient: document.getElementById('node-color-gradient').value,
-            colorSelected: '#FFD700'
+            colorSelected: '#FF0000'
         },
         edge: {
             widthMetric: document.getElementById('edge-width-metric').value,
@@ -655,18 +849,15 @@ function updateCytoscapeStyle() {
     if (!cy) return;
     const style = currentStyle;
     
-    // Build base style object for nodes
     const nodeStyle = { 
         'border-width': 0, 
         'label': ''
     };
     
-    // Handle node sizing
     if (style.node.sizeMetric === 'fixed') {
         nodeStyle['width'] = style.node.sizeMin;
         nodeStyle['height'] = style.node.sizeMin;
     } else {
-        // Calculate min/max for size mapping
         let sizeMin = Infinity, sizeMax = -Infinity;
         cy.nodes().forEach(n => {
             const v = n.data(style.node.sizeMetric);
@@ -679,19 +870,15 @@ function updateCytoscapeStyle() {
             nodeStyle['width'] = `mapData(${style.node.sizeMetric}, ${sizeMin}, ${sizeMax}, ${style.node.sizeMin}, ${style.node.sizeMax})`;
             nodeStyle['height'] = `mapData(${style.node.sizeMetric}, ${sizeMin}, ${sizeMax}, ${style.node.sizeMin}, ${style.node.sizeMax})`;
         } else {
-            // Fallback to fixed if no valid range
             nodeStyle['width'] = style.node.sizeMin;
             nodeStyle['height'] = style.node.sizeMin;
         }
     }
     
-    // Handle node color
     if (style.node.colorMetric === 'fixed') {
         nodeStyle['background-color'] = style.node.colorFixed;
     }
-    // If not fixed, we'll apply colors after setting the stylesheet
     
-    // Build edge style
     const edgeStyle = {
         'line-color': style.edge.color,
         'target-arrow-color': style.edge.color,
@@ -700,11 +887,9 @@ function updateCytoscapeStyle() {
         'opacity': style.edge.opacity
     };
     
-    // Handle edge width
     if (style.edge.widthMetric === 'fixed') {
         edgeStyle['width'] = style.edge.widthMin;
     } else {
-        // Calculate min/max for edge width mapping
         let edgeMin = Infinity, edgeMax = -Infinity;
         cy.edges().forEach(e => {
             const v = e.data(style.edge.widthMetric);
@@ -720,7 +905,6 @@ function updateCytoscapeStyle() {
         }
     }
     
-    // Apply the base stylesheet
     cy.style()
         .selector('node').style(nodeStyle)
         .selector('node:selected').style({
@@ -733,6 +917,14 @@ function updateCytoscapeStyle() {
             'border-color': '#00FF00',
             'z-index': 998
         })
+        // NEW: Highlight neighbor style
+        .selector('.highlighted-neighbor').style({
+            'border-width': 2,
+            'border-color': '#FF0000', // Orange glow
+            'shadow-blur': 10,
+            'shadow-color': '#FF0000',
+            'z-index': 995
+        })
         .selector('edge').style(edgeStyle)
         .selector('edge:selected').style({
             'line-color': style.edge.colorSelected,
@@ -741,9 +933,14 @@ function updateCytoscapeStyle() {
             'width': Math.max(4, style.edge.widthMax),
             'z-index': 999
         })
+        .selector('edge.highlighted-neighbor').style({
+            'line-color': '#FF0000',
+            'target-arrow-color': '#FF0000',
+            'opacity': 0.8,
+            'z-index': 995
+        })
         .update();
     
-    // Now apply gradient colors as bypass styles if needed
     if (style.node.colorMetric !== 'fixed') {
         let colorMin = Infinity, colorMax = -Infinity;
         cy.nodes().forEach(node => {
@@ -755,12 +952,10 @@ function updateCytoscapeStyle() {
         });
         
         if (colorMin === Infinity || colorMin === colorMax) { 
-            // No valid range, use default
             colorMin = 0; 
             colorMax = 1; 
         }
         
-        // Apply colors as bypass styles
         cy.batch(() => {
             cy.nodes().forEach(node => {
                 const val = node.data(style.node.colorMetric);
@@ -771,7 +966,6 @@ function updateCytoscapeStyle() {
             });
         });
     } else {
-        // Clear bypass colors to let stylesheet color take effect
         cy.batch(() => {
             cy.nodes().removeStyle('background-color');
         });

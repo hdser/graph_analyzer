@@ -71,13 +71,13 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 # Data Models
 # ============================================================================
 
-class GraphConfig(BaseModel):
+class LoadConfig(BaseModel):
     sql_files: List[str]
+    use_cached_layout: bool = True
+
+class MetricsConfig(BaseModel):
     metrics_mode: str = "basic"
     metrics_graph_id: Optional[str] = None
-    layout_algorithm: str = "auto"  # "auto", "cytoscape-desktop", "fcose", etc.
-    use_cached_layout: bool = True  # Try to use cached layout first
-
 
 class NetworkState(BaseModel):
     loaded_graphs: List[str]
@@ -115,7 +115,8 @@ class NetworkService:
         self.metrics_df = None
         self.layouts = {}
         self.graphs = {}
-        self.current_config = None
+        self.current_load_config = None
+        self.current_metrics_config = None
         
         self.available_sql_files = self._scan_sql_files()
         self.layout_service_url = os.getenv("LAYOUT_SERVICE_URL", "http://localhost:3001")
@@ -315,7 +316,6 @@ class NetworkService:
         
         print(f"[LAYOUT] Computing {algorithm} layout via service for {graph_id}")
         
-        # --- FIXED: Robust handling of input type to prevent list index errors ---
         if isinstance(df_edges, pd.DataFrame):
             # Standard full layout case
             edges = [{"source": row['source'], "target": row['target']} for _, row in df_edges.iterrows()]
@@ -323,7 +323,6 @@ class NetworkService:
         elif isinstance(df_edges, list):
             # Incremental layout case (list of dicts)
             edges = df_edges
-            # Extract unique nodes from the list of dicts
             sources = [e['source'] for e in edges]
             targets = [e['target'] for e in edges]
             node_ids = list(set(sources + targets))
@@ -433,27 +432,28 @@ class NetworkService:
         return new_positions
 
     def compute_layout(self, graph_id: str, df_edges: pd.DataFrame, 
-                       df_metrics_all: pd.DataFrame, config: GraphConfig) -> Dict:
+                       df_metrics_all: pd.DataFrame, use_cache: bool) -> Dict:
+        """
+        Compute layout with strict fallback: Cache -> Desktop -> Service (fCoSE)
+        """
         node_count = len(df_metrics_all)
         edge_count = len(df_edges)
         
-        if config.use_cached_layout:
+        # 1. Cache
+        if use_cache:
             cached_layout = self.get_cached_layout(graph_id, node_count, edge_count)
-            if cached_layout: return cached_layout
+            if cached_layout: 
+                return cached_layout
         
-        if config.layout_algorithm == "auto":
-            if self.cytoscape_available and edge_count < 500000:
-                try:
-                    return self.compute_layout_via_cytoscape_desktop(graph_id, df_edges, df_metrics_all)
-                except Exception as e:
-                    print(f"[LAYOUT] Cytoscape Desktop failed: {e}")
-            return self.compute_layout_via_service(graph_id, df_edges, "fcose")
-        elif config.layout_algorithm == "cytoscape-desktop":
-            if not self.cytoscape_available:
-                return self.compute_layout_via_service(graph_id, df_edges, "fcose")
-            return self.compute_layout_via_cytoscape_desktop(graph_id, df_edges, df_metrics_all)
-        else:
-            return self.compute_layout_via_service(graph_id, df_edges, config.layout_algorithm)
+        # 2. Cytoscape Desktop
+        if self.cytoscape_available and edge_count < 500000:
+            try:
+                return self.compute_layout_via_cytoscape_desktop(graph_id, df_edges, df_metrics_all)
+            except Exception as e:
+                print(f"[LAYOUT] Cytoscape Desktop failed, falling back: {e}")
+        
+        # 3. Service (fCoSE)
+        return self.compute_layout_via_service(graph_id, df_edges, "fcose")
     
     def load_edge_layers_from_sql(self, sql_files: List[str]) -> dict:
         edge_layers = {}
@@ -470,7 +470,11 @@ class NetworkService:
                                           metrics_graph_id: str,
                                           metrics_mode: str = None) -> pd.DataFrame:
         if metrics_graph_id not in edge_layers:
-            raise ValueError(f"metrics_graph_id='{metrics_graph_id}' not found")
+            # If specific target not found/provided, default to the first available
+            if edge_layers:
+                metrics_graph_id = list(edge_layers.keys())[0]
+            else:
+                return pd.DataFrame()
         
         df_metrics_edges = edge_layers[metrics_graph_id]
         G = nx.DiGraph()
@@ -481,11 +485,12 @@ class NetworkService:
             all_avatars.update(df_edges["source"].unique())
             all_avatars.update(df_edges["target"].unique())
         
+        # Safety check for huge graphs if mode is ambiguous
         if G.number_of_nodes() > 50000:
             if not (',' in (metrics_mode or '') or metrics_mode in ["basic", "topology", "essential"]):
                 metrics_mode = "basic"
         
-        metrics_calc = GraphMetrics(G, n_jobs=4, metrics_mode=metrics_mode or "all")
+        metrics_calc = GraphMetrics(G, n_jobs=4, metrics_mode=metrics_mode or "basic")
         df_metrics = metrics_calc.compute_all()
         
         df_all = pd.DataFrame({"avatar": list(all_avatars)})
@@ -494,35 +499,34 @@ class NetworkService:
         df_metrics_all[metric_cols] = df_metrics_all[metric_cols].replace([np.inf, -np.inf], 0).fillna(0)
         return df_metrics_all
     
-    async def load_network(self, config: GraphConfig) -> NetworkState:
+    async def load_network(self, config: LoadConfig) -> NetworkState:
         """
-        Load network with background computation and atomic state swap.
-        Ensures the current graph remains valid until the new one is fully ready.
+        Load network: Loads SQL data and computes layout. 
+        Computes 'basic' metrics by default to ensure graphs are valid.
         """
         start_time = time.time()
         
-        # --- PHASE 1: Compute everything in local variables (Background) ---
+        # --- PHASE 1: Load Data (Background) ---
         
         new_edge_layers = self.load_edge_layers_from_sql(config.sql_files)
         
-        metrics_graph_id = config.metrics_graph_id
-        if not metrics_graph_id and new_edge_layers:
-            metrics_graph_id = list(new_edge_layers.keys())[0]
-        
+        # Compute basic metrics just to have node objects
         new_metrics_df = self.compute_metrics_for_shared_avatars(
             edge_layers=new_edge_layers,
-            metrics_graph_id=metrics_graph_id,
-            metrics_mode=config.metrics_mode
+            metrics_graph_id=None, # Will auto-select
+            metrics_mode="basic" 
         )
         
         layout_start = time.time()
         new_layouts = {}
         new_graphs = {}
         layout_cached = False
+        layout_algo = "auto"
         
         # Build graphs and layouts locally
         for graph_id, df_edges in new_edge_layers.items():
             G = nx.DiGraph()
+            # Add nodes with basic attributes
             metrics_dict = new_metrics_df.set_index('avatar').to_dict('index')
             for avatar, attrs in metrics_dict.items():
                 clean_attrs = {k: (int(v) if isinstance(v, (np.int64, np.int32)) else float(v) if isinstance(v, (np.float64, np.float32)) else v) for k, v in attrs.items()}
@@ -533,15 +537,17 @@ class NetworkService:
             
             new_graphs[graph_id] = G
             
-            positions = self.compute_layout(graph_id, df_edges, new_metrics_df, config)
+            # Compute Layout (Strict Fallback Logic)
+            positions = self.compute_layout(graph_id, df_edges, new_metrics_df, config.use_cached_layout)
             new_layouts[graph_id] = positions
             
+            # Check if we hit the cache
             if config.use_cached_layout:
                 cache_key = self.get_layout_cache_key(graph_id, G.number_of_nodes(), G.number_of_edges())
                 if (self.layouts_dir / f"{cache_key}.json").exists():
                     layout_cached = True
 
-        # Pre-compute incremental updates locally
+        # Incremental updates pre-calc
         for graph_id in new_graphs:
             G = new_graphs[graph_id]
             layout = new_layouts.get(graph_id, {})
@@ -555,8 +561,6 @@ class NetworkService:
                     new_positions = self.compute_incremental_layout(graph_id, missing_nodes, layout, G)
                     layout.update(new_positions)
                     new_layouts[graph_id] = layout
-                    
-                    # Update cache
                     self.save_layout_cache(
                         graph_id, G.number_of_nodes(), G.number_of_edges(), layout, 
                         {'updated': True, 'update_time': datetime.now().isoformat()}
@@ -572,7 +576,7 @@ class NetworkService:
         self.metrics_df = new_metrics_df
         self.graphs = new_graphs
         self.layouts = new_layouts
-        self.current_config = config
+        self.current_load_config = config
         
         return NetworkState(
             loaded_graphs=list(self.graphs.keys()),
@@ -582,9 +586,57 @@ class NetworkService:
             metrics_computed=list(self.metrics_df.columns) if self.metrics_df is not None else [],
             computation_time=total_time,
             layout_computation_time=layout_time,
-            layout_algorithm=config.layout_algorithm,
+            layout_algorithm=layout_algo,
             layout_cached=layout_cached
         )
+
+    async def update_metrics(self, config: MetricsConfig) -> Dict:
+        """
+        Re-run metrics on existing graphs and update node attributes.
+        Does NOT re-run layout or reload SQL.
+        """
+        if not self.edge_layers:
+            raise ValueError("No graphs loaded. Please load networks first.")
+
+        print(f"[METRICS] Updating metrics with mode: {config.metrics_mode}")
+        start_time = time.time()
+        
+        new_metrics_df = self.compute_metrics_for_shared_avatars(
+            edge_layers=self.edge_layers,
+            metrics_graph_id=config.metrics_graph_id,
+            metrics_mode=config.metrics_mode
+        )
+        
+        self.metrics_df = new_metrics_df
+        self.current_metrics_config = config
+        
+        # Update graph objects in memory
+        metrics_dict = new_metrics_df.set_index('avatar').to_dict('index')
+        
+        # We return the new metrics so frontend can update without full reload
+        # Convert dictionary to list for frontend consumption
+        node_updates = []
+        
+        for avatar, attrs in metrics_dict.items():
+            clean_attrs = {k: (int(v) if isinstance(v, (np.int64, np.int32)) else float(v) if isinstance(v, (np.float64, np.float32)) else v) for k, v in attrs.items()}
+            
+            # Update the backend NetworkX graphs
+            for G in self.graphs.values():
+                if G.has_node(avatar):
+                    for k, v in clean_attrs.items():
+                        G.nodes[avatar][k] = v
+            
+            clean_attrs['id'] = avatar
+            node_updates.append(clean_attrs)
+
+        elapsed = time.time() - start_time
+        print(f"[METRICS] Updated {len(node_updates)} nodes in {elapsed:.2f}s")
+        
+        return {
+            "metrics_computed": list(new_metrics_df.columns),
+            "computation_time": elapsed,
+            "node_data": node_updates
+        }
     
     def get_graph_elements(self, graph_id: str):
         if graph_id not in self.graphs:
@@ -660,12 +712,21 @@ async def get_config():
     }
 
 @app.post("/api/load")
-async def load_network(config: GraphConfig):
+async def load_network(config: LoadConfig):
     try:
         state = await network_service.load_network(config)
         return state
     except Exception as e:
         print(f"Error loading network: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/metrics")
+async def update_metrics(config: MetricsConfig):
+    try:
+        result = await network_service.update_metrics(config)
+        return result
+    except Exception as e:
+        print(f"Error updating metrics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/graphs/{graph_id}/elements")
