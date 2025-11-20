@@ -1,11 +1,13 @@
 """
 Web viewer with Cytoscape Desktop layout computation and caching
+Supports Server-Side Incremental Layout Updates
 """
 
 import os
 import json
 import time
 import hashlib
+import random
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -95,7 +97,8 @@ class NetworkState(BaseModel):
 
 class NetworkService:
     """
-    Network service with Cytoscape Desktop layout support and caching
+    Network service with Cytoscape Desktop layout support, caching, and
+    Incremental Layout capabilities.
     """
     
     def __init__(self):
@@ -223,7 +226,9 @@ class NetworkService:
     
     def compute_layout_via_cytoscape_desktop(self, graph_id: str, df_edges: pd.DataFrame, 
                                         df_metrics_all: pd.DataFrame) -> Dict:
-        """Use Cytoscape Desktop to compute layout - WORKING VERSION"""
+        """
+        Use Cytoscape Desktop to compute layout via CyREST (bypassing style timeout issues)
+        """
         if not self.cytoscape_available:
             raise RuntimeError("Cytoscape Desktop is not available")
         
@@ -231,70 +236,53 @@ class NetworkService:
         start = time.time()
         
         try:
-            # Create network exactly like stream_to_cytoscape.py
-            df_nodes = df_metrics_all.rename(columns={"avatar": "id"}).copy()
-            df_edges_stream = df_edges.copy()
-            if "interaction" not in df_edges_stream.columns:
-                df_edges_stream["interaction"] = graph_id
+            nodes_payload = [{"data": {"id": str(row['avatar'])}} for _, row in df_metrics_all.iterrows()]
+            edges_payload = [
+                {"data": {"source": str(row['source']), "target": str(row['target'])}} 
+                for _, row in df_edges.iterrows()
+            ]
             
             title = f"web_viewer_{graph_id}_{int(time.time())}"
             
-            # Create and layout network
-            print(f"[LAYOUT] Creating network in Cytoscape...")
-            net_suid = p4c.create_network_from_data_frames(
-                nodes=df_nodes,
-                edges=df_edges_stream,
-                title=title,
-                collection="Web Viewer Temp"
-            )
+            print(f"[LAYOUT] Creating network via CyREST (bypassing vizmap/styles)...")
+            res = p4c.cyrest_post("networks", body={
+                "data": {"name": title},
+                "elements": {"nodes": nodes_payload, "edges": edges_payload}
+            })
+            net_suid = res['networkSUID']
             
+            try:
+                p4c.cyrest_post(f"networks/{net_suid}/views")
+                time.sleep(0.2)
+            except Exception as e:
+                print(f"[LAYOUT] View creation note: {e}")
+
             print(f"[LAYOUT] Applying force-directed layout...")
-            p4c.set_current_network(net_suid)
             p4c.layout_network("force-directed", network=net_suid)
             
-            # Wait for layout to complete
-            time.sleep(5)
-            
-            # Get the view JSON which contains positions
             print(f"[LAYOUT] Getting positions from view...")
             views = p4c.get_network_views(net_suid)
             if not views:
-                raise RuntimeError("No view found")
+                raise RuntimeError("No view found after layout")
             
             view_suid = views[0]
-            
-            # Get the full view as JSON - THIS HAS THE POSITIONS!
             view_json = p4c.cyrest_get(f"networks/{net_suid}/views/{view_suid}")
             
             positions = {}
             
-            # Parse the Cytoscape.js format JSON
             if view_json and isinstance(view_json, dict):
                 elements = view_json.get('elements', {})
                 nodes = elements.get('nodes', [])
                 
-                print(f"[LAYOUT] Found {len(nodes)} nodes in view")
-                
                 for node in nodes:
-                    # Each node has 'data' and 'position'
                     if isinstance(node, dict):
                         node_data = node.get('data', {})
                         node_position = node.get('position', {})
+                        node_id = (node_data.get('name') or node_data.get('shared_name') or node_data.get('id'))
                         
-                        # Get the node ID (use 'name' or 'shared_name' or 'id')
-                        node_id = (node_data.get('name') or 
-                                node_data.get('shared_name') or 
-                                node_data.get('id'))
-                        
-                        # Get the x,y coordinates
                         if node_id and 'x' in node_position and 'y' in node_position:
-                            positions[node_id] = {
-                                'x': float(node_position['x']),
-                                'y': float(node_position['y'])
-                            }
+                            positions[node_id] = {'x': float(node_position['x']), 'y': float(node_position['y'])}
             
-            # Clean up
-            print(f"[LAYOUT] Cleaning up...")
             try:
                 p4c.delete_network(net_suid)
             except:
@@ -306,57 +294,65 @@ class NetworkService:
             if len(positions) == 0:
                 raise RuntimeError("No positions retrieved")
             
-            # Save to cache
             self.save_layout_cache(
-                graph_id, 
-                len(df_nodes), 
-                len(df_edges),
-                positions,
+                graph_id, len(nodes_payload), len(edges_payload), positions,
                 {'algorithm': 'cytoscape-desktop-force-directed', 'time': elapsed}
             )
-            
             return positions
             
         except Exception as e:
             print(f"[LAYOUT] Error: {e}")
-            # Clean up
             try:
-                if 'net_suid' in locals():
-                    p4c.delete_network(net_suid)
-            except:
-                pass
+                if 'net_suid' in locals(): p4c.delete_network(net_suid)
+            except: pass
             raise
         
     def compute_layout_via_service(self, graph_id: str, df_edges: pd.DataFrame, 
-                                  algorithm: str = "fcose") -> Dict:
-        """Compute layout using Cytoscape.js service (fallback)"""
+                                  algorithm: str = "fcose", locked_positions: Dict = None,
+                                  initial_positions: Dict = None) -> Dict:
+        """Compute layout using Cytoscape.js service."""
         import requests
         
         print(f"[LAYOUT] Computing {algorithm} layout via service for {graph_id}")
         
-        # Get unique nodes
-        nodes = list(set(df_edges['source'].tolist() + df_edges['target'].tolist()))
+        # --- FIXED: Robust handling of input type to prevent list index errors ---
+        if isinstance(df_edges, pd.DataFrame):
+            # Standard full layout case
+            edges = [{"source": row['source'], "target": row['target']} for _, row in df_edges.iterrows()]
+            node_ids = list(set(df_edges['source'].tolist() + df_edges['target'].tolist()))
+        elif isinstance(df_edges, list):
+            # Incremental layout case (list of dicts)
+            edges = df_edges
+            # Extract unique nodes from the list of dicts
+            sources = [e['source'] for e in edges]
+            targets = [e['target'] for e in edges]
+            node_ids = list(set(sources + targets))
+        else:
+            print("[LAYOUT] Error: Unknown edge format")
+            return {}
         
-        # Prepare edges
-        edges = [
-            {"source": row['source'], "target": row['target']}
-            for _, row in df_edges.iterrows()
-        ]
+        nodes_payload = []
+        for node in node_ids:
+            node_obj = {"data": {"id": node}}
+            if initial_positions and node in initial_positions:
+                node_obj["position"] = initial_positions[node]
+            nodes_payload.append(node_obj)
         
-        print(f"[LAYOUT] Sending {len(nodes)} nodes and {len(edges)} edges to layout service")
+        payload = {
+            "nodes": nodes_payload,
+            "edges": edges,
+            "algorithm": algorithm
+        }
+        
+        if locked_positions:
+            payload["lockedPositions"] = locked_positions
         
         try:
             start = time.time()
-            
-            # Call layout service
             response = requests.post(
                 f"{self.layout_service_url}/compute-layout",
-                json={
-                    "nodes": nodes,
-                    "edges": edges,
-                    "algorithm": algorithm
-                },
-                timeout=300  # 5 minutes timeout
+                json=payload,
+                timeout=300
             )
             
             if response.status_code != 200:
@@ -365,222 +361,217 @@ class NetworkService:
             result = response.json()
             elapsed = time.time() - start
             
-            print(f"[LAYOUT] Layout computed in {elapsed:.2f}s")
-            
-            # Save to cache
-            self.save_layout_cache(
-                graph_id,
-                len(nodes),
-                len(edges),
-                result['positions'],
-                {'algorithm': algorithm, 'time': elapsed}
-            )
+            if not locked_positions:
+                self.save_layout_cache(
+                    graph_id, len(node_ids), len(edges), result['positions'],
+                    {'algorithm': algorithm, 'time': elapsed}
+                )
             
             return result['positions']
             
         except Exception as e:
             print(f"[LAYOUT] Error calling layout service: {e}")
-            # Fallback to circular layout
-            return self.compute_circular_layout(nodes)
+            return self.compute_circular_layout(node_ids)
     
     def compute_circular_layout(self, nodes: List) -> Dict:
-        """Simple circular layout as ultimate fallback"""
         n = len(nodes)
         positions = {}
         for i, node in enumerate(nodes):
             angle = 2 * np.pi * i / n
-            positions[node] = {
-                "x": 1000 * np.cos(angle),
-                "y": 1000 * np.sin(angle)
-            }
+            positions[node] = {"x": 1000 * np.cos(angle), "y": 1000 * np.sin(angle)}
         return positions
     
+    def _calculate_centroid_positions(self, new_nodes: list, anchors: set, current_layout: dict, G: nx.DiGraph) -> dict:
+        initial_positions = {}
+        for node in new_nodes:
+            neighbors_positions = []
+            if G.has_node(node):
+                for n in G.neighbors(node):
+                    if n in anchors: neighbors_positions.append(current_layout[n])
+                for n in G.predecessors(node):
+                    if n in anchors: neighbors_positions.append(current_layout[n])
+            
+            if neighbors_positions:
+                avg_x = sum(p['x'] for p in neighbors_positions) / len(neighbors_positions)
+                avg_y = sum(p['y'] for p in neighbors_positions) / len(neighbors_positions)
+                initial_positions[node] = {
+                    'x': avg_x + random.uniform(-50, 50),
+                    'y': avg_y + random.uniform(-50, 50)
+                }
+            else:
+                initial_positions[node] = {
+                    'x': random.uniform(-500, 500), 
+                    'y': random.uniform(-500, 500)
+                }
+        return initial_positions
+
+    def compute_incremental_layout(self, graph_id: str, new_nodes: list, current_layout: dict, G: nx.DiGraph):
+        start_time = time.time()
+        new_nodes_set = set(new_nodes)
+        anchors = set()
+        subgraph_edges_list = []
+        
+        for node in new_nodes:
+            if G.has_node(node):
+                for _, target in G.out_edges(node):
+                    subgraph_edges_list.append({"source": node, "target": target})
+                    if target not in new_nodes_set and target in current_layout:
+                        anchors.add(target)
+                for source, _ in G.in_edges(node):
+                    subgraph_edges_list.append({"source": source, "target": node})
+                    if source not in new_nodes_set and source in current_layout:
+                        anchors.add(source)
+        
+        locked_positions = {n: current_layout[n] for n in anchors}
+        initial_positions = self._calculate_centroid_positions(new_nodes, anchors, current_layout, G)
+        
+        # Pass list of dicts directly
+        new_positions = self.compute_layout_via_service(
+            graph_id, subgraph_edges_list, algorithm="fcose",
+            locked_positions=locked_positions, initial_positions=initial_positions
+        )
+        return new_positions
+
     def compute_layout(self, graph_id: str, df_edges: pd.DataFrame, 
                        df_metrics_all: pd.DataFrame, config: GraphConfig) -> Dict:
-        """
-        Compute or retrieve layout with this priority:
-        1. Try cached layout
-        2. Try Cytoscape Desktop (if available and requested)
-        3. Fall back to layout service
-        4. Ultimate fallback to circular layout
-        """
         node_count = len(df_metrics_all)
         edge_count = len(df_edges)
         
-        # Step 1: Try cached layout
         if config.use_cached_layout:
             cached_layout = self.get_cached_layout(graph_id, node_count, edge_count)
-            if cached_layout:
-                return cached_layout
+            if cached_layout: return cached_layout
         
-        # Step 2: Compute new layout
         if config.layout_algorithm == "auto":
-            # Auto-select based on availability and graph size
             if self.cytoscape_available and edge_count < 500000:
                 try:
-                    return self.compute_layout_via_cytoscape_desktop(
-                        graph_id, df_edges, df_metrics_all
-                    )
+                    return self.compute_layout_via_cytoscape_desktop(graph_id, df_edges, df_metrics_all)
                 except Exception as e:
                     print(f"[LAYOUT] Cytoscape Desktop failed: {e}")
-            
-            # Fall back to service
             return self.compute_layout_via_service(graph_id, df_edges, "fcose")
-        
         elif config.layout_algorithm == "cytoscape-desktop":
             if not self.cytoscape_available:
-                print("[LAYOUT] Cytoscape Desktop requested but not available")
                 return self.compute_layout_via_service(graph_id, df_edges, "fcose")
-            return self.compute_layout_via_cytoscape_desktop(
-                graph_id, df_edges, df_metrics_all
-            )
-        
+            return self.compute_layout_via_cytoscape_desktop(graph_id, df_edges, df_metrics_all)
         else:
-            # Use specified algorithm via service
             return self.compute_layout_via_service(graph_id, df_edges, config.layout_algorithm)
     
     def load_edge_layers_from_sql(self, sql_files: List[str]) -> dict:
-        """Load edge layers from SQL files"""
         edge_layers = {}
-        
         for filename in sql_files:
             sql_path = self.sql_dir / filename
-            if not sql_path.exists():
-                print(f"Warning: SQL file {filename} not found")
-                continue
-            
+            if not sql_path.exists(): continue
             graph_id = sql_path.stem
-            print(f"[LOAD] Executing SQL from file: {filename} (graph_id={graph_id})")
-            
-            with open(sql_path, 'r') as f:
-                query = f.read()
-            
-            start = time.time()
+            with open(sql_path, 'r') as f: query = f.read()
             df = pd.read_sql_query(query, self.db_engine)
-            elapsed = time.time() - start
-            
-            if "source" not in df.columns or "target" not in df.columns:
-                raise ValueError(f"SQL file {filename} must return 'source' and 'target' columns")
-            
-            print(f"[LOAD]   -> {len(df):,} edges loaded in {elapsed:.2f}s")
             edge_layers[graph_id] = df
-        
-        print(f"[LOAD] Loaded {len(edge_layers)} edge layers: {list(edge_layers.keys())}")
         return edge_layers
     
     def compute_metrics_for_shared_avatars(self, edge_layers: dict,
                                           metrics_graph_id: str,
                                           metrics_mode: str = None) -> pd.DataFrame:
-        """Compute metrics matching stream_to_cytoscape.py behavior"""
         if metrics_graph_id not in edge_layers:
             raise ValueError(f"metrics_graph_id='{metrics_graph_id}' not found")
         
         df_metrics_edges = edge_layers[metrics_graph_id]
-        print(f"[METRICS] Using graph_id='{metrics_graph_id}' for metrics ({len(df_metrics_edges):,} edges)")
-        
-        # Build graph
         G = nx.DiGraph()
         G.add_edges_from(df_metrics_edges[["source", "target"]].itertuples(index=False, name=None))
         
-        # Collect ALL unique avatars across ALL layers
         all_avatars = set()
         for gid, df_edges in edge_layers.items():
             all_avatars.update(df_edges["source"].unique())
             all_avatars.update(df_edges["target"].unique())
         
-        print(f"[METRICS] Total unique avatars across all layers: {len(all_avatars):,}")
-        
-        # For large graphs, suggest limiting metrics but respect custom selections
         if G.number_of_nodes() > 50000:
-            # Check if it's a custom selection (contains comma) or a heavy preset
-            if ',' in (metrics_mode or ''):
-                # Custom selection - respect user's choice
-                print(f"[METRICS] Large graph detected ({G.number_of_nodes()} nodes), using custom selection: {metrics_mode}")
-            elif metrics_mode not in ["basic", "topology", "essential"]:
-                # Heavy preset mode - override to basic for performance
-                print(f"[METRICS] Large graph detected ({G.number_of_nodes()} nodes), overriding '{metrics_mode}' to 'basic' mode for performance")
+            if not (',' in (metrics_mode or '') or metrics_mode in ["basic", "topology", "essential"]):
                 metrics_mode = "basic"
         
-        print(f"[METRICS] Computing metrics in '{metrics_mode or 'all'}' mode...")
-        start = time.time()
         metrics_calc = GraphMetrics(G, n_jobs=4, metrics_mode=metrics_mode or "all")
         df_metrics = metrics_calc.compute_all()
-        elapsed = time.time() - start
-        print(f"[METRICS] Computed in {elapsed:.2f}s")
         
-        # Create full metrics table for ALL avatars
         df_all = pd.DataFrame({"avatar": list(all_avatars)})
         df_metrics_all = df_all.merge(df_metrics, on="avatar", how="left")
-        
-        # Fill NaNs
         metric_cols = [c for c in df_metrics_all.columns if c != "avatar"]
         df_metrics_all[metric_cols] = df_metrics_all[metric_cols].replace([np.inf, -np.inf], 0).fillna(0)
-        
-        print(f"[METRICS] Metrics computed for {len(df_metrics_all):,} avatars")
         return df_metrics_all
     
     async def load_network(self, config: GraphConfig) -> NetworkState:
-        """Load network with layout computation"""
+        """
+        Load network with background computation and atomic state swap.
+        Ensures the current graph remains valid until the new one is fully ready.
+        """
         start_time = time.time()
         
-        # Load edge layers
-        self.edge_layers = self.load_edge_layers_from_sql(config.sql_files)
+        # --- PHASE 1: Compute everything in local variables (Background) ---
         
-        # Compute metrics
+        new_edge_layers = self.load_edge_layers_from_sql(config.sql_files)
+        
         metrics_graph_id = config.metrics_graph_id
-        if not metrics_graph_id and self.edge_layers:
-            metrics_graph_id = list(self.edge_layers.keys())[0]
+        if not metrics_graph_id and new_edge_layers:
+            metrics_graph_id = list(new_edge_layers.keys())[0]
         
-        self.metrics_df = self.compute_metrics_for_shared_avatars(
-            edge_layers=self.edge_layers,
+        new_metrics_df = self.compute_metrics_for_shared_avatars(
+            edge_layers=new_edge_layers,
             metrics_graph_id=metrics_graph_id,
             metrics_mode=config.metrics_mode
         )
         
-        # Build graphs and compute layouts
         layout_start = time.time()
-        self.layouts = {}
-        self.graphs = {}
+        new_layouts = {}
+        new_graphs = {}
         layout_cached = False
         
-        for graph_id, df_edges in self.edge_layers.items():
-            # Build NetworkX graph with ALL avatars from metrics
+        # Build graphs and layouts locally
+        for graph_id, df_edges in new_edge_layers.items():
             G = nx.DiGraph()
-            
-            # Add ALL nodes from metrics
-            metrics_dict = self.metrics_df.set_index('avatar').to_dict('index')
+            metrics_dict = new_metrics_df.set_index('avatar').to_dict('index')
             for avatar, attrs in metrics_dict.items():
-                clean_attrs = {}
-                for k, v in attrs.items():
-                    if isinstance(v, (np.int64, np.int32)):
-                        clean_attrs[k] = int(v)
-                    elif isinstance(v, (np.float64, np.float32)):
-                        clean_attrs[k] = float(v)
-                    else:
-                        clean_attrs[k] = v
+                clean_attrs = {k: (int(v) if isinstance(v, (np.int64, np.int32)) else float(v) if isinstance(v, (np.float64, np.float32)) else v) for k, v in attrs.items()}
                 G.add_node(avatar, **clean_attrs)
             
-            # Add edges
             for _, row in df_edges.iterrows():
                 G.add_edge(row['source'], row['target'])
             
-            print(f"[BUILD] Graph {graph_id} has {G.number_of_nodes():,} nodes and {G.number_of_edges():,} edges")
-            self.graphs[graph_id] = G
+            new_graphs[graph_id] = G
             
-            # Compute layout
-            positions = self.compute_layout(graph_id, df_edges, self.metrics_df, config)
-            self.layouts[graph_id] = positions
+            positions = self.compute_layout(graph_id, df_edges, new_metrics_df, config)
+            new_layouts[graph_id] = positions
             
-            # Check if layout was from cache
             if config.use_cached_layout:
                 cache_key = self.get_layout_cache_key(graph_id, G.number_of_nodes(), G.number_of_edges())
-                cache_file = self.layouts_dir / f"{cache_key}.json"
-                if cache_file.exists():
+                if (self.layouts_dir / f"{cache_key}.json").exists():
                     layout_cached = True
-        
+
+        # Pre-compute incremental updates locally
+        for graph_id in new_graphs:
+            G = new_graphs[graph_id]
+            layout = new_layouts.get(graph_id, {})
+            existing_nodes_in_layout = set(layout.keys())
+            all_nodes_in_graph = set(G.nodes())
+            missing_nodes = list(all_nodes_in_graph - existing_nodes_in_layout)
+            
+            if missing_nodes:
+                print(f"[PRE-COMPUTE] Graph {graph_id}: Finding positions for {len(missing_nodes)} missing nodes...")
+                try:
+                    new_positions = self.compute_incremental_layout(graph_id, missing_nodes, layout, G)
+                    layout.update(new_positions)
+                    new_layouts[graph_id] = layout
+                    
+                    # Update cache
+                    self.save_layout_cache(
+                        graph_id, G.number_of_nodes(), G.number_of_edges(), layout, 
+                        {'updated': True, 'update_time': datetime.now().isoformat()}
+                    )
+                except Exception as e:
+                    print(f"[PRE-COMPUTE] Error: {e}")
+
         layout_time = time.time() - layout_start
         total_time = time.time() - start_time
-        
+
+        # --- PHASE 2: Atomic State Swap ---
+        self.edge_layers = new_edge_layers
+        self.metrics_df = new_metrics_df
+        self.graphs = new_graphs
+        self.layouts = new_layouts
         self.current_config = config
         
         return NetworkState(
@@ -596,43 +587,24 @@ class NetworkService:
         )
     
     def get_graph_elements(self, graph_id: str):
-        """Get graph elements with positions"""
         if graph_id not in self.graphs:
             raise ValueError(f"Graph {graph_id} not loaded")
         
         G = self.graphs[graph_id]
         layout = self.layouts.get(graph_id, {})
-        
         elements = []
         
-        # Add nodes
         for node in G.nodes():
             node_data = dict(G.nodes[node])
-            clean_data = {}
-            for k, v in node_data.items():
-                if isinstance(v, (np.int64, np.int32)):
-                    clean_data[k] = int(v)
-                elif isinstance(v, (np.float64, np.float32)):
-                    clean_data[k] = float(v)
-                else:
-                    clean_data[k] = v
-            
+            clean_data = {k: (int(v) if isinstance(v, (np.int64, np.int32)) else float(v) if isinstance(v, (np.float64, np.float32)) else v) for k, v in node_data.items()}
             clean_data['id'] = node
             clean_data['label'] = node[:10] + "..." if len(node) > 12 else node
-
-            # NEW: only attach a position if this node exists in the cached layout
-            pos = layout.get(node)
-
-            node_element = {
-                "group": "nodes",
-                "data": clean_data
-            }
-            if pos is not None:
-                node_element["position"] = pos
-
+            
+            node_element = {"group": "nodes", "data": clean_data}
+            if node in layout:
+                node_element["position"] = layout[node]
             elements.append(node_element)
         
-        # Add edges
         for source, target in G.edges():
             edge_element = {
                 "group": "edges",
@@ -645,10 +617,8 @@ class NetworkService:
             elements.append(edge_element)
         
         return elements
-
     
     def list_cached_layouts(self):
-        """List all cached layouts"""
         layouts = []
         for file in self.layouts_dir.glob("*.json"):
             try:
@@ -662,44 +632,23 @@ class NetworkService:
                         'timestamp': data.get('timestamp'),
                         'algorithm': data.get('metadata', {}).get('algorithm')
                     })
-            except:
-                continue
+            except: continue
         return layouts
     
     def clear_layout_cache(self, graph_id: str = None):
-        """Clear cached layouts"""
         if graph_id:
-            # Clear specific graph
-            for file in self.layouts_dir.glob(f"{graph_id}_*.json"):
-                file.unlink()
-                print(f"[CACHE] Deleted {file.name}")
+            for file in self.layouts_dir.glob(f"{graph_id}_*.json"): file.unlink()
         else:
-            # Clear all
-            for file in self.layouts_dir.glob("*.json"):
-                file.unlink()
-            print("[CACHE] Cleared all cached layouts")
+            for file in self.layouts_dir.glob("*.json"): file.unlink()
 
-
-# ============================================================================
-# Initialize service
-# ============================================================================
 
 network_service = NetworkService()
 
-
-# ============================================================================
-# API Routes
-# ============================================================================
-
 @app.get("/")
-async def root():
-    """Serve the main HTML page"""
-    return FileResponse(STATIC_DIR / "index.html")
-
+async def root(): return FileResponse(STATIC_DIR / "index.html")
 
 @app.get("/api/config")
 async def get_config():
-    """Get available configuration options"""
     return {
         "sql_files": network_service.available_sql_files,
         "metric_modes": {
@@ -710,10 +659,8 @@ async def get_config():
         "cached_layouts": network_service.list_cached_layouts()
     }
 
-
 @app.post("/api/load")
 async def load_network(config: GraphConfig):
-    """Load network with layout"""
     try:
         state = await network_service.load_network(config)
         return state
@@ -721,44 +668,31 @@ async def load_network(config: GraphConfig):
         print(f"Error loading network: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/graphs/{graph_id}/elements")
 async def get_graph_elements(graph_id: str):
-    """Get graph elements with positions"""
     try:
         elements = network_service.get_graph_elements(graph_id)
         return {"elements": elements, "count": len(elements)}
     except Exception as e:
-        print(f"Error getting elements: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/cached-layouts")
-async def list_cached_layouts():
-    """List all cached layouts"""
-    return network_service.list_cached_layouts()
-
+async def list_cached_layouts(): return network_service.list_cached_layouts()
 
 @app.delete("/api/cached-layouts")
 async def clear_cached_layouts(graph_id: Optional[str] = None):
-    """Clear cached layouts"""
     network_service.clear_layout_cache(graph_id)
     return {"status": "cleared", "graph_id": graph_id}
 
-
 @app.get("/api/state")
 async def get_current_state():
-    """Get current state"""
-    if not network_service.graphs:
-        return {"loaded": False}
-    
+    if not network_service.graphs: return {"loaded": False}
     return {
         "loaded": True,
         "graphs": list(network_service.graphs.keys()),
         "cytoscape_available": network_service.cytoscape_available,
         "node_count": len(network_service.metrics_df) if network_service.metrics_df is not None else 0
     }
-
 
 if __name__ == "__main__":
     import uvicorn

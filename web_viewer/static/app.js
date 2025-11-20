@@ -1,5 +1,5 @@
 /**
- * Graph Analyzer Web Viewer - Fixed with Multi-Color Gradients and Smart Position Inference
+ * Graph Analyzer Web Viewer
  */
 
 let cy = null;
@@ -7,44 +7,29 @@ let currentGraph = null;
 let currentState = null;
 let availableConfig = null;
 let currentStyle = null;
-let graphData = {}; // Store graph data separately to avoid mixing
+let graphData = {};
 
-// Initialize on page load
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('Initializing Graph Analyzer...');
     await loadAvailableConfig();
     setupEventListeners();
+    setupDropdownLogic();
     initializeDefaultStyle();
 });
 
-/**
- * Initialize default style configuration
- */
 function initializeDefaultStyle() {
     currentStyle = {
         node: {
-            sizeMetric: 'total_degree',
-            sizeMin: 5,
-            sizeMax: 30,
-            colorMetric: 'community_id',
-            colorFixed: '#FFFFFF',
-            colorGradient: 'viridis', // Use predefined gradient
-            colorSelected: '#FF0000'
+            sizeMetric: 'fixed', sizeMin: 10, sizeMax: 40,
+            colorMetric: 'fixed', colorFixed: '#4A90E2', colorGradient: 'spectral', colorSelected: '#FFD700'
         },
         edge: {
-            widthMetric: 'fixed',
-            widthMin: 1,
-            widthMax: 3,
-            color: '#FFFFFF',
-            colorSelected: '#FF0000',
-            opacity: 0.3
+            widthMetric: 'fixed', widthMin: 1, widthMax: 5,
+            color: '#999999', colorSelected: '#FF0000', opacity: 0.3
         }
     };
 }
 
-/**
- * Define color gradients with multiple stops
- */
 const COLOR_GRADIENTS = {
     viridis: [
         { stop: 0, color: '#440154' },
@@ -109,452 +94,157 @@ const COLOR_GRADIENTS = {
         { stop: 1, color: '#B40426' }
     ]
 };
-
-/**
- * Interpolate color in a multi-stop gradient
- */
-function getColorFromGradient(value, gradientName, minVal = 0, maxVal = 100) {
-    const gradient = COLOR_GRADIENTS[gradientName] || COLOR_GRADIENTS.viridis;
+function getColorFromGradient(value, gradientName, minVal, maxVal) {
+    const gradient = COLOR_GRADIENTS[gradientName] || COLOR_GRADIENTS.spectral;
+    let norm = (value - minVal) / (maxVal - minVal);
+    norm = Math.max(0, Math.min(1, norm));
     
-    // Normalize value to 0-1
-    let normalizedValue = (value - minVal) / (maxVal - minVal);
-    normalizedValue = Math.max(0, Math.min(1, normalizedValue)); // Clamp to [0,1]
-    
-    // Find the two stops this value falls between
-    let lowerStop = gradient[0];
-    let upperStop = gradient[gradient.length - 1];
-    
-    for (let i = 0; i < gradient.length - 1; i++) {
-        if (normalizedValue >= gradient[i].stop && normalizedValue <= gradient[i + 1].stop) {
-            lowerStop = gradient[i];
-            upperStop = gradient[i + 1];
-            break;
+    let lower = gradient[0], upper = gradient[gradient.length-1];
+    for(let i=0; i<gradient.length-1; i++) {
+        if(norm >= gradient[i].stop && norm <= gradient[i+1].stop) {
+            lower = gradient[i]; upper = gradient[i+1]; break;
         }
     }
+    const range = upper.stop - lower.stop;
+    const ratio = (norm - lower.stop) / range;
     
-    // Interpolate between the two stops
-    const range = upperStop.stop - lowerStop.stop;
-    const valueInRange = (normalizedValue - lowerStop.stop) / range;
-    
-    // Parse colors
-    const color1 = hexToRgb(lowerStop.color);
-    const color2 = hexToRgb(upperStop.color);
-    
-    // Interpolate RGB values
-    const r = Math.round(color1.r + (color2.r - color1.r) * valueInRange);
-    const g = Math.round(color1.g + (color2.g - color1.g) * valueInRange);
-    const b = Math.round(color1.b + (color2.b - color1.b) * valueInRange);
-    
-    return rgbToHex(r, g, b);
+    const c1 = hexToRgb(lower.color), c2 = hexToRgb(upper.color);
+    return rgbToHex(
+        Math.round(c1.r + (c2.r - c1.r) * ratio),
+        Math.round(c1.g + (c2.g - c1.g) * ratio),
+        Math.round(c1.b + (c2.b - c1.b) * ratio)
+    );
 }
 
-/**
- * Convert hex to RGB
- */
 function hexToRgb(hex) {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-    } : null;
+    const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return r ? {r:parseInt(r[1],16), g:parseInt(r[2],16), b:parseInt(r[3],16)} : null;
+}
+function rgbToHex(r,g,b) { return "#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
+
+function setupDropdownLogic() {
+    const dropdown = document.getElementById('sql-files-dropdown');
+    const header = document.getElementById('sql-dropdown-header');
+    const list = document.getElementById('sql-files-list');
+
+    header.addEventListener('click', () => {
+        list.style.display = list.style.display === 'block' ? 'none' : 'block';
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!dropdown.contains(e.target)) list.style.display = 'none';
+    });
+
+    list.addEventListener('change', () => {
+        const checked = list.querySelectorAll('input[type="checkbox"]:checked');
+        if (checked.length === 0) header.textContent = 'Select files...';
+        else if (checked.length === 1) header.textContent = checked[0].parentNode.textContent.trim();
+        else header.textContent = `${checked.length} files selected`;
+    });
 }
 
-/**
- * Convert RGB to hex
- */
-function rgbToHex(r, g, b) {
-    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-}
-
-/**
- * Calculate position for nodes without positions based on their neighbors
- * This handles cases where cached layouts don't include new nodes.
- * NEW: marks inferred nodes with data.isNew = true so we can layout only them.
- */
-function inferMissingPositions(elements) {
-    // Build complete position map from elements that have positions
-    const positionMap = {};
-    const nodeMap = {};
-    let nodesWithoutPositions = [];
-    let totalNodes = 0;
-    
-    // First, collect all positions and identify nodes without positions
-    elements.forEach(el => {
-        if (el.group === 'nodes') {
-            totalNodes++;
-            nodeMap[el.data.id] = el;
-            
-            if (el.position && el.position.x !== undefined && el.position.y !== undefined) {
-                positionMap[el.data.id] = {
-                    x: el.position.x,
-                    y: el.position.y
-                };
-            } else {
-                nodesWithoutPositions.push(el.data.id);
-            }
-        }
-    });
-    
-    // If no nodes need positions, we're done
-    if (nodesWithoutPositions.length === 0) {
-        console.log('All nodes have positions from cache');
-        return false;  // no refinement needed
-    }
-    
-    console.log(`Found ${nodesWithoutPositions.length} nodes without positions out of ${totalNodes} total nodes`);
-    console.log(`Nodes with positions: ${Object.keys(positionMap).length}`);
-    
-    // Build adjacency lists for the graph
-    const adjacency = {};
-    elements.forEach(el => {
-        if (el.group === 'edges') {
-            const source = el.data.source;
-            const target = el.data.target;
-            
-            if (!adjacency[source]) adjacency[source] = new Set();
-            if (!adjacency[target]) adjacency[target] = new Set();
-            
-            adjacency[source].add(target);
-            adjacency[target].add(source);
-        }
-    });
-    
-    // Calculate bounds of existing positions for better placement
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    let hasPositions = false;
-    
-    Object.values(positionMap).forEach(pos => {
-        hasPositions = true;
-        minX = Math.min(minX, pos.x);
-        maxX = Math.max(maxX, pos.x);
-        minY = Math.min(minY, pos.y);
-        maxY = Math.max(maxY, pos.y);
-    });
-    
-    const centerX = hasPositions ? (minX + maxX) / 2 : 0;
-    const centerY = hasPositions ? (minY + maxY) / 2 : 0;
-    const spreadX = hasPositions ? Math.max(100, (maxX - minX) / 4) : 200;
-    const spreadY = hasPositions ? Math.max(100, (maxY - minY) / 4) : 200;
-    
-    console.log(
-        `Graph bounds: X[${minX.toFixed(0)}, ${maxX.toFixed(0)}], ` +
-        `Y[${minY.toFixed(0)}, ${maxY.toFixed(0)}]`
-    );
-    console.log(
-        `Center: (${centerX.toFixed(0)}, ${centerY.toFixed(0)}), ` +
-        `Spread: (${spreadX.toFixed(0)}, ${spreadY.toFixed(0)})`
-    );
-    
-    // Process nodes without positions in multiple passes
-    let maxIterations = 10;
-    let iteration = 0;
-    let placedInIteration;
-    const newlyPlaced = new Set();
-    
-    do {
-        placedInIteration = 0;
-        iteration++;
-        
-        // Try to place nodes based on their neighbors
-        nodesWithoutPositions = nodesWithoutPositions.filter(nodeId => {
-            if (positionMap[nodeId]) {
-                return false; // Already placed in previous iteration
-            }
-            
-            const neighbors = adjacency[nodeId] || new Set();
-            
-            if (neighbors.size === 0) {
-                // Isolated node - will handle later
-                return true;
-            }
-            
-            // Find neighbors with positions (either original or newly placed)
-            const positionedNeighbors = [];
-            neighbors.forEach(neighborId => {
-                if (positionMap[neighborId]) {
-                    positionedNeighbors.push(positionMap[neighborId]);
-                }
-            });
-            
-            if (positionedNeighbors.length > 0) {
-                // Calculate centroid of positioned neighbors
-                let sumX = 0, sumY = 0;
-                positionedNeighbors.forEach(pos => {
-                    sumX += pos.x;
-                    sumY += pos.y;
-                });
-                
-                const baseX = sumX / positionedNeighbors.length;
-                const baseY = sumY / positionedNeighbors.length;
-                
-                // Add position with small offset to avoid exact overlap
-                const newPos = {
-                    x: baseX + (Math.random() - 0.5) * 50,
-                    y: baseY + (Math.random() - 0.5) * 50
-                };
-                
-                positionMap[nodeId] = newPos;
-                nodeMap[nodeId].position = newPos;
-                
-                // Mark this node as new so we can move it later while keeping originals rigid
-                if (!nodeMap[nodeId].data) {
-                    nodeMap[nodeId].data = {};
-                }
-                nodeMap[nodeId].data.isNew = true;
-                
-                newlyPlaced.add(nodeId);
-                placedInIteration++;
-                
-                console.log(
-                    `Placed node ${nodeId.substring(0, 10)}… near neighbors ` +
-                    `at (${newPos.x.toFixed(0)}, ${newPos.y.toFixed(0)})`
-                );
-                
-                return false; // Successfully placed
-            }
-            
-            return true; // Still needs placement
-        });
-        
-        console.log(`Iteration ${iteration}: Placed ${placedInIteration} nodes, ${nodesWithoutPositions.length} remaining`);
-        
-    } while (placedInIteration > 0 && iteration < maxIterations);
-    
-    // Handle remaining isolated nodes or nodes with no positioned neighbors
-    if (nodesWithoutPositions.length > 0) {
-        console.log(`Placing ${nodesWithoutPositions.length} isolated/orphan nodes`);
-        
-        // If we have some positioned nodes, place orphans around the periphery
-        if (hasPositions) {
-            let angleStep = (2 * Math.PI) / nodesWithoutPositions.length;
-            nodesWithoutPositions.forEach((nodeId, index) => {
-                const angle = index * angleStep;
-                const radius = Math.max(spreadX, spreadY) * 1.5;
-                
-                const newPos = {
-                    x: centerX + radius * Math.cos(angle) + (Math.random() - 0.5) * 50,
-                    y: centerY + radius * Math.sin(angle) + (Math.random() - 0.5) * 50
-                };
-                
-                positionMap[nodeId] = newPos;
-                nodeMap[nodeId].position = newPos;
-                
-                if (!nodeMap[nodeId].data) {
-                    nodeMap[nodeId].data = {};
-                }
-                nodeMap[nodeId].data.isNew = true;
-                
-                newlyPlaced.add(nodeId);
-                
-                console.log(
-                    `Placed orphan node ${nodeId.substring(0, 10)}… at periphery ` +
-                    `(${newPos.x.toFixed(0)}, ${newPos.y.toFixed(0)})`
-                );
-            });
-        } else {
-            // No existing positions at all - arrange in a circle
-            let angleStep = (2 * Math.PI) / nodesWithoutPositions.length;
-            nodesWithoutPositions.forEach((nodeId, index) => {
-                const angle = index * angleStep;
-                const radius = 300;
-                
-                const newPos = {
-                    x: radius * Math.cos(angle),
-                    y: radius * Math.sin(angle)
-                };
-                
-                positionMap[nodeId] = newPos;
-                nodeMap[nodeId].position = newPos;
-                
-                if (!nodeMap[nodeId].data) {
-                    nodeMap[nodeId].data = {};
-                }
-                nodeMap[nodeId].data.isNew = true;
-                
-                newlyPlaced.add(nodeId);
-            });
-        }
-    }
-    
-    console.log(`Position inference complete: ${newlyPlaced.size} new positions assigned`);
-    
-    const placedCount = newlyPlaced.size;
-    if (placedCount === 0) {
-        return false;
-    }
-    
-    // Tunable thresholds for deciding whether to run refinement
-    const MAX_REFINEMENT_NODES = 1000;       // absolute cap of new nodes
-    const MAX_REFINEMENT_GRAPH_SIZE = 50000; // if graph bigger than this, skip CoSE
-    const MAX_REFINEMENT_RATIO = 0.2;        // if >20% of nodes are new, skip CoSE
-    
-    const ratio = placedCount / totalNodes;
-    
-    const shouldRefine =
-        totalNodes <= MAX_REFINEMENT_GRAPH_SIZE &&
-        placedCount <= MAX_REFINEMENT_NODES &&
-        ratio <= MAX_REFINEMENT_RATIO;
-    
-    if (!shouldRefine) {
-        console.log(
-            `Skipping refinement: totalNodes=${totalNodes}, placed=${placedCount}, ratio=${ratio.toFixed(3)}`
-        );
-        return false;
-    }
-    
-    console.log(
-        `Refinement requested: totalNodes=${totalNodes}, placed=${placedCount}, ratio=${ratio.toFixed(3)}`
-    );
-    return true;
-}
-
-
-/**
- * Load available configuration from server
- */
 async function loadAvailableConfig() {
     try {
         const response = await fetch('/api/config');
         availableConfig = await response.json();
         
-        // Populate SQL files
-        const sqlFilesDiv = document.getElementById('sql-files');
-        sqlFilesDiv.innerHTML = '';
-        
+        const list = document.getElementById('sql-files-list');
+        list.innerHTML = '';
         availableConfig.sql_files.forEach(file => {
+            const div = document.createElement('div');
+            div.className = 'dropdown-item';
             const label = document.createElement('label');
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.name = 'sql-file';
             checkbox.value = file.filename;
             
-            // Default selections
-            if (file.filename.includes('crc_v1_trusts') ||
-                file.filename.includes('crc_v2_invites') ||
-                file.filename.includes('crc_v2_trusts') ||
-                file.filename.includes('crc_v2_flows')) {
+            if (['crc_v1_trusts','crc_v2_invites','crc_v2_trusts','crc_v2_flows'].some(x => file.filename.includes(x))) {
                 checkbox.checked = true;
             }
             
             label.appendChild(checkbox);
             label.appendChild(document.createTextNode(` ${file.graph_id}`));
-            sqlFilesDiv.appendChild(label);
+            div.appendChild(label);
+            list.appendChild(div);
         });
-        
-        // Populate metrics graph selector
+        list.dispatchEvent(new Event('change'));
+
         const metricsGraphSelect = document.getElementById('metrics-graph');
         metricsGraphSelect.innerHTML = '<option value="">Auto (first selected)</option>';
-        
         availableConfig.sql_files.forEach(file => {
             const option = document.createElement('option');
             option.value = file.graph_id;
             option.textContent = file.graph_id;
             metricsGraphSelect.appendChild(option);
         });
-        
-        // Set default to crc_v2_invites
         metricsGraphSelect.value = 'crc_v2_invites';
-        
-        // Populate custom metrics categories
+
         if (availableConfig.metric_modes && availableConfig.metric_modes.categories) {
-            const customMetricsDiv = document.getElementById('custom-metrics');
-            customMetricsDiv.innerHTML = '';
-            
-            Object.entries(availableConfig.metric_modes.categories).forEach(([key, description]) => {
+            const customDiv = document.getElementById('custom-metrics');
+            customDiv.innerHTML = '';
+            Object.entries(availableConfig.metric_modes.categories).forEach(([key, desc]) => {
                 const label = document.createElement('label');
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.name = 'custom-metric';
-                checkbox.value = key;
-                checkbox.id = `metric-${key}`;
+                const cb = document.createElement('input');
+                cb.type = 'checkbox'; cb.name = 'custom-metric'; cb.value = key;
                 
-                // Don't pre-check any boxes
-                checkbox.checked = false;
-                
-                label.appendChild(checkbox);
-                label.appendChild(document.createTextNode(` ${key}: ${description}`));
-                customMetricsDiv.appendChild(label);
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(` ${key}: ${desc}`));
+                customDiv.appendChild(label);
             });
         }
-        
-        // Populate gradient selector
+
         const gradientSelect = document.getElementById('node-color-gradient');
-        if (gradientSelect) {
-            gradientSelect.innerHTML = '';
-            Object.keys(COLOR_GRADIENTS).forEach(name => {
-                const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name.charAt(0).toUpperCase() + name.slice(1);
-                if (name === 'viridis') option.selected = true;
-                gradientSelect.appendChild(option);
-            });
-        }
-        
+        Object.keys(COLOR_GRADIENTS).forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name; opt.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+            if(name==='spectral') opt.selected = true;
+            gradientSelect.appendChild(opt);
+        });
+
+        // Also populate edge width dropdown with numeric metrics placeholder
+        const edgeWidthSelect = document.getElementById('edge-width-metric');
+        edgeWidthSelect.innerHTML = '<option value="fixed">Fixed</option>';
+
     } catch (error) {
-        console.error('Error loading config:', error);
-        updateStatus('Error loading configuration', 'error');
+        console.error('Error config:', error);
+        updateStatus('Config error', 'error');
     }
 }
 
-/**
- * Setup event listeners
- */
 function setupEventListeners() {
-    // Load button
     document.getElementById('load-btn').addEventListener('click', loadGraphs);
-    
-    // Metrics mode selector
+
     document.getElementById('metrics-mode').addEventListener('change', (e) => {
-        const customDiv = document.getElementById('custom-metrics');
-        if (e.target.value === 'custom') {
-            customDiv.style.display = 'block';
-        } else {
-            customDiv.style.display = 'none';
-        }
+        document.getElementById('custom-metrics').style.display = e.target.value === 'custom' ? 'block' : 'none';
     });
-    
-    // Graph selector
+
     document.getElementById('graph-select').addEventListener('change', (e) => {
-        if (e.target.value) {
-            displayGraph(e.target.value);
-        }
+        if (e.target.value) displayGraph(e.target.value);
     });
-    
-    // Toolbar buttons
-    document.getElementById('fit-btn')?.addEventListener('click', () => {
-        if (cy) cy.fit();
-    });
-    
-    document.getElementById('center-btn')?.addEventListener('click', () => {
-        if (cy) cy.center();
-    });
-    
-    // Search functionality
+
+    // Toolbar
+    document.getElementById('fit-btn')?.addEventListener('click', () => cy?.fit());
+    document.getElementById('center-btn')?.addEventListener('click', () => cy?.center());
     document.getElementById('search-btn')?.addEventListener('click', searchNode);
-    document.getElementById('node-search')?.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') searchNode();
-    });
+    document.getElementById('node-search')?.addEventListener('keypress', (e) => { if(e.key==='Enter') searchNode(); });
     document.getElementById('clear-search-btn')?.addEventListener('click', clearSearch);
-    
-    // Close button for info panel
+
+    // Info Panel
     document.querySelector('.close-btn')?.addEventListener('click', () => {
-        document.getElementById('node-info').style.display = 'none';
+        document.getElementById('info-panel').style.display = 'none';
     });
-    
-    // Tab buttons in info panel
+
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            switchTab(e.target.dataset.tab);
-        });
+        btn.addEventListener('click', (e) => switchTab(e.target.dataset.tab));
     });
-    
-    // Collapsible sections
+
+    // Collapsible
     document.querySelectorAll('.collapsible-header').forEach(header => {
         header.addEventListener('click', () => {
             const content = header.nextElementSibling;
             const icon = header.querySelector('.collapse-icon');
-            if (content.style.display === 'none' || content.style.display === '') {
+            if (content.style.display === 'none') {
                 content.style.display = 'block';
                 icon.textContent = '▲';
             } else {
@@ -563,96 +253,339 @@ function setupEventListeners() {
             }
         });
     });
-    
-    // Apply style button
+
+    // Style controls
     document.getElementById('apply-style-btn')?.addEventListener('click', applyStyle);
-    
-    // Edge opacity slider
     document.getElementById('edge-opacity')?.addEventListener('input', (e) => {
         document.getElementById('edge-opacity-value').textContent = e.target.value + '%';
     });
     
-    // Color metric change
     document.getElementById('node-color-metric')?.addEventListener('change', (e) => {
-        const gradientDiv = document.getElementById('gradient-selector');
-        const fixedColorDiv = document.getElementById('fixed-color-selector');
-        if (e.target.value === 'fixed') {
-            gradientDiv.style.display = 'none';
-            fixedColorDiv.style.display = 'block';
-        } else {
-            gradientDiv.style.display = 'block';
-            fixedColorDiv.style.display = 'none';
-        }
+        const isFixed = e.target.value === 'fixed';
+        document.getElementById('gradient-selector').style.display = isFixed ? 'none' : 'flex';
+        document.getElementById('fixed-color-selector').style.display = isFixed ? 'flex' : 'none';
+    });
+
+    // Edge width range inputs
+    document.getElementById('edge-width-min')?.addEventListener('input', (e) => {
+        document.getElementById('edge-width-min-value').textContent = e.target.value;
+    });
+    document.getElementById('edge-width-max')?.addEventListener('input', (e) => {
+        document.getElementById('edge-width-max-value').textContent = e.target.value;
+    });
+
+    // Close button for info panel (RIGHT PANEL)
+    document.querySelector('.close-btn')?.addEventListener('click', () => {
+        document.getElementById('info-panel').style.display = 'none';
     });
 }
 
-/**
- * Search for a node by ID
- */
-function searchNode() {
-    if (!cy) {
-        updateStatus('Please load a graph first', 'error');
-        return;
+async function loadGraphs() {
+    const selectedFiles = Array.from(document.querySelectorAll('input[name="sql-file"]:checked')).map(cb => cb.value);
+    if (selectedFiles.length === 0) return updateStatus('Select at least one SQL file', 'error');
+
+    let metricsMode = document.getElementById('metrics-mode').value;
+    if (metricsMode === 'custom') {
+        const sels = Array.from(document.querySelectorAll('input[name="custom-metric"]:checked')).map(cb => cb.value);
+        if (sels.length === 0) return updateStatus('Select metric category', 'error');
+        metricsMode = sels.join(',');
+    }
+
+    const config = {
+        sql_files: selectedFiles,
+        metrics_mode: metricsMode,
+        metrics_graph_id: document.getElementById('metrics-graph').value || null,
+        layout_algorithm: document.getElementById('layout-algorithm').value,
+        use_cached_layout: document.getElementById('use-cached-layout').checked
+    };
+
+    const btn = document.getElementById('load-btn');
+    const status = document.getElementById('load-status');
+    btn.disabled = true;
+    btn.textContent = "Computing...";
+    status.style.display = 'block';
+    
+    try {
+        const response = await fetch('/api/load', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config)
+        });
+
+        if (!response.ok) throw new Error((await response.json()).detail || 'Failed');
+
+        currentState = await response.json();
+        updateStatus(`Loaded ${currentState.loaded_graphs.length} graphs`, 'success');
+
+        document.getElementById('graph-selector').style.display = 'block';
+        const select = document.getElementById('graph-select');
+        select.innerHTML = '';
+        currentState.loaded_graphs.forEach(id => {
+            const opt = document.createElement('option');
+            opt.value = id; opt.textContent = id;
+            select.appendChild(opt);
+        });
+
+        if (currentState.loaded_graphs.length > 0) {
+            select.value = currentState.loaded_graphs[0];
+            await displayGraph(currentState.loaded_graphs[0]);
+        }
+
+    } catch (err) {
+        console.error(err);
+        updateStatus(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Load Graphs";
+        status.style.display = 'none';
+    }
+}
+
+async function displayGraph(graphId) {
+    currentGraph = graphId;
+    showLoading(true); 
+    updateStatus(`Switching to ${graphId}...`, 'info');
+
+    try {
+        const res = await fetch(`/api/graphs/${graphId}/elements`);
+        if (!res.ok) throw new Error('Failed elements');
+        const data = await res.json();
+        graphData[graphId] = data.elements;
+
+        const nodes = data.elements.filter(e => e.group === 'nodes');
+        const edges = data.elements.filter(e => e.group === 'edges');
+        document.getElementById('node-count').textContent = `${nodes.length} nodes`;
+        document.getElementById('edge-count').textContent = `${edges.length} edges`;
+
+        if (cy) cy.destroy();
+        
+        cy = cytoscape({
+            container: document.getElementById('cy'),
+            elements: graphData[graphId],
+            style: [], // Start with empty style
+            layout: { name: 'preset' },
+            minZoom: 0.1, maxZoom: 10,
+            hideEdgesOnViewport: true, 
+            textureOnViewport: true
+        });
+        
+        populateMetricDropdowns(nodes, edges);
+        updateCytoscapeStyle();
+        setupCyListeners();
+        cy.fit();
+        updateStatus(`Displayed ${graphId}`, 'success');
+
+    } catch (err) {
+        updateStatus(err.message, 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function populateMetricDropdowns(nodes, edges) {
+    if (!nodes || nodes.length === 0) return;
+    
+    // Extract numeric metrics from nodes
+    const firstNodeData = nodes[0].data;
+    const nodeMetrics = Object.keys(firstNodeData).filter(k => 
+        !['id', 'label', 'isNew', 'x', 'y', 'source', 'target'].includes(k) &&
+        typeof firstNodeData[k] === 'number'
+    );
+    
+    // Extract numeric metrics from edges if available
+    let edgeMetrics = [];
+    if (edges && edges.length > 0) {
+        const firstEdgeData = edges[0].data;
+        edgeMetrics = Object.keys(firstEdgeData).filter(k => 
+            !['id', 'source', 'target'].includes(k) &&
+            typeof firstEdgeData[k] === 'number'
+        );
     }
     
-    const searchTerm = document.getElementById('node-search').value.trim().toLowerCase();
-    if (!searchTerm) return;
+    // Populate node size dropdown
+    const sizeSelect = document.getElementById('node-size-metric');
+    const rebuildNodeOptions = (select, metrics, defaultVal) => {
+        const currentVal = select.value;
+        select.innerHTML = '<option value="fixed">Fixed</option>';
+        metrics.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m.replace(/_/g, ' ');
+            select.appendChild(opt);
+        });
+        if (metrics.includes(currentVal)) select.value = currentVal;
+        else if (metrics.includes(defaultVal)) select.value = defaultVal;
+    };
+
+    rebuildNodeOptions(sizeSelect, nodeMetrics, 'total_degree');
     
-    // Clear previous selection
-    cy.elements().removeClass('searched');
+    // Populate node color dropdown
+    const colorSelect = document.getElementById('node-color-metric');
+    rebuildNodeOptions(colorSelect, nodeMetrics, 'community_id');
     
-    // Find and select matching nodes
-    const matchingNodes = cy.nodes().filter(node => {
-        return node.id().toLowerCase().includes(searchTerm);
+    // Populate edge width dropdown
+    const edgeWidthSelect = document.getElementById('edge-width-metric');
+    const currentEdgeVal = edgeWidthSelect.value;
+    edgeWidthSelect.innerHTML = '<option value="fixed">Fixed</option>';
+    edgeMetrics.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m.replace(/_/g, ' ');
+        edgeWidthSelect.appendChild(opt);
     });
+    if (edgeMetrics.includes(currentEdgeVal)) edgeWidthSelect.value = currentEdgeVal;
+    else if (edgeMetrics.includes('amount')) edgeWidthSelect.value = 'amount';
+    else if (edgeMetrics.includes('weight')) edgeWidthSelect.value = 'weight';
     
-    if (matchingNodes.length > 0) {
-        matchingNodes.addClass('searched');
-        
-        // If single match, center on it and show info
-        if (matchingNodes.length === 1) {
-            const node = matchingNodes[0];
-            cy.animate({
-                center: { eles: node },
-                zoom: 2
-            }, {
-                duration: 500
-            });
-            showNodeInfo(node);
+    // Trigger change events to update UI
+    colorSelect.dispatchEvent(new Event('change'));
+}
+
+function setupCyListeners() {
+    cy.on('tap', 'node', evt => {
+        const node = evt.target;
+        hideAllInfo();
+        showNodeInfo(node);
+    });
+
+    cy.on('tap', 'edge', evt => {
+        const edge = evt.target;
+        hideAllInfo();
+        showEdgeInfo(edge);
+    });
+
+    cy.on('select unselect', () => {
+        setTimeout(() => {
+            const selected = cy.$(':selected');
+            if (selected.length > 1) {
+                hideAllInfo();
+                showMultiInfo(selected);
+            } else if (selected.length === 1) {
+                if (selected.isNode()) {
+                    hideAllInfo(); showNodeInfo(selected);
+                } else {
+                    hideAllInfo(); showEdgeInfo(selected);
+                }
+            }
+        }, 50);
+    });
+}
+
+function hideAllInfo() {
+    document.getElementById('node-info').style.display = 'none';
+    document.getElementById('edge-info').style.display = 'none';
+    document.getElementById('multi-info').style.display = 'none';
+}
+
+function showNodeInfo(node) {
+    hideAllInfo();
+    document.getElementById('info-panel').style.display = 'block';
+    document.getElementById('node-info').style.display = 'block';
+    
+    const data = node.data();
+    document.getElementById('node-id').textContent = data.id;
+    switchTab('metrics');
+
+    const div = document.getElementById('all-metrics');
+    div.innerHTML = '';
+    Object.keys(data).forEach(k => {
+        if (['id','label','isNew'].includes(k)) return;
+        if (typeof data[k] === 'object') return;
+        const val = typeof data[k] === 'number' ? (Number.isInteger(data[k]) ? data[k] : data[k].toFixed(4)) : data[k];
+        div.innerHTML += `<div class="metric-row"><span class="metric-label">${k.replace(/_/g, ' ')}</span><span class="metric-value">${val}</span></div>`;
+    });
+
+    updateNeighborList(node.incomers().edges(), 'in-count', 'neighbors-in-list', 'source');
+    updateNeighborList(node.outgoers().edges(), 'out-count', 'neighbors-out-list', 'target');
+}
+
+function showEdgeInfo(edge) {
+    hideAllInfo();
+    document.getElementById('info-panel').style.display = 'block';
+    document.getElementById('edge-info').style.display = 'block';
+    
+    const data = edge.data();
+    document.getElementById('edge-source').textContent = data.source;
+    document.getElementById('edge-target').textContent = data.target;
+    
+    const metricsDiv = document.getElementById('edge-metrics');
+    metricsDiv.innerHTML = '';
+    Object.keys(data).forEach(k => {
+        if (['id','source','target'].includes(k)) return;
+        metricsDiv.innerHTML += `<div class="metric-row"><span class="metric-label">${k.replace(/_/g, ' ')}</span><span class="metric-value">${data[k]}</span></div>`;
+    });
+}
+
+
+function showMultiInfo(collection) {
+    hideAllInfo();
+    document.getElementById('info-panel').style.display = 'block';
+    document.getElementById('multi-info').style.display = 'block';
+    document.getElementById('multi-node-count').textContent = collection.nodes().length;
+    document.getElementById('multi-edge-count').textContent = collection.edges().length;
+}
+
+function updateNeighborList(edges, countId, listId, type) {
+    document.getElementById(countId).textContent = edges.length;
+    const list = document.getElementById(listId);
+    list.innerHTML = '';
+    edges.slice(0,50).forEach(edge => {
+        const div = document.createElement('div');
+        div.className = 'neighbor-item';
+        const target = type==='source' ? edge.source() : edge.target();
+        div.textContent = target.id();
+        div.onclick = () => {
+            cy.elements().unselect(); target.select(); showNodeInfo(target);
+        };
+        list.appendChild(div);
+    });
+}
+
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabName));
+    document.querySelectorAll('.tab-content').forEach(c => c.style.display = c.id === `${tabName}-tab` ? 'block' : 'none');
+}
+
+function updateStatus(msg, type) {
+    const el = document.getElementById('status');
+    el.textContent = msg; el.className = `status status-${type}`; el.style.display = 'block';
+    if(type!=='error') setTimeout(()=>el.style.display='none', 4000);
+}
+
+function showLoading(show) { document.getElementById('loading').style.display = show ? 'flex' : 'none'; }
+
+function searchNode() {
+    if (!cy) return updateStatus('Please load a graph first', 'error');
+    const term = document.getElementById('node-search').value.trim().toLowerCase();
+    if (!term) return;
+    cy.elements().removeClass('searched');
+    const matches = cy.nodes().filter(n => n.id().toLowerCase().includes(term));
+    if (matches.length > 0) {
+        matches.addClass('searched');
+        if (matches.length === 1) {
+            const n = matches[0];
+            cy.animate({ center: { eles: n }, zoom: 2 }, { duration: 500 });
+            showNodeInfo(n);
         } else {
-            // Multiple matches - fit them in view
-            cy.fit(matchingNodes, 50);
+            cy.fit(matches, 50);
         }
-        
-        updateStatus(`Found ${matchingNodes.length} node(s) matching "${searchTerm}"`, 'success');
+        updateStatus(`Found ${matches.length} node(s)`, 'success');
         document.getElementById('clear-search-btn').style.display = 'inline-block';
     } else {
-        updateStatus(`No nodes found matching "${searchTerm}"`, 'error');
+        updateStatus(`No nodes found`, 'error');
     }
 }
 
-/**
- * Clear search results
- */
 function clearSearch() {
-    if (cy) {
-        cy.elements().removeClass('searched');
-    }
+    if (cy) cy.elements().removeClass('searched');
     document.getElementById('node-search').value = '';
     document.getElementById('clear-search-btn').style.display = 'none';
     updateStatus('Search cleared', 'info');
 }
 
-/**
- * Apply style configuration
- */
 function applyStyle() {
-    if (!cy) {
-        updateStatus('Please load a graph first', 'error');
-        return;
-    }
+    if (!cy) return;
     
-    // Read style configuration from UI
     currentStyle = {
         node: {
             sizeMetric: document.getElementById('node-size-metric').value,
@@ -661,70 +594,61 @@ function applyStyle() {
             colorMetric: document.getElementById('node-color-metric').value,
             colorFixed: document.getElementById('node-color-fixed').value,
             colorGradient: document.getElementById('node-color-gradient').value,
-            colorSelected: document.getElementById('node-color-selected').value
+            colorSelected: '#FFD700'
         },
         edge: {
             widthMetric: document.getElementById('edge-width-metric').value,
             widthMin: parseFloat(document.getElementById('edge-width-min').value),
             widthMax: parseFloat(document.getElementById('edge-width-max').value),
             color: document.getElementById('edge-color').value,
-            colorSelected: document.getElementById('edge-color-selected').value,
+            colorSelected: '#FF0000',
             opacity: parseFloat(document.getElementById('edge-opacity').value) / 100
         }
     };
     
-    // Apply the new style
     updateCytoscapeStyle();
     updateStatus('Style applied', 'success');
 }
 
-/**
- * Update Cytoscape style based on current configuration
- */
 function updateCytoscapeStyle() {
     if (!cy) return;
-    
     const style = currentStyle;
     
-    // For gradient colors, we need to manually set colors per node based on metric value
-    if (style.node.colorMetric !== 'fixed') {
-        // Get min and max values for the metric
-        let minVal = Infinity;
-        let maxVal = -Infinity;
-        
-        cy.nodes().forEach(node => {
-            const val = node.data(style.node.colorMetric) || 0;
-            if (val < minVal) minVal = val;
-            if (val > maxVal) maxVal = val;
-        });
-        
-        // Apply gradient colors to each node
-        cy.nodes().forEach(node => {
-            const val = node.data(style.node.colorMetric) || 0;
-            const color = getColorFromGradient(val, style.node.colorGradient, minVal, maxVal);
-            node.style('background-color', color);
-        });
-    }
-    
-    // Build node style
-    const nodeStyle = {
-        'border-width': 0,
-        'label': '' // No labels by default
+    // Build base style object for nodes
+    const nodeStyle = { 
+        'border-width': 0, 
+        'label': ''
     };
     
-    // Node size
+    // Handle node sizing
     if (style.node.sizeMetric === 'fixed') {
         nodeStyle['width'] = style.node.sizeMin;
         nodeStyle['height'] = style.node.sizeMin;
     } else {
-        nodeStyle['width'] = `mapData(${style.node.sizeMetric}, 0, 100, ${style.node.sizeMin}, ${style.node.sizeMax})`;
-        nodeStyle['height'] = `mapData(${style.node.sizeMetric}, 0, 100, ${style.node.sizeMin}, ${style.node.sizeMax})`;
+        // Calculate min/max for size mapping
+        let sizeMin = Infinity, sizeMax = -Infinity;
+        cy.nodes().forEach(n => {
+            const v = n.data(style.node.sizeMetric);
+            if(typeof v === 'number') { 
+                sizeMin = Math.min(sizeMin, v); 
+                sizeMax = Math.max(sizeMax, v); 
+            }
+        });
+        if (sizeMin !== Infinity && sizeMin !== sizeMax) {
+            nodeStyle['width'] = `mapData(${style.node.sizeMetric}, ${sizeMin}, ${sizeMax}, ${style.node.sizeMin}, ${style.node.sizeMax})`;
+            nodeStyle['height'] = `mapData(${style.node.sizeMetric}, ${sizeMin}, ${sizeMax}, ${style.node.sizeMin}, ${style.node.sizeMax})`;
+        } else {
+            // Fallback to fixed if no valid range
+            nodeStyle['width'] = style.node.sizeMin;
+            nodeStyle['height'] = style.node.sizeMin;
+        }
     }
     
-    // Node color (only for fixed color mode)
+    // Handle node color
     if (style.node.colorMetric === 'fixed') {
         nodeStyle['background-color'] = style.node.colorFixed;
     }
+    // If not fixed, we'll apply colors after setting the stylesheet
     
     // Build edge style
     const edgeStyle = {
@@ -735,443 +659,80 @@ function updateCytoscapeStyle() {
         'opacity': style.edge.opacity
     };
     
-    // Edge width
+    // Handle edge width
     if (style.edge.widthMetric === 'fixed') {
         edgeStyle['width'] = style.edge.widthMin;
     } else {
-        edgeStyle['width'] = `mapData(${style.edge.widthMetric}, 0, 100, ${style.edge.widthMin}, ${style.edge.widthMax})`;
-    }
-    
-    // Apply the style
-    cy.style()
-        .selector('node')
-            .style(nodeStyle)
-        .selector('node:selected')
-            .style({
-                'border-width': 2,
-                'border-color': style.node.colorSelected,
-                'background-color': style.node.colorSelected,
-                'label': 'data(id)'
-            })
-        .selector('node.searched')
-            .style({
-                'border-width': 3,
-                'border-color': '#00FF00',
-                'z-index': 999
-            })
-        .selector('edge')
-            .style(edgeStyle)
-        .selector('edge:selected')
-            .style({
-                'line-color': style.edge.colorSelected,
-                'target-arrow-color': style.edge.colorSelected,
-                'opacity': 1
-            })
-        .update();
-}
-
-/**
- * Switch tabs in info panel
- */
-function switchTab(tabName) {
-    // Update tab buttons
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.dataset.tab === tabName) {
-            btn.classList.add('active');
-        }
-    });
-    
-    // Update tab content
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.style.display = 'none';
-    });
-    
-    const tabContent = document.getElementById(`${tabName}-tab`);
-    if (tabContent) {
-        tabContent.style.display = 'block';
-    }
-}
-
-/**
- * Load graphs from server
- */
-async function loadGraphs() {
-    // Get selected SQL files
-    const selectedFiles = Array.from(document.querySelectorAll('input[name="sql-file"]:checked'))
-        .map(cb => cb.value);
-    
-    if (selectedFiles.length === 0) {
-        updateStatus('Please select at least one SQL file', 'error');
-        return;
-    }
-    
-    // Get metrics mode
-    const metricsMode = document.getElementById('metrics-mode').value;
-    let finalMetricsMode = metricsMode;
-    
-    console.log('Metrics mode selected:', metricsMode);
-    
-    if (metricsMode === 'custom') {
-        const selectedMetrics = Array.from(document.querySelectorAll('input[name="custom-metric"]:checked'))
-            .map(cb => cb.value);
-        
-        console.log('Selected custom metrics:', selectedMetrics);
-        
-        if (selectedMetrics.length === 0) {
-            updateStatus('Please select at least one metric category', 'error');
-            return;
-        }
-        
-        finalMetricsMode = selectedMetrics.join(',');
-    }
-    
-    // Get configuration
-    const config = {
-        sql_files: selectedFiles,
-        metrics_mode: finalMetricsMode,
-        metrics_graph_id: document.getElementById('metrics-graph').value || null,
-        layout_algorithm: document.getElementById('layout-algorithm').value,
-        use_cached_layout: document.getElementById('use-cached-layout').checked
-    };
-        
-    console.log('Configuration:', config);
-    
-    // Show loading
-    showLoading(true);
-    updateStatus('Loading graphs...', 'info');
-    
-    try {
-        // Load network
-        const response = await fetch('/api/load', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(config)
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Failed to load graphs');
-        }
-        
-        currentState = await response.json();
-        console.log('Network loaded:', currentState);
-        
-        // Update UI
-        updateStatus(
-            `Loaded ${currentState.loaded_graphs.length} graph(s) with ${currentState.node_count.toLocaleString()} nodes in ${currentState.computation_time.toFixed(1)}s`, 
-            'success'
-        );
-        
-        // Update graph selector
-        const graphSelector = document.getElementById('graph-selector');
-        graphSelector.style.display = 'block';
-        
-        const graphSelect = document.getElementById('graph-select');
-        graphSelect.innerHTML = '';
-        
-        currentState.loaded_graphs.forEach(graphId => {
-            const option = document.createElement('option');
-            option.value = graphId;
-            option.textContent = graphId;
-            graphSelect.appendChild(option);
-        });
-        
-        // Display first graph
-        if (currentState.loaded_graphs.length > 0) {
-            graphSelect.value = currentState.loaded_graphs[0];
-            await displayGraph(currentState.loaded_graphs[0]);
-        }
-        
-        // Show stats
-        showStats();
-        
-    } catch (error) {
-        console.error('Error loading graphs:', error);
-        updateStatus(`Error: ${error.message}`, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-/**
- * Display a specific graph
- * NEW: original cached-layout nodes are kept rigid; only new nodes + neighborhood are refined.
- */
-async function displayGraph(graphId) {
-    console.log(`Displaying graph: ${graphId}`);
-    currentGraph = graphId;
-    
-    showLoading(true);
-    updateStatus(`Loading ${graphId}...`, 'info');
-    
-    try {
-        // Fetch graph elements
-        const response = await fetch(`/api/graphs/${graphId}/elements`);
-        
-        if (!response.ok) {
-            throw new Error('Failed to load graph elements');
-        }
-        
-        const data = await response.json();
-        console.log(`Loaded ${data.count} elements for ${graphId}`);
-        
-        // Store this graph's data separately to avoid mixing
-        graphData[graphId] = data.elements;
-        
-        // Infer positions for nodes without cached positions and decide if refinement is useful
-        const needsRefinement = inferMissingPositions(data.elements);
-        
-        // Count nodes and edges
-        const nodes = data.elements.filter(el => el.group === 'nodes');
-        const edges = data.elements.filter(el => el.group === 'edges');
-        
-        // Update toolbar
-        const nodeCountEl = document.getElementById('node-count');
-        const edgeCountEl = document.getElementById('edge-count');
-        if (nodeCountEl) nodeCountEl.textContent = `${nodes.length} nodes`;
-        if (edgeCountEl) edgeCountEl.textContent = `${edges.length} edges`;
-        
-        // Destroy previous cytoscape instance completely
-        if (cy) {
-            cy.destroy();
-            cy = null;
-        }
-        
-        // Create new cytoscape instance with ONLY this graph's data
-        cy = cytoscape({
-            container: document.getElementById('cy'),
-            elements: graphData[graphId], // Use stored data for this specific graph
-            
-            style: [], // Will be set by updateCytoscapeStyle
-            
-            layout: {
-                name: 'preset'  // Use positions from server (or inferred)
-            },
-            
-            // Performance settings
-            minZoom: 0.1,
-            maxZoom: 10,
-            wheelSensitivity: 0.1,
-            hideEdgesOnViewport: true,
-            textureOnViewport: true,
-            motionBlur: true,
-            motionBlurOpacity: 0.2
-        });
-        
-        // OPTIONAL: Run quick layout refinement if we inferred new positions
-        // We keep original nodes rigid and only adjust new nodes plus their local neighborhood
-        if (needsRefinement && document.getElementById('use-cached-layout').checked) {
-            console.log('Running quick layout refinement for new nodes (original layout frozen)...');
-            
-            updateStatus('Refining layout for new nodes...', 'info');
-            
-            const newNodes = cy.nodes().filter(n => n.data('isNew'));
-            if (newNodes.length > 0) {
-                // Lock all non-new nodes so their positions stay fixed
-                const oldNodes = cy.nodes().not(newNodes);
-                oldNodes.lock();
-                
-                // Build a local subgraph: new nodes + their closed neighborhood (neighbors + edges)
-                const layoutCollection = newNodes.closedNeighborhood();
-                
-                const layout = layoutCollection.layout({
-                    name: 'cose',
-                    animate: false,
-                    randomize: false,  // Don't randomize, use current positions as starting point
-                    nodeRepulsion: function(node) { return 40; },
-                    idealEdgeLength: function(edge) { return 5; },
-                    nodeOverlap: 20,
-                    numIter: 100,  // Just 20 iterations for quick refinement
-                    initialTemp: 200, // Lower initial temperature for gentler refinement
-                    coolingFactor: 0.95,
-                    minTemp: 1.0,
-                    gravity: 0.25,
-                    fit: false, // Don't fit to viewport, maintain current zoom/pan
-                    padding: 30
-                });
-                
-                layout.run();
-                
-                // Unlock original nodes again
-                oldNodes.unlock();
-                
-                console.log('Layout refinement for new nodes complete');
-            } else {
-                console.log('No nodes marked as new; skipping refinement');
+        // Calculate min/max for edge width mapping
+        let edgeMin = Infinity, edgeMax = -Infinity;
+        cy.edges().forEach(e => {
+            const v = e.data(style.edge.widthMetric);
+            if(typeof v === 'number') { 
+                edgeMin = Math.min(edgeMin, v); 
+                edgeMax = Math.max(edgeMax, v); 
             }
+        });
+        if (edgeMin !== Infinity && edgeMin !== edgeMax) {
+            edgeStyle['width'] = `mapData(${style.edge.widthMetric}, ${edgeMin}, ${edgeMax}, ${style.edge.widthMin}, ${style.edge.widthMax})`;
+        } else {
+            edgeStyle['width'] = style.edge.widthMin;
         }
-        
-        // Apply current style
-        updateCytoscapeStyle();
-        
-        // Add event listeners
-        cy.on('tap', 'node', function(evt) {
-            const node = evt.target;
-            showNodeInfo(node);
+    }
+    
+    // Apply the base stylesheet
+    cy.style()
+        .selector('node').style(nodeStyle)
+        .selector('node:selected').style({
+            'border-width': 3,
+            'border-color': style.node.colorSelected,
+            'z-index': 999
+        })
+        .selector('node.searched').style({
+            'border-width': 3,
+            'border-color': '#00FF00',
+            'z-index': 998
+        })
+        .selector('edge').style(edgeStyle)
+        .selector('edge:selected').style({
+            'line-color': style.edge.colorSelected,
+            'target-arrow-color': style.edge.colorSelected,
+            'opacity': 1,
+            'width': Math.max(4, style.edge.widthMax),
+            'z-index': 999
+        })
+        .update();
+    
+    // Now apply gradient colors as bypass styles if needed
+    if (style.node.colorMetric !== 'fixed') {
+        let colorMin = Infinity, colorMax = -Infinity;
+        cy.nodes().forEach(node => {
+            const val = node.data(style.node.colorMetric);
+            if (typeof val === 'number') {
+                if (val < colorMin) colorMin = val;
+                if (val > colorMax) colorMax = val;
+            }
         });
         
-        // Fit to viewport
-        cy.fit();
-        
-        updateStatus(`Displayed ${graphId}`, 'success');
-        
-    } catch (error) {
-        console.error('Error displaying graph:', error);
-        updateStatus(`Error: ${error.message}`, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-/**
- * Show node information - Enhanced version
- */
-function showNodeInfo(node) {
-    const data = node.data();
-    const panel = document.getElementById('node-info');
-    
-    // Update node ID
-    document.getElementById('node-id').textContent = data.id;
-    
-    // Switch to metrics tab by default
-    switchTab('metrics');
-    
-    // Populate all metrics
-    const metricsDiv = document.getElementById('all-metrics');
-    metricsDiv.innerHTML = '';
-    
-    // Sort metrics alphabetically, but put key metrics first
-    const keyMetrics = ['in_degree', 'out_degree', 'total_degree', 'community_id', 'pagerank'];
-    const allMetrics = Object.keys(data).filter(key => 
-        key !== 'id' && key !== 'label' && typeof data[key] !== 'object'
-    );
-    
-    const sortedMetrics = [
-        ...keyMetrics.filter(k => allMetrics.includes(k)),
-        ...allMetrics.filter(k => !keyMetrics.includes(k)).sort()
-    ];
-    
-    sortedMetrics.forEach(key => {
-        const value = data[key];
-        const metricRow = document.createElement('div');
-        metricRow.className = 'metric-row';
-        
-        const label = document.createElement('span');
-        label.className = 'metric-label';
-        label.textContent = key.replace(/_/g, ' ');
-        
-        const val = document.createElement('span');
-        val.className = 'metric-value';
-        val.textContent = typeof value === 'number' ? 
-            (Number.isInteger(value) ? value : value.toFixed(4)) : value;
-        
-        metricRow.appendChild(label);
-        metricRow.appendChild(val);
-        metricsDiv.appendChild(metricRow);
-    });
-    
-    // Populate neighbors - IMPORTANT: Only from current graph
-    const incomers = node.incomers().edges();
-    const outgoers = node.outgoers().edges();
-    
-    // In neighbors
-    document.getElementById('in-count').textContent = incomers.length;
-    const inList = document.getElementById('neighbors-in-list');
-    inList.innerHTML = '';
-    
-    incomers.forEach((edge, index) => {
-        if (index < 100) { // Limit to first 100
-            const neighborDiv = document.createElement('div');
-            neighborDiv.className = 'neighbor-item';
-            neighborDiv.textContent = edge.source().id();
-            neighborDiv.addEventListener('click', () => {
-                cy.elements().unselect();
-                edge.source().select();
-                showNodeInfo(edge.source());
-            });
-            inList.appendChild(neighborDiv);
+        if (colorMin === Infinity || colorMin === colorMax) { 
+            // No valid range, use default
+            colorMin = 0; 
+            colorMax = 1; 
         }
-    });
-    
-    if (incomers.length > 100) {
-        const moreDiv = document.createElement('div');
-        moreDiv.className = 'neighbor-more';
-        moreDiv.textContent = `... and ${incomers.length - 100} more`;
-        inList.appendChild(moreDiv);
-    }
-    
-    // Out neighbors
-    document.getElementById('out-count').textContent = outgoers.length;
-    const outList = document.getElementById('neighbors-out-list');
-    outList.innerHTML = '';
-    
-    outgoers.forEach((edge, index) => {
-        if (index < 100) { // Limit to first 100
-            const neighborDiv = document.createElement('div');
-            neighborDiv.className = 'neighbor-item';
-            neighborDiv.textContent = edge.target().id();
-            neighborDiv.addEventListener('click', () => {
-                cy.elements().unselect();
-                edge.target().select();
-                showNodeInfo(edge.target());
+        
+        // Apply colors as bypass styles
+        cy.batch(() => {
+            cy.nodes().forEach(node => {
+                const val = node.data(style.node.colorMetric);
+                const color = (typeof val === 'number') 
+                    ? getColorFromGradient(val, style.node.colorGradient, colorMin, colorMax)
+                    : '#888888';
+                node.style('background-color', color);
             });
-            outList.appendChild(neighborDiv);
-        }
-    });
-    
-    if (outgoers.length > 100) {
-        const moreDiv = document.createElement('div');
-        moreDiv.className = 'neighbor-more';
-        moreDiv.textContent = `... and ${outgoers.length - 100} more`;
-        outList.appendChild(moreDiv);
+        });
+    } else {
+        // Clear bypass colors to let stylesheet color take effect
+        cy.batch(() => {
+            cy.nodes().removeStyle('background-color');
+        });
     }
-    
-    panel.style.display = 'block';
-}
-
-/**
- * Show statistics
- */
-function showStats() {
-    if (!currentState) return;
-    
-    const statsDiv = document.getElementById('stats');
-    statsDiv.style.display = 'block';
-    
-    statsDiv.innerHTML = `
-        <h3>Statistics</h3>
-        <div>Nodes: ${currentState.node_count.toLocaleString()}</div>
-        <div>Edges: ${currentState.edge_count.toLocaleString()}</div>
-        <div>Metrics: ${currentState.metrics_computed.length}</div>
-        <div>Layout: ${currentState.layout_computation_time.toFixed(1)}s</div>
-        <div>Total: ${currentState.computation_time.toFixed(1)}s</div>
-    `;
-}
-
-/**
- * Update status message
- */
-function updateStatus(message, type = 'info') {
-    const statusDiv = document.getElementById('status');
-    statusDiv.textContent = message;
-    statusDiv.className = `status status-${type}`;
-    statusDiv.style.display = 'block';
-    
-    // Auto-hide after 5 seconds for success/info messages
-    if (type === 'success' || type === 'info') {
-        setTimeout(() => {
-            statusDiv.style.display = 'none';
-        }, 5000);
-    }
-}
-
-/**
- * Show/hide loading overlay
- */
-function showLoading(show) {
-    const loadingDiv = document.getElementById('loading');
-    loadingDiv.style.display = show ? 'flex' : 'none';
 }
