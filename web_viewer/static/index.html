@@ -58,6 +58,98 @@
                         Use cached layout if available
                     </label>
                 </div>
+                
+                <!-- NEW: Style Configuration Section -->
+                <div class="section collapsible">
+                    <h3 class="collapsible-header">
+                        <span>Visual Style</span>
+                        <span class="collapse-icon">▼</span>
+                    </h3>
+                    <div class="collapsible-content" style="display: none;">
+                        <!-- Node Style -->
+                        <div class="style-subsection">
+                            <h4>Node Style</h4>
+                            <div class="style-row">
+                                <label>Size By:</label>
+                                <select id="node-size-metric">
+                                    <option value="fixed">Fixed Size</option>
+                                    <option value="total_degree" selected>Total Degree</option>
+                                    <option value="in_degree">In Degree</option>
+                                    <option value="out_degree">Out Degree</option>
+                                    <option value="pagerank">PageRank</option>
+                                    <option value="betweenness_centrality">Betweenness</option>
+                                    <option value="community_size">Community Size</option>
+                                </select>
+                            </div>
+                            <div class="style-row">
+                                <label>Size Range:</label>
+                                <input type="number" id="node-size-min" value="5" min="1" max="50">
+                                <span>-</span>
+                                <input type="number" id="node-size-max" value="30" min="5" max="100">
+                            </div>
+                            <div class="style-row">
+                                <label>Color By:</label>
+                                <select id="node-color-metric">
+                                    <option value="fixed">Fixed Color</option>
+                                    <option value="community_id" selected>Community ID</option>
+                                    <option value="total_degree">Total Degree</option>
+                                    <option value="in_degree">In Degree</option>
+                                    <option value="out_degree">Out Degree</option>
+                                    <option value="pagerank">PageRank</option>
+                                    <option value="clustering_coefficient">Clustering Coef.</option>
+                                </select>
+                            </div>
+                            <div class="style-row" id="gradient-selector">
+                                <label>Color Gradient:</label>
+                                <select id="node-color-gradient">
+                                    <!-- Populated by JavaScript -->
+                                </select>
+                            </div>
+                            <div class="style-row" id="fixed-color-selector" style="display: none;">
+                                <label>Fixed Color:</label>
+                                <input type="color" id="node-color-fixed" value="#FFFFFF">
+                            </div>
+                            <div class="style-row">
+                                <label>Color (selected):</label>
+                                <input type="color" id="node-color-selected" value="#FF0000">
+                            </div>
+                        </div>
+                        
+                        <!-- Edge Style -->
+                        <div class="style-subsection">
+                            <h4>Edge Style</h4>
+                            <div class="style-row">
+                                <label>Width By:</label>
+                                <select id="edge-width-metric">
+                                    <option value="fixed" selected>Fixed Width</option>
+                                    <option value="amount">Amount</option>
+                                    <option value="weight">Weight</option>
+                                </select>
+                            </div>
+                            <div class="style-row">
+                                <label>Width Range:</label>
+                                <input type="number" id="edge-width-min" value="1" min="0.5" max="5" step="0.5">
+                                <span>-</span>
+                                <input type="number" id="edge-width-max" value="3" min="1" max="10" step="0.5">
+                            </div>
+                            <div class="style-row">
+                                <label>Color (unselected):</label>
+                                <input type="color" id="edge-color" value="#FFFFFF">
+                            </div>
+                            <div class="style-row">
+                                <label>Color (selected):</label>
+                                <input type="color" id="edge-color-selected" value="#FF0000">
+                            </div>
+                            <div class="style-row">
+                                <label>Opacity:</label>
+                                <input type="range" id="edge-opacity" min="0" max="100" value="30">
+                                <span id="edge-opacity-value">30%</span>
+                            </div>
+                        </div>
+                        
+                        <button id="apply-style-btn" class="secondary-btn">Apply Style</button>
+                    </div>
+                </div>
             </div>
             
             <button id="load-btn" class="primary-btn">Load Graphs</button>
@@ -82,6 +174,11 @@
                     <span id="node-count"></span>
                     <span id="edge-count"></span>
                 </div>
+                <div class="toolbar-search">
+                    <input type="text" id="node-search" placeholder="Search node by ID...">
+                    <button id="search-btn">Search</button>
+                    <button id="clear-search-btn" style="display: none;">Clear</button>
+                </div>
                 <div class="toolbar-actions">
                     <button id="filter-btn">Filters</button>
                     <button id="fit-btn">Fit</button>
@@ -98,23 +195,43 @@
             </div>
         </main>
         
+        <!-- ENHANCED: Node Information Panel with Tabs -->
         <div id="node-info" class="info-panel" style="display: none;">
             <div class="info-header">
-                <h3>Information</h3>
+                <h3>Node Information</h3>
                 <button class="close-btn">×</button>
             </div>
+            <div class="info-node-id">
+                <span id="node-id"></span>
+            </div>
+            <div class="info-tabs">
+                <button class="tab-btn active" data-tab="metrics">Metrics</button>
+                <button class="tab-btn" data-tab="neighbors-in">In Neighbors</button>
+                <button class="tab-btn" data-tab="neighbors-out">Out Neighbors</button>
+            </div>
             <div class="info-content">
-                <h4>Node</h4>
-                <div id="node-id"></div>
+                <!-- Metrics Tab -->
+                <div id="metrics-tab" class="tab-content active">
+                    <div id="all-metrics" class="metrics-list">
+                        <!-- Will be populated with all metrics -->
+                    </div>
+                </div>
                 
-                <h4>Key Metrics</h4>
-                <div id="key-metrics"></div>
+                <!-- In Neighbors Tab -->
+                <div id="neighbors-in-tab" class="tab-content" style="display: none;">
+                    <div class="neighbors-count">Total: <span id="in-count">0</span></div>
+                    <div id="neighbors-in-list" class="neighbors-list">
+                        <!-- Will be populated with incoming neighbors -->
+                    </div>
+                </div>
                 
-                <h4>Connections</h4>
-                <div id="connections"></div>
-                
-                <h4>Sample Neighbors</h4>
-                <div id="neighbors-list" class="neighbors-list"></div>
+                <!-- Out Neighbors Tab -->
+                <div id="neighbors-out-tab" class="tab-content" style="display: none;">
+                    <div class="neighbors-count">Total: <span id="out-count">0</span></div>
+                    <div id="neighbors-out-list" class="neighbors-list">
+                        <!-- Will be populated with outgoing neighbors -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>

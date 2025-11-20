@@ -490,10 +490,16 @@ class NetworkService:
         
         print(f"[METRICS] Total unique avatars across all layers: {len(all_avatars):,}")
         
-        # For large graphs, limit to basic metrics
-        if G.number_of_nodes() > 5000 and metrics_mode not in ["basic", "topology"]:
-            print(f"[METRICS] Large graph detected ({G.number_of_nodes()} nodes), using 'basic' mode for performance")
-            metrics_mode = "basic"
+        # For large graphs, suggest limiting metrics but respect custom selections
+        if G.number_of_nodes() > 50000:
+            # Check if it's a custom selection (contains comma) or a heavy preset
+            if ',' in (metrics_mode or ''):
+                # Custom selection - respect user's choice
+                print(f"[METRICS] Large graph detected ({G.number_of_nodes()} nodes), using custom selection: {metrics_mode}")
+            elif metrics_mode not in ["basic", "topology", "essential"]:
+                # Heavy preset mode - override to basic for performance
+                print(f"[METRICS] Large graph detected ({G.number_of_nodes()} nodes), overriding '{metrics_mode}' to 'basic' mode for performance")
+                metrics_mode = "basic"
         
         print(f"[METRICS] Computing metrics in '{metrics_mode or 'all'}' mode...")
         start = time.time()

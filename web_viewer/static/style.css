@@ -33,10 +33,6 @@ body {
     border-bottom: 1px solid #2a2a2a;
 }
 
-.back-btn {
-    display: none; /* Hide for now */
-}
-
 /* Scrollable content area */
 .sidebar-content {
     flex: 1;
@@ -55,6 +51,81 @@ body {
     letter-spacing: 0.5px;
     color: #808080;
     margin-bottom: 10px;
+}
+
+/* Collapsible sections */
+.collapsible-header {
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px;
+    background: #0a0a0a;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.collapsible-header:hover {
+    background: #2a2a2a;
+}
+
+.collapse-icon {
+    font-size: 10px;
+    color: #808080;
+}
+
+.collapsible-content {
+    margin-top: 10px;
+}
+
+/* Style configuration subsections */
+.style-subsection {
+    margin-bottom: 20px;
+    padding: 10px;
+    background: #0a0a0a;
+    border-radius: 4px;
+}
+
+.style-subsection h4 {
+    font-size: 11px;
+    font-weight: 600;
+    color: #4A90E2;
+    margin-bottom: 10px;
+}
+
+.style-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.style-row label {
+    font-size: 11px;
+    color: #b0b0b0;
+    min-width: 80px;
+}
+
+.style-row input[type="number"] {
+    width: 60px;
+    padding: 4px;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 3px;
+    color: #e0e0e0;
+    font-size: 11px;
+}
+
+.style-row input[type="color"] {
+    width: 50px;
+    height: 25px;
+    border: 1px solid #3a3a3a;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.style-row input[type="range"] {
+    flex: 1;
 }
 
 /* Checkbox group with scroll */
@@ -101,7 +172,7 @@ select:focus {
     border-color: #4A90E2;
 }
 
-/* Primary button */
+/* Buttons */
 .primary-btn {
     margin: 20px;
     padding: 12px;
@@ -117,6 +188,23 @@ select:focus {
 
 .primary-btn:hover {
     background: #357ABD;
+}
+
+.secondary-btn {
+    width: 100%;
+    padding: 8px;
+    margin-top: 10px;
+    background: #2a2a2a;
+    color: #e0e0e0;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.secondary-btn:hover {
+    background: #3a3a3a;
 }
 
 /* Status message */
@@ -192,6 +280,43 @@ select:focus {
     font-size: 13px;
 }
 
+/* Search functionality */
+.toolbar-search {
+    flex: 1;
+    max-width: 400px;
+    display: flex;
+    gap: 10px;
+}
+
+.toolbar-search input {
+    flex: 1;
+    padding: 6px 12px;
+    background: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+}
+
+.toolbar-search input:focus {
+    outline: none;
+    border-color: #4A90E2;
+}
+
+.toolbar-search button {
+    padding: 6px 12px;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.toolbar-search button:hover {
+    background: #3a3a3a;
+}
+
 .toolbar-actions {
     margin-left: auto;
     display: flex;
@@ -219,17 +344,20 @@ select:focus {
     background: #0a0a0a;
 }
 
-/* RIGHT SIDEBAR - Node Information Panel */
+/* RIGHT SIDEBAR - Enhanced Node Information Panel */
 .info-panel {
     position: absolute;
     right: 20px;
     top: 70px;
-    width: 320px;
+    width: 360px;
+    max-height: 80vh;
     background: #1a1a1a;
     border: 1px solid #2a2a2a;
     border-radius: 4px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     z-index: 1000;
+    display: flex;
+    flex-direction: column;
 }
 
 .info-header {
@@ -264,22 +392,11 @@ select:focus {
     color: #e0e0e0;
 }
 
-.info-content {
-    padding: 15px;
-    max-height: 600px;
-    overflow-y: auto;
-}
-
-.info-content h4 {
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: #808080;
-    margin: 15px 0 10px 0;
-}
-
-.info-content h4:first-child {
-    margin-top: 0;
+/* Node ID display */
+.info-node-id {
+    padding: 10px 15px;
+    background: #0a0a0a;
+    border-bottom: 1px solid #2a2a2a;
 }
 
 #node-id {
@@ -287,56 +404,110 @@ select:focus {
     font-size: 11px;
     color: #52c41a;
     word-break: break-all;
-    padding: 8px;
+}
+
+/* Tab navigation */
+.info-tabs {
+    display: flex;
     background: #0a0a0a;
-    border-radius: 4px;
-    margin-bottom: 15px;
+    border-bottom: 1px solid #2a2a2a;
 }
 
-#key-metrics {
-    font-size: 13px;
-    line-height: 1.6;
+.tab-btn {
+    flex: 1;
+    padding: 10px;
+    background: none;
+    border: none;
+    color: #808080;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
 }
 
-#key-metrics div {
-    padding: 4px 0;
+.tab-btn:hover {
+    background: #1a1a1a;
+    color: #e0e0e0;
+}
+
+.tab-btn.active {
+    background: #1a1a1a;
+    color: #4A90E2;
+    border-bottom: 2px solid #4A90E2;
+}
+
+/* Tab content */
+.info-content {
+    flex: 1;
+    overflow: hidden;
+}
+
+.tab-content {
+    height: 100%;
+    overflow-y: auto;
+    padding: 15px;
+}
+
+/* Metrics list */
+.metrics-list {
+    font-size: 12px;
+}
+
+.metric-row {
     display: flex;
     justify-content: space-between;
+    padding: 6px 8px;
+    border-bottom: 1px solid #0a0a0a;
 }
 
-#key-metrics div:nth-child(even) {
+.metric-row:nth-child(odd) {
     background: #0a0a0a;
 }
 
-#connections {
-    display: flex;
-    gap: 20px;
-    font-size: 13px;
+.metric-label {
+    color: #808080;
+    text-transform: capitalize;
 }
 
-#connections div {
-    flex: 1;
-    text-align: center;
+.metric-value {
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+}
+
+/* Neighbors list */
+.neighbors-count {
     padding: 10px;
     background: #0a0a0a;
-    border-radius: 4px;
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 12px;
+    font-weight: 600;
+    color: #4A90E2;
 }
 
-/* Sample neighbors list */
 .neighbors-list {
-    max-height: 150px;
+    max-height: 400px;
     overflow-y: auto;
-    background: #0a0a0a;
-    border-radius: 4px;
-    padding: 8px;
-    margin-top: 10px;
 }
 
-.neighbors-list div {
-    padding: 4px;
+.neighbor-item {
+    padding: 8px;
     font-size: 11px;
-    font-family: monospace;
+    font-family: 'Courier New', monospace;
     color: #808080;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-bottom: 1px solid #0a0a0a;
+}
+
+.neighbor-item:hover {
+    background: #2a2a2a;
+    color: #e0e0e0;
+}
+
+.neighbor-more {
+    padding: 8px;
+    font-size: 11px;
+    color: #4A90E2;
+    font-style: italic;
 }
 
 /* Loading overlay */
