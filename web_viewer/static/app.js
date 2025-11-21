@@ -1,5 +1,6 @@
 /**
  * Graph Analyzer Web Viewer - Ultra-Light with Dynamic Style Toggle
+ * Updated for Toast Feedback, Fast Loading, and Detailed Multi-Selection
  */
 
 // Performance utilities
@@ -20,11 +21,14 @@ let currentStyle = null;
 let graphData = {};
 let neighborHighlightState = 0;
 let performanceMode = true; // Start in performance mode
+let edgesLoading = false;   // New: incremental edge loading flag
 let styleCache = {
     sizeRange: { min: 0, max: 1 },
     colorRange: { min: 0, max: 1 },
     widthRange: { min: 0, max: 1 }
 };
+
+
 
 // Cache DOM elements
 let domCache = {};
@@ -48,17 +52,55 @@ function cacheDOMElements() {
         nodeInfo: document.getElementById('node-info'),
         edgeInfo: document.getElementById('edge-info'),
         multiInfo: document.getElementById('multi-info'),
+        multiMetricsList: document.getElementById('multi-metrics-list'), // New cached element
         allMetrics: document.getElementById('all-metrics'),
         edgeMetrics: document.getElementById('edge-metrics'),
         inCount: document.getElementById('in-count'),
         outCount: document.getElementById('out-count'),
         neighborInList: document.getElementById('neighbors-in-list'),
         neighborOutList: document.getElementById('neighbors-out-list'),
-        status: document.getElementById('status'),
+        status: document.getElementById('status'), // Kept for fallback
         loading: document.getElementById('loading'),
-        cyContainer: document.getElementById('cy')
+        cyContainer: document.getElementById('cy'),
+        toastContainer: document.getElementById('toast-container'), // New toast container
+        edgesProgress: document.getElementById('edges-progress'),
+        loadEdgesBtn: document.getElementById('load-edges-btn')
     };
 }
+
+
+// --- TOAST NOTIFICATION SYSTEM ---
+function showToast(message, type = 'info') {
+    if (!domCache.toastContainer) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerText = message;
+    
+    domCache.toastContainer.appendChild(toast);
+    
+    // Force reflow to enable transition
+    void toast.offsetWidth;
+    toast.classList.add('show');
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            if (domCache.toastContainer.contains(toast)) {
+                domCache.toastContainer.removeChild(toast);
+            }
+        }, 300); // Wait for fade out transition
+    }, 3000);
+}
+
+// Redirect legacy status updates to Toast system
+function updateStatus(msg, type) {
+    showToast(msg, type);
+    // Optional: log to console for debugging
+    if (type === 'error') console.error(msg);
+}
+// ---------------------------------
 
 function addPerformanceToggle() {
     // Add radio buttons to toolbar
@@ -145,10 +187,10 @@ function toggleRenderMode(toPerformance) {
             })
             .update();
             
-        updateStatus('Performance mode: styles removed', 'info');
+        updateStatus('Performance mode enabled', 'info');
     } else {
         updateCytoscapeStyle();
-        updateStatus('Style mode: visual customization enabled', 'success');
+        updateStatus('Style mode enabled', 'success');
     }
 }
 
@@ -387,7 +429,7 @@ async function loadAvailableConfig() {
 
     } catch (error) {
         console.error('Error config:', error);
-        updateStatus('Config error', 'error');
+        updateStatus('Config error: ' + error.message, 'error');
     }
 }
 
@@ -395,6 +437,7 @@ function setupEventListeners() {
     // Core buttons
     document.getElementById('load-btn').addEventListener('click', loadGraphs);
     document.getElementById('metrics-btn').addEventListener('click', runMetrics);
+    document.getElementById('filter-btn').addEventListener('click', filterNodes);
     document.getElementById('filter-btn').addEventListener('click', filterNodes);
     document.getElementById('reset-filter-btn').addEventListener('click', () => {
         if(cy) {
@@ -422,6 +465,13 @@ function setupEventListeners() {
         if(e.key === 'Enter') searchNode(); 
     });
     document.getElementById('clear-search-btn')?.addEventListener('click', clearSearch);
+
+    // Incremental edges loader
+    document.getElementById('load-edges-btn')?.addEventListener('click', () => {
+        if (currentGraph) {
+            loadEdgesIncrementally(currentGraph);
+        }
+    });
     
     // Info Panel
     document.querySelector('.close-btn')?.addEventListener('click', () => {
@@ -468,9 +518,14 @@ async function loadGraphs() {
     const selectedFiles = Array.from(document.querySelectorAll('input[name="sql-file"]:checked')).map(cb => cb.value);
     if (selectedFiles.length === 0) return updateStatus('Select at least one SQL file', 'error');
 
+    // --- NEW FEATURE: Skip SQL / Fast Load ---
+    const useCachedLayout = document.getElementById('use-cached-layout').checked;
+    const skipSql = document.getElementById('skip-sql').checked;
+
     const config = {
         sql_files: selectedFiles,
-        use_cached_layout: document.getElementById('use-cached-layout').checked
+        use_cached_layout: useCachedLayout,
+        skip_sql: skipSql // Pass flag to backend
     };
 
     const btn = document.getElementById('load-btn');
@@ -479,6 +534,8 @@ async function loadGraphs() {
     btn.textContent = "Loading...";
     status.style.display = 'block';
     
+    updateStatus("Starting network load...", "info"); // Immediate feedback
+
     try {
         const response = await fetch('/api/load', {
             method: 'POST',
@@ -532,6 +589,8 @@ async function runMetrics() {
     btn.disabled = true;
     btn.textContent = "Running...";
     status.style.display = 'block';
+    
+    updateStatus("Calculating metrics...", "info"); // Immediate feedback
 
     try {
         const response = await fetch('/api/metrics', {
@@ -582,25 +641,36 @@ async function runMetrics() {
 
 async function displayGraph(graphId) {
     currentGraph = graphId;
+    edgesLoading = false;
+
+    if (domCache.edgesProgress) {
+        domCache.edgesProgress.textContent = '';
+    }
+
     showLoading(true);
-    updateStatus(`Loading ${graphId}...`, 'info');
+    updateStatus(`Loading visualization for ${graphId}...`, 'info'); // Immediate feedback
 
     try {
-        const res = await fetch(`/api/graphs/${graphId}/elements`);
+        // Load a lightweight preview: nodes only
+        const res = await fetch(`/api/graphs/${graphId}/elements?mode=nodes_only`);
         if (!res.ok) throw new Error('Failed elements');
         const data = await res.json();
         graphData[graphId] = data.elements;
 
         const nodes = data.elements.filter(e => e.group === 'nodes');
-        const edges = data.elements.filter(e => e.group === 'edges');
+        const edges = data.elements.filter(e => e.group === 'edges'); // will be empty in preview
         domCache.nodeCount.textContent = `${nodes.length} nodes`;
-        domCache.edgeCount.textContent = `${edges.length} edges`;
+        domCache.edgeCount.textContent = `${edges.length} edges (preview)`;
+
+        if (domCache.edgesProgress) {
+            domCache.edgesProgress.textContent = 'Preview (nodes only). Use "Load edges".';
+        }
 
         if (cy) {
             cy.destroy();
             cy = null;
         }
-        
+
         // Clear style cache
         styleCache = {
             sizeRange: { min: 0, max: 1 },
@@ -618,22 +688,22 @@ async function displayGraph(graphId) {
             renderer: {
                 name: 'canvas',
                 webgl: true,           // Turn on experimental WebGL
-                webglTexSize: 1024,    // Optional: larger texture size for clearer nodes 4096
-                showFps: true         // Set to true if you want to debug performance
+                webglTexSize: 1024,    // Optional: larger texture size for clearer nodes
+                showFps: true         
             },
 
             layout: { name: 'preset' },
             minZoom: 1e-2,
             maxZoom: 10,
             wheelSensitivity: 0.3,
-            boxSelectionEnabled: false, // Disable box selection for better performance
-            //selectionType: 'single',
+            boxSelectionEnabled: true, // Enabled for multi-selection
+            selectionType: 'additive', // Allows adding to selection
             autounselectify: false,
             autoungrabify: false,
-            textureOnViewport: true,    // Use texture during pan/zoom (smoother)
-            hideEdgesOnViewport: true,  // Hide edges while moving (huge fps boost)
-            hideLabelsOnViewport: true, // Hide labels while moving
-            pixelRatio: 1,              // Force 1x resolution (saves GPU on retina screens)
+            textureOnViewport: true,    
+            hideEdgesOnViewport: true,  
+            hideLabelsOnViewport: true, 
+            pixelRatio: 1,              
             motionBlur: true
         });
         
@@ -646,7 +716,7 @@ async function displayGraph(graphId) {
             updateCytoscapeStyle();
         }
         
-        updateStatus(`Displayed ${graphId}`, 'success');
+        updateStatus(`Graph preview displayed (nodes only)`, 'success');
 
     } catch (err) {
         updateStatus(err.message, 'error');
@@ -654,6 +724,75 @@ async function displayGraph(graphId) {
         showLoading(false);
     }
 }
+
+async function loadEdgesIncrementally(graphId, batchSize = 50000) {
+    if (!cy) return;
+    if (edgesLoading) {
+        console.warn('Edges are already loading');
+        return;
+    }
+
+    edgesLoading = true;
+
+    let offset = 0;
+    let total = null;
+
+    if (domCache.edgesProgress) {
+        domCache.edgesProgress.textContent = 'Loading edges…';
+    }
+
+    try {
+        while (true) {
+            const res = await fetch(`/api/graphs/${graphId}/edges?offset=${offset}&limit=${batchSize}`);
+            if (!res.ok) throw new Error('Failed to load edges');
+
+            const data = await res.json();
+            const elements = data.elements || [];
+            const totalEdges = data.total;
+
+            if (total === null && typeof totalEdges === 'number') {
+                total = totalEdges;
+            }
+
+            if (!elements.length) {
+                break;
+            }
+
+            cy.batch(() => {
+                cy.add(elements);
+            });
+
+            offset += elements.length;
+
+            if (total != null) {
+                domCache.edgeCount.textContent = `${offset} / ${total} edges`;
+                if (domCache.edgesProgress) {
+                    domCache.edgesProgress.textContent = `Loaded ${offset} / ${total} edges`;
+                }
+            } else {
+                domCache.edgeCount.textContent = `${offset} edges`;
+            }
+
+            // Yield back to the browser so UI stays responsive
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        if (domCache.edgesProgress) {
+            domCache.edgesProgress.textContent = 'All edges loaded';
+        }
+        showToast('All edges loaded', 'success');
+    } catch (err) {
+        console.error(err);
+        updateStatus('Failed to load edges: ' + err.message, 'error');
+        if (domCache.edgesProgress) {
+            domCache.edgesProgress.textContent = 'Edge load failed';
+        }
+    } finally {
+        edgesLoading = false;
+    }
+}
+
+
 
 function getPerformanceStyle() {
     return [
@@ -780,6 +919,7 @@ function setupCyListeners() {
         showNodeInfo(node);
     }, 50);
     
+    // Simple click
     cy.on('tap', 'node', evt => handleNodeClick(evt.target));
     
     cy.on('tap', 'edge', evt => {
@@ -787,6 +927,7 @@ function setupCyListeners() {
         showEdgeInfo(evt.target);
     });
     
+    // Handle selection changes (box selection, shift+click)
     cy.on('select unselect', debounce(() => {
         const selected = cy.$(':selected');
         if (selected.length > 1) {
@@ -794,10 +935,13 @@ function setupCyListeners() {
             showMultiInfo(selected);
         } else if (selected.length === 1) {
             if (selected.isNode()) {
-                showNodeInfo(selected);
+                showNodeInfo(selected[0]);
             } else {
-                showEdgeInfo(selected);
+                showEdgeInfo(selected[0]);
             }
+        } else {
+            // Nothing selected
+            // hideAllInfo(); // Optional: keep last info or clear? keeping it visible is usually better
         }
     }, 100));
 }
@@ -812,6 +956,8 @@ function filterNodes() {
     if (!metric || isNaN(val)) {
         return updateStatus('Please select a metric and enter a numeric value', 'error');
     }
+    
+    updateStatus('Applying filter...', 'info');
 
     cy.batch(() => {
         cy.elements().unselect();
@@ -922,10 +1068,12 @@ function showEdgeInfo(edge) {
     domCache.edgeMetrics.innerHTML = metricsHtml;
 }
 
+// --- IMPROVED MULTI-SELECTION VIEW ---
 function showMultiInfo(collection) {
     hideAllInfo();
-    domCache.infoPanel.style.display = 'block';
-    domCache.multiInfo.style.display = 'block';
+    domCache.infoPanel.style.display = 'flex'; // Flex for layout
+    domCache.multiInfo.style.display = 'flex';
+    domCache.multiInfo.style.flexDirection = 'column';
     
     const nodes = collection.nodes();
     const edges = collection.edges();
@@ -933,47 +1081,52 @@ function showMultiInfo(collection) {
     document.getElementById('multi-node-count').textContent = nodes.length;
     document.getElementById('multi-edge-count').textContent = edges.length;
     
-    const metricsList = document.getElementById('multi-metrics-list');
-    let html = '';
+    const metricsList = domCache.multiMetricsList;
+    metricsList.innerHTML = ''; // Clear previous
 
-    if (edges.length > 0) {
-        const sources = new Set(edges.map(e => e.data('source')));
-        const targets = new Set(edges.map(e => e.data('target')));
+    // 1. Render Node Cards (Detailed view for each)
+    // Limit to avoid freezing if selection is massive (e.g. > 500)
+    const LIMIT = 200;
+    const renderCount = Math.min(nodes.length, LIMIT);
+
+    let html = '';
+    for (let i = 0; i < renderCount; i++) {
+        const node = nodes[i];
+        const d = node.data();
         
+        // Pick a few key metrics to show in summary
+        const keyMetrics = ['community_id', 'pagerank', 'total_degree']
+            .filter(k => d[k] !== undefined)
+            .map(k => {
+                const v = typeof d[k] === 'number' ? (d[k] % 1 === 0 ? d[k] : d[k].toFixed(3)) : d[k];
+                return `<span style="margin-right:10px; color:#808080;">${k.replace('_',' ')}: <b style="color:#e0e0e0">${v}</b></span>`;
+            }).join('');
+
         html += `
-            <div class="metric-row"><span class="metric-label">Distinct Sources</span><span class="metric-value">${sources.size}</span></div>
-            <div class="metric-row"><span class="metric-label">Distinct Targets</span><span class="metric-value">${targets.size}</span></div>
-            <div class="metric-row" style="border-bottom: 1px dashed #333; margin: 5px 0;"></div>
+            <div class="node-card" style="border-bottom: 1px solid #333; padding: 10px 0; font-size: 12px;">
+                <div style="margin-bottom: 4px; color:#4A90E2; font-family:monospace; font-weight:bold;">
+                    ${d.id}
+                </div>
+                <div style="font-size: 11px;">
+                    ${keyMetrics}
+                </div>
+            </div>
         `;
     }
 
-    if (nodes.length > 0) {
-        const firstData = nodes[0].data();
-        const numericKeys = Object.keys(firstData).filter(k => 
-            typeof firstData[k] === 'number' && !['x','y','id'].includes(k)
-        );
-
-        numericKeys.forEach(key => {
-            const values = nodes.map(n => n.data(key));
-            const sum = values.reduce((a, b) => a + b, 0);
-            const avg = sum / values.length;
-            const max = Math.max(...values);
-            
-            html += `
-                <div style="margin-bottom:8px; border-bottom:1px solid #222; padding-bottom:4px;">
-                    <div style="color:#4A90E2; font-size:11px; margin-bottom:2px;">${key.replace(/_/g, ' ')}</div>
-                    <div style="display:flex; justify-content:space-between; font-size:10px; color:#bbb;">
-                        <span>Avg: ${avg.toFixed(2)}</span>
-                        <span>Max: ${max.toFixed(2)}</span>
-                        <span>Sum: ${sum.toFixed(0)}</span>
-                    </div>
-                </div>
-            `;
-        });
+    if (nodes.length > LIMIT) {
+        html += `<div style="padding:10px; color:#808080; text-align:center;">
+            ...and ${nodes.length - LIMIT} more nodes selected.
+        </div>`;
     }
-    
+
+    if (nodes.length === 0 && edges.length > 0) {
+        html = `<div style="padding:10px; color:#808080;">${edges.length} edges selected. No node details to display.</div>`;
+    }
+
     metricsList.innerHTML = html;
 }
+// ------------------------------------
 
 function updateNeighborList(edges, countId, listId, type) {
     document.getElementById(countId).textContent = edges.length;
@@ -1011,15 +1164,6 @@ function switchTab(tabName) {
         btn.classList.toggle('active', btn.dataset.tab === tabName));
     document.querySelectorAll('.tab-content').forEach(c => 
         c.style.display = c.id === `${tabName}-tab` ? 'block' : 'none');
-}
-
-function updateStatus(msg, type) {
-    domCache.status.textContent = msg;
-    domCache.status.className = `status status-${type}`;
-    domCache.status.style.display = 'block';
-    if (type !== 'error') {
-        setTimeout(() => domCache.status.style.display = 'none', 4000);
-    }
 }
 
 function showLoading(show) {
@@ -1062,6 +1206,8 @@ function clearSearch() {
 function applyStyle() {
     if (!cy) return;
     
+    updateStatus('Applying visual style...', 'info');
+
     currentStyle = {
         node: {
             sizeMetric: document.getElementById('node-size-metric').value,
@@ -1087,7 +1233,7 @@ function applyStyle() {
     document.querySelector('input[name="render-mode"][value="style"]').checked = true;
     
     updateCytoscapeStyle();
-    updateStatus('Style applied', 'success');
+    updateStatus('Style applied successfully', 'success');
 }
 
 function updateCytoscapeStyle() {

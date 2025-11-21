@@ -30,7 +30,12 @@
                         </div>
                         <div class="style-row">
                             <div class="checkbox-group" style="width:100%; max-height:none; background:none; border:none; padding:0;">
-                                <label><input type="checkbox" id="use-cached-layout" checked> Use Cached Layouts</label>
+                                <label title="If unchecked, a fresh layout will be computed even if one exists.">
+                                    <input type="checkbox" id="use-cached-layout" checked> Use Cached Layouts
+                                </label>
+                                <label title="If checked, attempts to load the full graph from disk cache without running SQL queries.">
+                                    <input type="checkbox" id="skip-sql"> Skip SQL (Fast Load)
+                                </label>
                             </div>
                         </div>
                         <button id="load-btn" class="primary-btn">Load Networks</button>
@@ -176,10 +181,12 @@
                 <div class="toolbar-info" id="graph-stats">
                     <span id="node-count">0 nodes</span>
                     <span id="edge-count">0 edges</span>
+                    <span id="edges-progress"></span>
                 </div>
                 <div class="toolbar-actions">
                     <button id="fit-btn">Fit</button>
                     <button id="center-btn">Center</button>
+                    <button id="load-edges-btn" title="Incrementally load edges for large graphs">Load edges</button>
                 </div>
             </div>
 
@@ -240,21 +247,28 @@
                 <div id="edge-metrics"></div>
             </div>
 
-            <div id="multi-info" style="display:none">
-                <div class="info-multi-header">Multiple Selection</div>
-                <div class="metric-row">
-                    <span class="metric-label">Nodes Selected</span>
-                    <span class="metric-value" id="multi-node-count">0</span>
+            <div id="multi-info" style="display:none; height: 100%;">
+                <div class="info-multi-header" style="padding:15px 20px; border-bottom:1px solid #2a2a2a; background:#0a0a0a;">
+                    <h3 style="color:#4A90E2; font-size:16px; margin:0;">Multiple Selection</h3>
                 </div>
-                <div class="metric-row">
-                    <span class="metric-label">Edges Selected</span>
-                    <span class="metric-value" id="multi-edge-count">0</span>
-                </div>
-                <div style="margin-top:15px; padding: 0 20px; font-size:12px; color:#4A90E2; font-weight:600;">Aggregated Stats</div>
-                <div id="multi-metrics-list" class="metrics-list" style="margin-top:5px;">
+                <div style="padding:10px 20px; border-bottom:1px solid #2a2a2a;">
+                    <div class="metric-row">
+                        <span class="metric-label">Nodes Selected</span>
+                        <span class="metric-value" id="multi-node-count">0</span>
                     </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Edges Selected</span>
+                        <span class="metric-value" id="multi-edge-count">0</span>
+                    </div>
+                </div>
+                
+                <div style="padding:10px 20px; font-size:12px; color:#4A90E2; font-weight:600;">Selected Nodes Details</div>
+                <div id="multi-metrics-list" class="metrics-list" style="flex:1; overflow-y:auto; padding:0 20px 20px 20px;">
+                </div>
             </div>
         </div>
     </div>
+
+    <div id="toast-container"></div>
 </body>
 </html>
