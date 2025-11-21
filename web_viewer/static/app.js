@@ -93,7 +93,6 @@ function toggleRenderMode(toPerformance) {
     if (!cy) return;
     
     if (performanceMode) {
-        // CRITICAL FIX: Remove all bypass styles (colors applied directly to nodes)
         // This ensures we return to the clean, gray performance state
         cy.elements().removeStyle();
 
@@ -101,7 +100,7 @@ function toggleRenderMode(toPerformance) {
         cy.style()
             .selector('node')
             .style({
-                'background-color': '#666',
+                'background-color': '#c8c8c8ff', //#666
                 'width': 10,
                 'height': 10,
                 'label': '',
@@ -109,7 +108,7 @@ function toggleRenderMode(toPerformance) {
             })
             .selector('edge')
             .style({
-                'line-color': '#333',
+                'line-color': '#f0f0f0ff',//#333
                 'width': 1,
                 'opacity': 0.3,
                 'curve-style': 'straight', // Straight is fastest for WebGL

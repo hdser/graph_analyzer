@@ -259,7 +259,20 @@ class NetworkService:
                 print(f"[LAYOUT] View creation note: {e}")
 
             print(f"[LAYOUT] Applying force-directed layout...")
-            p4c.layout_network("force-directed", network=net_suid)
+            p4c.set_layout_properties(
+                'force-directed-cl',
+                {
+                    'numIterations': 400,
+                    'numIterationsEdgeRepulsive': 10,
+                    'defaultSpringCoefficient': 1e-5,
+                    'defaultSpringLength': 30,
+                    'defaultNodeMass': 1.0,
+                    'isDeterministic': True,
+                    'fromScratch': True,
+                    'singlePartition': False
+                }
+            )
+            p4c.layout_network("force-directed-cl", network=net_suid)
             
             print(f"[LAYOUT] Getting positions from view...")
             views = p4c.get_network_views(net_suid)
@@ -446,7 +459,7 @@ class NetworkService:
                 return cached_layout
         
         # 2. Cytoscape Desktop
-        if self.cytoscape_available and edge_count < 500000:
+        if self.cytoscape_available and edge_count < 5000000:
             try:
                 return self.compute_layout_via_cytoscape_desktop(graph_id, df_edges, df_metrics_all)
             except Exception as e:
