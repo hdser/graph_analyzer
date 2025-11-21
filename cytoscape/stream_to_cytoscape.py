@@ -17,6 +17,7 @@ import time
 import argparse
 import pandas as pd
 import networkx as nx
+import json
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
@@ -24,7 +25,15 @@ from sqlalchemy.engine import URL
 import py4cytoscape as p4c
 from py4cytoscape import CyError
 
-from graph_metrics import GraphMetrics  # uses your big metrics engine
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(ROOT_DIR))
+load_dotenv(ROOT_DIR / '.env')
+
+from graph_metrics import GraphMetrics 
 
 
 # ======================================================================
@@ -180,6 +189,7 @@ def create_cytoscape_network_for_layer(graph_id: str,
         SUID of the created Cytoscape network.
     """
     p4c.cytoscape_ping()
+    import json
 
     # Nodes: shared avatar universe
     df_nodes = df_metrics_all.rename(columns={"avatar": "id"}).copy()
@@ -187,33 +197,48 @@ def create_cytoscape_network_for_layer(graph_id: str,
     # Edges: this specific layer
     df_edges_stream = df_edges.copy()
 
-    # Optional interaction column: use graph_id if not already present
+    # Optional interaction column
     if "interaction" not in df_edges_stream.columns:
         df_edges_stream["interaction"] = graph_id
 
     title = f"{graph_id} (shared metrics)"
-    net_suid = p4c.create_network_from_data_frames(
-        nodes=df_nodes,
-        edges=df_edges_stream,
-        title=title,
-        collection=collection
-    )
+    print(f"[CYTOSCAPE] Preparing payload for '{title}'...")
 
-    # Ensure view exists and layout is applied
+    # Convert DFs to JSON-serializable lists (handles numpy types)
+    nodes_list = json.loads(df_nodes.to_json(orient="records"))
+    edges_list = json.loads(df_edges_stream.to_json(orient="records"))
+
+    # Wrap in Cytoscape 'data' format
+    nodes_payload = [{"data": n} for n in nodes_list]
+    edges_payload = [{"data": e} for e in edges_list]
+
+    # 1. Create Network Data (Fast)
+    print(f"[CYTOSCAPE] Sending data ({len(nodes_payload)} nodes, {len(edges_payload)} edges)...")
+    res = p4c.cyrest_post("networks", body={
+        "data": {"name": title},
+        "elements": {"nodes": nodes_payload, "edges": edges_payload}
+    })
+    net_suid = res['networkSUID']
+    
+    # 2. Create View Explicitly (Slow, but won't crash script on timeout)
+    print(f"[CYTOSCAPE] Creating view for SUID={net_suid} (this may take a moment)...")
     try:
-        views = p4c.get_network_views(net_suid)
-        if not views:
-            p4c.create_network_view(net_suid)
-    except CyError as e:
-        print(f"[CYTOSCAPE] Warning: could not ensure network view for {graph_id}: {e}")
+        # Attempt to create view
+        p4c.cyrest_post(f"networks/{net_suid}/views")
+        # Wait for Cytoscape to catch up
+        time.sleep(5) 
+    except Exception as e:
+        print(f"[CYTOSCAPE] Warning: View creation response (it might still appear): {e}")
 
+    # 3. Apply Layout (Safe to fail)
     try:
         p4c.set_current_network(net_suid)
+        print(f"[CYTOSCAPE] Applying layout...")
         p4c.layout_network("force-directed", network=net_suid)
-    except CyError as e:
-        print(f"[CYTOSCAPE] Warning: layout failed for {graph_id}: {e}")
+    except Exception as e:
+        print(f"[CYTOSCAPE] Warning: Layout failed (you can apply it manually): {e}")
 
-    print(f"[CYTOSCAPE] Created network for graph_id='{graph_id}' with SUID={net_suid}")
+    print(f"[CYTOSCAPE] Successfully created network SUID={net_suid}")
     return net_suid
 
 

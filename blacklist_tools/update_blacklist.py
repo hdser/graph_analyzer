@@ -210,7 +210,7 @@ def main():
     )
 
     here = Path(__file__).resolve().parent
-    default_db = here / "data" / "blacklist.db"
+    default_db = here.parent / "data" / "blacklist.db"
 
     parser.add_argument(
         "--db",
