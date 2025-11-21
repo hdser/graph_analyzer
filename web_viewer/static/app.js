@@ -614,26 +614,27 @@ async function displayGraph(graphId) {
             elements: graphData[graphId],
             style: getPerformanceStyle(), 
             
-            // NEW: Enable WebGL Renderer
+            // Enable WebGL Renderer
             renderer: {
                 name: 'canvas',
                 webgl: true,           // Turn on experimental WebGL
-                webglTexSize: 4096,    // Optional: larger texture size for clearer nodes
-                showFps: false         // Set to true if you want to debug performance
+                webglTexSize: 1024,    // Optional: larger texture size for clearer nodes 4096
+                showFps: true         // Set to true if you want to debug performance
             },
 
             layout: { name: 'preset' },
-            minZoom: 0.1,
+            minZoom: 1e-2,
             maxZoom: 10,
             wheelSensitivity: 0.3,
             boxSelectionEnabled: false, // Disable box selection for better performance
+            //selectionType: 'single',
             autounselectify: false,
             autoungrabify: false,
             textureOnViewport: true,    // Use texture during pan/zoom (smoother)
             hideEdgesOnViewport: true,  // Hide edges while moving (huge fps boost)
             hideLabelsOnViewport: true, // Hide labels while moving
             pixelRatio: 1,              // Force 1x resolution (saves GPU on retina screens)
-            motionBlur: false
+            motionBlur: true
         });
         
         populateMetricDropdowns(nodes, edges);
