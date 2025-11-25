@@ -3,6 +3,7 @@ Web viewer with Cytoscape Desktop layout computation and caching
 Supports Server-Side Incremental Layout Updates
 FIX: Changed async routes to sync (def) to prevent blocking the event loop.
 FIX: Metrics caching is now version-aware (v1, v2) to prevent cross-contamination.
+FIX: Incremental layout now uses pure Python centroid + spring simulation for speed and consistency.
 """
 
 import os
@@ -11,8 +12,9 @@ import time
 import hashlib
 import random
 import re
+import math
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set, Tuple
 from datetime import datetime
 
 import numpy as np
@@ -97,6 +99,168 @@ class NetworkState(BaseModel):
 
 
 # ============================================================================
+# Local Spring Layout Algorithm (Pure Python with NumPy)
+# ============================================================================
+
+class LocalSpringLayout:
+    """
+    Fast local spring layout using NumPy for vectorized computation.
+    
+    This is used for incremental layout updates where we need to place
+    new nodes relative to existing anchored nodes. It's much faster than
+    calling an external layout service.
+    """
+    
+    def __init__(
+        self,
+        spring_strength: float = 0.1,
+        spring_length: float = 100.0,
+        repulsion_strength: float = 5000.0,
+        damping: float = 0.8,
+        max_velocity: float = 50.0,
+        convergence_threshold: float = 0.5,
+        max_iterations: int = 100
+    ):
+        self.spring_strength = spring_strength
+        self.spring_length = spring_length
+        self.repulsion_strength = repulsion_strength
+        self.damping = damping
+        self.max_velocity = max_velocity
+        self.convergence_threshold = convergence_threshold
+        self.max_iterations = max_iterations
+    
+    def compute_layout(
+        self,
+        new_nodes: List[str],
+        anchored_positions: Dict[str, Dict[str, float]],
+        edges: List[Tuple[str, str]],
+        initial_positions: Optional[Dict[str, Dict[str, float]]] = None
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Compute positions for new nodes using spring layout.
+        
+        Args:
+            new_nodes: List of node IDs that need positions
+            anchored_positions: Dict of node_id -> {x, y} for fixed nodes
+            edges: List of (source, target) tuples
+            initial_positions: Optional initial positions for new nodes
+            
+        Returns:
+            Dict of node_id -> {x, y} for all nodes (new + anchored)
+        """
+        if not new_nodes:
+            return anchored_positions.copy()
+        
+        # Combine all nodes
+        all_nodes = list(new_nodes) + list(anchored_positions.keys())
+        node_to_idx = {node: i for i, node in enumerate(all_nodes)}
+        n_new = len(new_nodes)
+        n_total = len(all_nodes)
+        
+        # Initialize positions array
+        positions = np.zeros((n_total, 2), dtype=np.float64)
+        
+        # Set anchored positions
+        for node, pos in anchored_positions.items():
+            idx = node_to_idx[node]
+            positions[idx] = [pos['x'], pos['y']]
+        
+        # Set initial positions for new nodes (or use centroid of anchors)
+        if initial_positions:
+            for node in new_nodes:
+                idx = node_to_idx[node]
+                if node in initial_positions:
+                    positions[idx] = [initial_positions[node]['x'], initial_positions[node]['y']]
+                else:
+                    # Random position near center of anchors
+                    if anchored_positions:
+                        cx = np.mean([p['x'] for p in anchored_positions.values()])
+                        cy = np.mean([p['y'] for p in anchored_positions.values()])
+                        positions[idx] = [cx + random.uniform(-100, 100), cy + random.uniform(-100, 100)]
+        else:
+            # Use center of anchored nodes with jitter
+            if anchored_positions:
+                cx = np.mean([p['x'] for p in anchored_positions.values()])
+                cy = np.mean([p['y'] for p in anchored_positions.values()])
+            else:
+                cx, cy = 0.0, 0.0
+            
+            for i, node in enumerate(new_nodes):
+                angle = 2 * math.pi * i / n_new
+                r = 100 + random.uniform(-20, 20)
+                positions[i] = [cx + r * math.cos(angle), cy + r * math.sin(angle)]
+        
+        # Build adjacency for spring forces (only edges involving new nodes)
+        adjacency = {i: [] for i in range(n_new)}  # Only for new nodes
+        for src, tgt in edges:
+            if src in node_to_idx and tgt in node_to_idx:
+                src_idx = node_to_idx[src]
+                tgt_idx = node_to_idx[tgt]
+                
+                # Only track edges where at least one node is new
+                if src_idx < n_new:
+                    adjacency[src_idx].append(tgt_idx)
+                if tgt_idx < n_new:
+                    adjacency[tgt_idx].append(src_idx)
+        
+        # Velocities for new nodes only
+        velocities = np.zeros((n_new, 2), dtype=np.float64)
+        
+        # Run simulation
+        for iteration in range(self.max_iterations):
+            forces = np.zeros((n_new, 2), dtype=np.float64)
+            
+            # Calculate spring forces (attraction along edges)
+            for i in range(n_new):
+                for j in adjacency[i]:
+                    diff = positions[j] - positions[i]
+                    dist = np.linalg.norm(diff)
+                    if dist > 0.1:  # Avoid division by zero
+                        # Spring force: F = k * (distance - rest_length) * direction
+                        force_magnitude = self.spring_strength * (dist - self.spring_length)
+                        force = force_magnitude * (diff / dist)
+                        forces[i] += force
+            
+            # Calculate repulsion forces between new nodes
+            for i in range(n_new):
+                for j in range(i + 1, n_new):
+                    diff = positions[j] - positions[i]
+                    dist_sq = np.sum(diff ** 2)
+                    if dist_sq > 0.1:  # Avoid division by zero
+                        # Coulomb repulsion: F = k / distance^2
+                        force_magnitude = self.repulsion_strength / dist_sq
+                        force = force_magnitude * (diff / math.sqrt(dist_sq))
+                        forces[i] -= force
+                        forces[j] += force
+            
+            # Update velocities and positions (only for new nodes)
+            velocities = (velocities + forces) * self.damping
+            
+            # Clamp velocity
+            velocity_magnitudes = np.linalg.norm(velocities, axis=1, keepdims=True)
+            velocity_magnitudes = np.maximum(velocity_magnitudes, 0.001)  # Avoid division by zero
+            velocity_scale = np.minimum(1.0, self.max_velocity / velocity_magnitudes)
+            velocities *= velocity_scale
+            
+            # Update positions
+            positions[:n_new] += velocities
+            
+            # Check convergence
+            max_displacement = np.max(np.abs(velocities))
+            if max_displacement < self.convergence_threshold:
+                print(f"[SPRING LAYOUT] Converged after {iteration + 1} iterations")
+                break
+        
+        # Convert back to dict format
+        result = {}
+        for node in all_nodes:
+            idx = node_to_idx[node]
+            result[node] = {'x': float(positions[idx, 0]), 'y': float(positions[idx, 1])}
+        
+        return result
+
+
+# ============================================================================
 # Network Service
 # ============================================================================
 
@@ -131,6 +295,17 @@ class NetworkService:
         
         # Check if Cytoscape Desktop is available
         self.cytoscape_available = self._check_cytoscape_desktop()
+        
+        # Initialize local spring layout for incremental updates
+        self.local_spring_layout = LocalSpringLayout(
+            spring_strength=0.08,
+            spring_length=80.0,
+            repulsion_strength=3000.0,
+            damping=0.85,
+            max_velocity=40.0,
+            convergence_threshold=0.3,
+            max_iterations=80
+        )
     
     def _check_cytoscape_desktop(self) -> bool:
         """Check if Cytoscape Desktop is available"""
@@ -441,56 +616,137 @@ class NetworkService:
             positions[node] = {"x": 1000 * np.cos(angle), "y": 1000 * np.sin(angle)}
         return positions
     
-    def _calculate_centroid_positions(self, new_nodes: list, anchors: set, current_layout: dict, G: nx.DiGraph) -> dict:
+    def _calculate_centroid_positions(
+        self, 
+        new_nodes: List[str], 
+        anchors: Set[str], 
+        current_layout: Dict[str, Dict[str, float]], 
+        G: nx.DiGraph
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate initial positions for new nodes based on the centroid of their neighbors.
+        
+        If a new node has neighbors in the current layout, place it at their centroid
+        with some jitter. If it has no positioned neighbors, place it near the graph center.
+        """
         initial_positions = {}
-        for node in new_nodes:
-            neighbors_positions = []
-            if G.has_node(node):
-                for n in G.neighbors(node):
-                    if n in anchors: neighbors_positions.append(current_layout[n])
-                for n in G.predecessors(node):
-                    if n in anchors: neighbors_positions.append(current_layout[n])
-            
-            if neighbors_positions:
-                avg_x = sum(p['x'] for p in neighbors_positions) / len(neighbors_positions)
-                avg_y = sum(p['y'] for p in neighbors_positions) / len(neighbors_positions)
-                initial_positions[node] = {
-                    'x': avg_x + random.uniform(-50, 50),
-                    'y': avg_y + random.uniform(-50, 50)
-                }
-            else:
-                initial_positions[node] = {
-                    'x': random.uniform(-500, 500), 
-                    'y': random.uniform(-500, 500)
-                }
-        return initial_positions
-
-    def compute_incremental_layout(self, graph_id: str, new_nodes: list, current_layout: dict, G: nx.DiGraph):
-        start_time = time.time()
-        new_nodes_set = set(new_nodes)
-        anchors = set()
-        subgraph_edges_list = []
+        
+        # Calculate the center of the current layout for fallback
+        if current_layout:
+            center_x = np.mean([p['x'] for p in current_layout.values()])
+            center_y = np.mean([p['y'] for p in current_layout.values()])
+        else:
+            center_x, center_y = 0.0, 0.0
         
         for node in new_nodes:
+            neighbors_positions = []
+            
             if G.has_node(node):
+                # Get positions of outgoing neighbors
+                for n in G.successors(node):
+                    if n in current_layout:
+                        neighbors_positions.append(current_layout[n])
+                
+                # Get positions of incoming neighbors
+                for n in G.predecessors(node):
+                    if n in current_layout:
+                        neighbors_positions.append(current_layout[n])
+            
+            if neighbors_positions:
+                # Place at centroid of neighbors with jitter
+                avg_x = sum(p['x'] for p in neighbors_positions) / len(neighbors_positions)
+                avg_y = sum(p['y'] for p in neighbors_positions) / len(neighbors_positions)
+                
+                # Add jitter proportional to number of neighbors (more neighbors = less jitter)
+                jitter_scale = 50.0 / math.sqrt(len(neighbors_positions))
+                initial_positions[node] = {
+                    'x': avg_x + random.uniform(-jitter_scale, jitter_scale),
+                    'y': avg_y + random.uniform(-jitter_scale, jitter_scale)
+                }
+            else:
+                # No positioned neighbors - place near graph center with larger jitter
+                initial_positions[node] = {
+                    'x': center_x + random.uniform(-200, 200), 
+                    'y': center_y + random.uniform(-200, 200)
+                }
+        
+        return initial_positions
+
+    def compute_incremental_layout(
+        self, 
+        graph_id: str, 
+        new_nodes: List[str], 
+        current_layout: Dict[str, Dict[str, float]], 
+        G: nx.DiGraph
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Compute positions for new nodes using local spring layout.
+        
+        This uses a pure Python implementation that:
+        1. Places new nodes at the centroid of their neighbors
+        2. Runs a local spring simulation to resolve overlaps
+        3. Keeps existing nodes fixed (anchored)
+        
+        This is much faster and more consistent than calling an external layout service.
+        """
+        start_time = time.time()
+        
+        if not new_nodes:
+            return {}
+        
+        new_nodes_set = set(new_nodes)
+        anchors = set()
+        edges_list: List[Tuple[str, str]] = []
+        
+        # Collect edges involving new nodes and identify anchor nodes
+        for node in new_nodes:
+            if G.has_node(node):
+                # Outgoing edges
                 for _, target in G.out_edges(node):
-                    subgraph_edges_list.append({"source": node, "target": target})
+                    edges_list.append((node, target))
                     if target not in new_nodes_set and target in current_layout:
                         anchors.add(target)
+                
+                # Incoming edges
                 for source, _ in G.in_edges(node):
-                    subgraph_edges_list.append({"source": source, "target": node})
+                    edges_list.append((source, node))
                     if source not in new_nodes_set and source in current_layout:
                         anchors.add(source)
         
-        locked_positions = {n: current_layout[n] for n in anchors}
+        # Also add edges between new nodes
+        for node in new_nodes:
+            if G.has_node(node):
+                for _, target in G.out_edges(node):
+                    if target in new_nodes_set:
+                        edges_list.append((node, target))
+        
+        # Remove duplicate edges
+        edges_list = list(set(edges_list))
+        
+        print(f"[INCREMENTAL LAYOUT] Processing {len(new_nodes)} new nodes with {len(anchors)} anchors")
+        print(f"[INCREMENTAL LAYOUT] Found {len(edges_list)} relevant edges")
+        
+        # Get anchor positions
+        anchored_positions = {n: current_layout[n] for n in anchors if n in current_layout}
+        
+        # Calculate initial positions using centroid method
         initial_positions = self._calculate_centroid_positions(new_nodes, anchors, current_layout, G)
         
-        # Pass list of dicts directly
-        new_positions = self.compute_layout_via_service(
-            graph_id, subgraph_edges_list, algorithm="fcose",
-            locked_positions=locked_positions, initial_positions=initial_positions
+        # Run local spring layout
+        new_positions = self.local_spring_layout.compute_layout(
+            new_nodes=new_nodes,
+            anchored_positions=anchored_positions,
+            edges=edges_list,
+            initial_positions=initial_positions
         )
-        return new_positions
+        
+        # Extract only the new node positions (not anchors)
+        result = {node: new_positions[node] for node in new_nodes if node in new_positions}
+        
+        elapsed = time.time() - start_time
+        print(f"[INCREMENTAL LAYOUT] Completed in {elapsed:.3f}s")
+        
+        return result
 
     def compute_layout(self, graph_id: str, df_edges: pd.DataFrame, 
                        df_metrics_all: pd.DataFrame, use_cache: bool) -> Dict:
@@ -700,7 +956,7 @@ class NetworkService:
                 if (self.layouts_dir / f"{cache_key}.json").exists():
                     layout_cached = True
 
-        # Incremental updates pre-calc
+        # Incremental updates pre-calc using LOCAL SPRING LAYOUT
         for graph_id in new_graphs:
             G = new_graphs[graph_id]
             layout = new_layouts.get(graph_id, {})
@@ -709,17 +965,22 @@ class NetworkService:
             missing_nodes = list(all_nodes_in_graph - existing_nodes_in_layout)
             
             if missing_nodes:
-                print(f"[PRE-COMPUTE] Graph {graph_id}: Finding positions for {len(missing_nodes)} missing nodes...")
+                print(f"[PRE-COMPUTE] Graph {graph_id}: Finding positions for {len(missing_nodes)} missing nodes using local spring layout...")
                 try:
+                    # Use our new local spring layout instead of calling the service
                     new_positions = self.compute_incremental_layout(graph_id, missing_nodes, layout, G)
                     layout.update(new_positions)
                     new_layouts[graph_id] = layout
+                    
+                    # Save updated cache
                     self.save_layout_cache(
                         graph_id, G.number_of_nodes(), G.number_of_edges(), layout, 
-                        {'updated': True, 'update_time': datetime.now().isoformat()}
+                        {'updated': True, 'update_time': datetime.now().isoformat(), 'algorithm': 'local-spring'}
                     )
                 except Exception as e:
                     print(f"[PRE-COMPUTE] Error: {e}")
+                    import traceback
+                    traceback.print_exc()
 
         layout_time = time.time() - layout_start
         total_time = time.time() - start_time
