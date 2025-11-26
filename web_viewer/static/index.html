@@ -209,9 +209,11 @@
             <div id="node-info" style="display:none">
                 <div class="info-node-id">
                     <span id="node-id"></span>
+                    <button id="copy-node-id-btn" class="icon-btn" title="Copy Node ID">📋</button>
                 </div>
-                <div style="padding: 10px 20px 0 20px;">
-                    <button id="neighbor-toggle-btn" class="secondary-btn" style="margin:0;">Highlight Neighbors: Off</button>
+                <div class="info-actions">
+                    <button id="neighbor-toggle-btn" class="secondary-btn">Highlight Neighbors: Off</button>
+                    <button id="copy-node-data-btn" class="secondary-btn" title="Copy all node data">📋 Copy Data</button>
                 </div>
                 <div class="info-tabs">
                     <button class="tab-btn active" data-tab="metrics">Metrics</button>
@@ -219,39 +221,46 @@
                 </div>
                 <div class="info-content">
                     <div id="metrics-tab" class="tab-content">
-                        <div id="all-metrics" class="metrics-list"></div>
+                        <div id="all-metrics" class="metrics-list selectable"></div>
                     </div>
                     <div id="neighbors-tab" class="tab-content" style="display:none">
                         <div class="neighbors-section">
                             <div class="neighbors-count">Incoming: <span id="in-count">0</span></div>
-                            <div id="neighbors-in-list" class="neighbors-list"></div>
+                            <div id="neighbors-in-list" class="neighbors-list selectable"></div>
                         </div>
                         <div class="neighbors-section">
                             <div class="neighbors-count">Outgoing: <span id="out-count">0</span></div>
-                            <div id="neighbors-out-list" class="neighbors-list"></div>
+                            <div id="neighbors-out-list" class="neighbors-list selectable"></div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div id="edge-info" style="display:none">
-                <div class="info-edge-header">Edge Information</div>
+                <div class="info-edge-header">
+                    Edge Information
+                    <button id="copy-edge-data-btn" class="icon-btn" title="Copy edge data">📋</button>
+                </div>
                 <div class="metric-row">
                     <span class="metric-label">Source</span>
-                    <span class="address-value" id="edge-source">-</span>
+                    <span class="address-value selectable" id="edge-source">-</span>
                 </div>
                 <div class="metric-row">
                     <span class="metric-label">Target</span>
-                    <span class="address-value" id="edge-target">-</span>
+                    <span class="address-value selectable" id="edge-target">-</span>
                 </div>
-                <div id="edge-metrics"></div>
+                <div id="edge-metrics" class="selectable"></div>
             </div>
 
             <div id="multi-info" style="display:none; height: 100%;">
-                <div class="info-multi-header" style="padding:15px 20px; border-bottom:1px solid #2a2a2a; background:#0a0a0a;">
-                    <h3 style="color:#4A90E2; font-size:16px; margin:0;">Multiple Selection</h3>
+                <div class="info-multi-header">
+                    <h3>Multiple Selection</h3>
+                    <div class="multi-actions">
+                        <button id="copy-selected-btn" class="icon-btn" title="Copy selected data">📋</button>
+                        <button id="export-csv-btn" class="icon-btn" title="Export to CSV">💾</button>
+                    </div>
                 </div>
-                <div style="padding:10px 20px; border-bottom:1px solid #2a2a2a;">
+                <div class="multi-summary">
                     <div class="metric-row">
                         <span class="metric-label">Nodes Selected</span>
                         <span class="metric-value" id="multi-node-count">0</span>
@@ -262,8 +271,10 @@
                     </div>
                 </div>
                 
-                <div style="padding:10px 20px; font-size:12px; color:#4A90E2; font-weight:600;">Selected Nodes Details</div>
-                <div id="multi-metrics-list" class="metrics-list" style="flex:1; overflow-y:auto; padding:0 20px 20px 20px;">
+                <div class="multi-details-header">
+                    <span>Selected Nodes Details</span>
+                </div>
+                <div id="multi-metrics-list" class="metrics-list selectable">
                 </div>
             </div>
         </div>

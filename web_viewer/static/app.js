@@ -1,6 +1,7 @@
 /**
  * Graph Analyzer Web Viewer - Ultra-Light with Dynamic Style Toggle
- * Updated for Toast Feedback, Fast Loading, and Detailed Multi-Selection
+ * Updated for Toast Feedback, Fast Loading, Detailed Multi-Selection,
+ * Copy/Export Functionality
  */
 
 // Performance utilities
@@ -28,7 +29,9 @@ let styleCache = {
     widthRange: { min: 0, max: 1 }
 };
 
-
+// Store current node/edge data for copy operations
+let currentNodeData = null;
+let currentEdgeData = null;
 
 // Cache DOM elements
 let domCache = {};
@@ -52,17 +55,17 @@ function cacheDOMElements() {
         nodeInfo: document.getElementById('node-info'),
         edgeInfo: document.getElementById('edge-info'),
         multiInfo: document.getElementById('multi-info'),
-        multiMetricsList: document.getElementById('multi-metrics-list'), // New cached element
+        multiMetricsList: document.getElementById('multi-metrics-list'),
         allMetrics: document.getElementById('all-metrics'),
         edgeMetrics: document.getElementById('edge-metrics'),
         inCount: document.getElementById('in-count'),
         outCount: document.getElementById('out-count'),
         neighborInList: document.getElementById('neighbors-in-list'),
         neighborOutList: document.getElementById('neighbors-out-list'),
-        status: document.getElementById('status'), // Kept for fallback
+        status: document.getElementById('status'),
         loading: document.getElementById('loading'),
         cyContainer: document.getElementById('cy'),
-        toastContainer: document.getElementById('toast-container'), // New toast container
+        toastContainer: document.getElementById('toast-container'),
         edgesProgress: document.getElementById('edges-progress'),
         loadEdgesBtn: document.getElementById('load-edges-btn')
     };
@@ -100,7 +103,226 @@ function updateStatus(msg, type) {
     // Optional: log to console for debugging
     if (type === 'error') console.error(msg);
 }
-// ---------------------------------
+
+
+// =============================================================================
+// COPY & EXPORT FUNCTIONS
+// =============================================================================
+
+/**
+ * Copy text to clipboard with fallback for older browsers
+ */
+async function copyToClipboard(text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } else {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const success = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            return success;
+        }
+    } catch (err) {
+        console.error('Copy failed:', err);
+        return false;
+    }
+}
+
+/**
+ * Copy current node ID
+ */
+async function copyNodeId() {
+    if (!currentNodeData || !currentNodeData.id) {
+        updateStatus('No node selected', 'error');
+        return;
+    }
+    
+    const success = await copyToClipboard(currentNodeData.id);
+    if (success) {
+        updateStatus('Node ID copied to clipboard', 'success');
+    } else {
+        updateStatus('Failed to copy', 'error');
+    }
+}
+
+/**
+ * Copy all data for current node as JSON
+ */
+async function copyNodeData() {
+    if (!currentNodeData) {
+        updateStatus('No node selected', 'error');
+        return;
+    }
+    
+    // Format data nicely
+    const formattedData = Object.entries(currentNodeData)
+        .filter(([k, v]) => !['label', 'isNew'].includes(k) && typeof v !== 'object')
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+    
+    const success = await copyToClipboard(formattedData);
+    if (success) {
+        updateStatus('Node data copied to clipboard', 'success');
+    } else {
+        updateStatus('Failed to copy', 'error');
+    }
+}
+
+/**
+ * Copy edge data
+ */
+async function copyEdgeData() {
+    if (!currentEdgeData) {
+        updateStatus('No edge selected', 'error');
+        return;
+    }
+    
+    const formattedData = Object.entries(currentEdgeData)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+    
+    const success = await copyToClipboard(formattedData);
+    if (success) {
+        updateStatus('Edge data copied to clipboard', 'success');
+    } else {
+        updateStatus('Failed to copy', 'error');
+    }
+}
+
+/**
+ * Copy selected nodes data as tab-separated text (pasteable to spreadsheet)
+ */
+async function copySelectedData() {
+    if (!cy) {
+        updateStatus('No graph loaded', 'error');
+        return;
+    }
+    
+    const selected = cy.$('node:selected');
+    if (selected.length === 0) {
+        updateStatus('No nodes selected', 'error');
+        return;
+    }
+    
+    // Get all unique keys from selected nodes
+    const allKeys = new Set();
+    selected.forEach(node => {
+        const data = node.data();
+        Object.keys(data).forEach(k => {
+            if (!['label', 'isNew'].includes(k) && typeof data[k] !== 'object') {
+                allKeys.add(k);
+            }
+        });
+    });
+    
+    const keys = Array.from(allKeys);
+    
+    // Build TSV (tab-separated values)
+    let tsv = keys.join('\t') + '\n';
+    
+    selected.forEach(node => {
+        const data = node.data();
+        const row = keys.map(k => {
+            const v = data[k];
+            if (v === undefined || v === null) return '';
+            if (typeof v === 'number') return Number.isInteger(v) ? v : v.toFixed(6);
+            return String(v);
+        });
+        tsv += row.join('\t') + '\n';
+    });
+    
+    const success = await copyToClipboard(tsv);
+    if (success) {
+        updateStatus(`Copied ${selected.length} nodes to clipboard`, 'success');
+    } else {
+        updateStatus('Failed to copy', 'error');
+    }
+}
+
+/**
+ * Export selected nodes to CSV file
+ */
+function exportSelectedToCsv() {
+    if (!cy) {
+        updateStatus('No graph loaded', 'error');
+        return;
+    }
+    
+    const selected = cy.$('node:selected');
+    if (selected.length === 0) {
+        updateStatus('No nodes selected', 'error');
+        return;
+    }
+    
+    // Get all unique keys from selected nodes
+    const allKeys = new Set();
+    selected.forEach(node => {
+        const data = node.data();
+        Object.keys(data).forEach(k => {
+            if (!['label', 'isNew'].includes(k) && typeof data[k] !== 'object') {
+                allKeys.add(k);
+            }
+        });
+    });
+    
+    const keys = Array.from(allKeys);
+    
+    // Build CSV with proper escaping
+    const escapeCSV = (val) => {
+        if (val === undefined || val === null) return '';
+        const str = String(val);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    };
+    
+    let csv = keys.map(escapeCSV).join(',') + '\n';
+    
+    selected.forEach(node => {
+        const data = node.data();
+        const row = keys.map(k => {
+            const v = data[k];
+            if (v === undefined || v === null) return '';
+            if (typeof v === 'number') return Number.isInteger(v) ? v : v.toFixed(6);
+            return escapeCSV(v);
+        });
+        csv += row.join(',') + '\n';
+    });
+    
+    // Create and trigger download
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const filename = `selected_nodes_${timestamp}.csv`;
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    updateStatus(`Exported ${selected.length} nodes to ${filename}`, 'success');
+}
+
+
+// =============================================================================
+// END COPY & EXPORT FUNCTIONS
+// =============================================================================
+
 
 function addPerformanceToggle() {
     // Add radio buttons to toolbar
@@ -438,7 +660,6 @@ function setupEventListeners() {
     document.getElementById('load-btn').addEventListener('click', loadGraphs);
     document.getElementById('metrics-btn').addEventListener('click', runMetrics);
     document.getElementById('filter-btn').addEventListener('click', filterNodes);
-    document.getElementById('filter-btn').addEventListener('click', filterNodes);
     document.getElementById('reset-filter-btn').addEventListener('click', () => {
         if(cy) {
             cy.elements().unselect();
@@ -512,6 +733,13 @@ function setupEventListeners() {
     document.getElementById('edge-width-max')?.addEventListener('input', (e) => {
         document.getElementById('edge-width-max-value').textContent = e.target.value;
     });
+
+    // --- COPY & EXPORT BUTTONS ---
+    document.getElementById('copy-node-id-btn')?.addEventListener('click', copyNodeId);
+    document.getElementById('copy-node-data-btn')?.addEventListener('click', copyNodeData);
+    document.getElementById('copy-edge-data-btn')?.addEventListener('click', copyEdgeData);
+    document.getElementById('copy-selected-btn')?.addEventListener('click', copySelectedData);
+    document.getElementById('export-csv-btn')?.addEventListener('click', exportSelectedToCsv);
 }
 
 async function loadGraphs() {
@@ -1029,6 +1257,8 @@ function showNodeInfo(node) {
     domCache.nodeInfo.style.display = 'block';
     
     const data = node.data();
+    currentNodeData = data; // Store for copy operations
+    
     domCache.nodeId.textContent = data.id;
     switchTab('metrics');
 
@@ -1055,6 +1285,8 @@ function showEdgeInfo(edge) {
     domCache.edgeInfo.style.display = 'block';
     
     const data = edge.data();
+    currentEdgeData = data; // Store for copy operations
+    
     document.getElementById('edge-source').textContent = data.source;
     document.getElementById('edge-target').textContent = data.target;
     
@@ -1103,7 +1335,7 @@ function showMultiInfo(collection) {
             }).join('');
 
         html += `
-            <div class="node-card" style="border-bottom: 1px solid #333; padding: 10px 0; font-size: 12px;">
+            <div class="node-card" data-node-id="${d.id}">
                 <div style="margin-bottom: 4px; color:#4A90E2; font-family:monospace; font-weight:bold;">
                     ${d.id}
                 </div>
@@ -1125,6 +1357,20 @@ function showMultiInfo(collection) {
     }
 
     metricsList.innerHTML = html;
+    
+    // Add click handlers for node cards
+    metricsList.querySelectorAll('.node-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const nodeId = card.dataset.nodeId;
+            if (nodeId && cy) {
+                const node = cy.getElementById(nodeId);
+                if (node.length > 0) {
+                    cy.center(node);
+                    showNodeInfo(node);
+                }
+            }
+        });
+    });
 }
 // ------------------------------------
 
