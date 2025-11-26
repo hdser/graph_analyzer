@@ -1,7 +1,7 @@
 /**
  * Graph Analyzer Web Viewer - Ultra-Light with Dynamic Style Toggle
  * Updated for Toast Feedback, Fast Loading, Detailed Multi-Selection,
- * Copy/Export Functionality
+ * Copy/Export Functionality, and Distribution Analysis
  */
 
 // Performance utilities
@@ -23,6 +23,7 @@ let graphData = {};
 let neighborHighlightState = 0;
 let performanceMode = true; // Start in performance mode
 let edgesLoading = false;   // New: incremental edge loading flag
+let distributionsWindow = null; // Reference to distributions popup
 let styleCache = {
     sizeRange: { min: 0, max: 1 },
     colorRange: { min: 0, max: 1 },
@@ -44,6 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDropdownLogic();
     initializeDefaultStyle();
     addPerformanceToggle();
+    setupDistributionsMessaging();
 });
 
 function cacheDOMElements() {
@@ -102,6 +104,100 @@ function updateStatus(msg, type) {
     showToast(msg, type);
     // Optional: log to console for debugging
     if (type === 'error') console.error(msg);
+}
+
+
+// =============================================================================
+// DISTRIBUTIONS POPUP WINDOW
+// =============================================================================
+
+function setupDistributionsMessaging() {
+    // Listen for messages from distributions popup
+    window.addEventListener('message', (event) => {
+        if (event.data.type === 'REQUEST_DISTRIBUTION_DATA') {
+            sendDataToDistributions();
+        }
+    });
+}
+
+function openDistributions() {
+    if (!cy) {
+        updateStatus('Please load a graph first', 'error');
+        return;
+    }
+
+    // Check if window already exists and is open
+    if (distributionsWindow && !distributionsWindow.closed) {
+        distributionsWindow.focus();
+        sendDataToDistributions();
+        return;
+    }
+
+    // Open new window
+    const width = 1200;
+    const height = 800;
+    const left = (screen.width - width) / 2;
+    const top = (screen.height - height) / 2;
+
+    distributionsWindow = window.open(
+        '/static/distributions.html',
+        'distributionsAnalysis',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+
+    if (!distributionsWindow) {
+        updateStatus('Popup blocked. Please allow popups for this site.', 'error');
+        return;
+    }
+
+    // Send data once window is loaded
+    distributionsWindow.addEventListener('load', () => {
+        sendDataToDistributions();
+    });
+}
+
+function sendDataToDistributions() {
+    if (!distributionsWindow || distributionsWindow.closed || !cy) return;
+
+    // Collect node data
+    const nodes = [];
+    cy.nodes().forEach(node => {
+        const data = node.data();
+        // Clean the data object
+        const cleanData = { id: data.id };
+        Object.keys(data).forEach(key => {
+            const val = data[key];
+            if (typeof val === 'number' && !isNaN(val)) {
+                cleanData[key] = val;
+            }
+        });
+        nodes.push(cleanData);
+    });
+
+    // Get selected node IDs
+    const selectedIds = cy.nodes(':selected').map(n => n.id());
+
+    // Send to popup
+    distributionsWindow.postMessage({
+        type: 'DISTRIBUTION_DATA',
+        data: {
+            nodes: nodes,
+            selectedIds: selectedIds
+        }
+    }, '*');
+}
+
+function sendSelectionUpdate() {
+    if (!distributionsWindow || distributionsWindow.closed || !cy) return;
+
+    const selectedIds = cy.nodes(':selected').map(n => n.id());
+    
+    distributionsWindow.postMessage({
+        type: 'SELECTION_UPDATE',
+        data: {
+            selectedIds: selectedIds
+        }
+    }, '*');
 }
 
 
@@ -626,7 +722,7 @@ async function loadAvailableConfig() {
         list.appendChild(fragment);
         list.dispatchEvent(new Event('change'));
 
-        // Populate other dropdowns
+        // Populate metrics target graph dropdown
         const metricsGraphSelect = document.getElementById('metrics-graph');
         metricsGraphSelect.innerHTML = '<option value="">Auto (first selected)</option>' + 
             availableConfig.sql_files.map(file => 
@@ -634,12 +730,17 @@ async function loadAvailableConfig() {
             ).join('');
         metricsGraphSelect.value = 'crc_v2_invites';
 
-        // Custom metrics
+        // Populate custom metrics checkboxes (always visible now) with descriptions
         if (availableConfig.metric_modes?.categories) {
             const customDiv = document.getElementById('custom-metrics');
             customDiv.innerHTML = Object.entries(availableConfig.metric_modes.categories)
                 .map(([key, desc]) => 
-                    `<label><input type="checkbox" name="custom-metric" value="${key}"> ${key}: ${desc}</label>`
+                    `<label title="${desc}">
+                        <input type="checkbox" name="custom-metric" value="${key}" 
+                            ${['topology', 'clustering'].includes(key) ? 'checked' : ''}>
+                        <span style="font-weight:500;">${key}</span>
+                        <span style="color:#808080; font-size:11px; display:block; margin-left:20px; margin-bottom:4px;">${desc}</span>
+                    </label>`
                 ).join('');
         }
 
@@ -669,14 +770,13 @@ function setupEventListeners() {
     });
     
     document.getElementById('neighbor-toggle-btn').addEventListener('click', toggleNeighborHighlight);
-    
-    document.getElementById('metrics-mode').addEventListener('change', (e) => {
-        document.getElementById('custom-metrics').style.display = e.target.value === 'custom' ? 'block' : 'none';
-    });
 
     document.getElementById('graph-select').addEventListener('change', (e) => {
         if (e.target.value) displayGraph(e.target.value);
     });
+
+    // Distributions button
+    document.getElementById('distributions-btn')?.addEventListener('click', openDistributions);
 
     // Toolbar
     document.getElementById('fit-btn')?.addEventListener('click', () => cy?.fit());
@@ -800,12 +900,14 @@ async function loadGraphs() {
 }
 
 async function runMetrics() {
-    let metricsMode = document.getElementById('metrics-mode').value;
-    if (metricsMode === 'custom') {
-        const sels = Array.from(document.querySelectorAll('input[name="custom-metric"]:checked')).map(cb => cb.value);
-        if (sels.length === 0) return updateStatus('Select metric category', 'error');
-        metricsMode = sels.join(',');
+    // Always use custom mode - collect selected categories
+    const selectedCategories = Array.from(document.querySelectorAll('input[name="custom-metric"]:checked')).map(cb => cb.value);
+    
+    if (selectedCategories.length === 0) {
+        return updateStatus('Select at least one metric category', 'error');
     }
+    
+    const metricsMode = selectedCategories.join(',');
 
     const config = {
         metrics_mode: metricsMode,
@@ -855,6 +957,9 @@ async function runMetrics() {
             if (!performanceMode) {
                 updateCytoscapeStyle();
             }
+
+            // Update distributions window if open
+            sendDataToDistributions();
         }
 
     } catch (err) {
@@ -917,7 +1022,7 @@ async function displayGraph(graphId) {
                 name: 'canvas',
                 webgl: true,           // Turn on experimental WebGL
                 webglTexSize: 1024,    // Optional: larger texture size for clearer nodes
-                showFps: true         
+                showFps: false         
             },
 
             layout: { name: 'preset' },
@@ -1167,10 +1272,10 @@ function setupCyListeners() {
             } else {
                 showEdgeInfo(selected[0]);
             }
-        } else {
-            // Nothing selected
-            // hideAllInfo(); // Optional: keep last info or clear? keeping it visible is usually better
         }
+        
+        // Update distributions window with new selection
+        sendSelectionUpdate();
     }, 100));
 }
 

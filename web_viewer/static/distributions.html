@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metrics Distribution Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Left sidebar - metric selector */
+        .sidebar {
+            width: 280px;
+            background: #1a1a1a;
+            border-right: 1px solid #2a2a2a;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .sidebar-header h2 {
+            font-size: 16px;
+            color: #4A90E2;
+            margin-bottom: 10px;
+        }
+
+        .sidebar-header p {
+            font-size: 12px;
+            color: #808080;
+        }
+
+        .filter-section {
+            padding: 15px 20px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .filter-section label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .filter-section input[type="checkbox"] {
+            accent-color: #4A90E2;
+        }
+
+        /* View mode tabs in sidebar */
+        .view-tabs {
+            display: flex;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .view-tab {
+            flex: 1;
+            padding: 12px 10px;
+            background: none;
+            border: none;
+            color: #808080;
+            font-size: 12px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .view-tab:hover {
+            background: #252525;
+        }
+
+        .view-tab.active {
+            color: #4A90E2;
+            border-bottom-color: #4A90E2;
+            background: #1e3a5f33;
+        }
+
+        .metrics-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .metric-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .metric-item:hover {
+            background: #2a2a2a;
+        }
+
+        .metric-item.selected {
+            background: #1e3a5f;
+            border-left: 3px solid #4A90E2;
+        }
+
+        .metric-item input[type="checkbox"] {
+            accent-color: #4A90E2;
+        }
+
+        .metric-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Scatter plot config panel */
+        .scatter-config {
+            padding: 15px;
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .scatter-config.active {
+            display: flex;
+        }
+
+        .scatter-config h4 {
+            font-size: 12px;
+            color: #4A90E2;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .config-row {
+            margin-bottom: 12px;
+        }
+
+        .config-row label {
+            display: block;
+            font-size: 11px;
+            color: #808080;
+            margin-bottom: 4px;
+        }
+
+        .config-row select {
+            width: 100%;
+            padding: 8px 10px;
+            background: #0a0a0a;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 12px;
+        }
+
+        .config-row select:focus {
+            outline: none;
+            border-color: #4A90E2;
+        }
+
+        .config-row-inline {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .config-row-inline .config-row {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        /* Main content area */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .toolbar {
+            padding: 15px 20px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .toolbar-info {
+            font-size: 13px;
+            color: #808080;
+        }
+
+        .toolbar-info strong {
+            color: #4A90E2;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background: #3a3a3a;
+        }
+
+        .btn-primary {
+            background: #4A90E2;
+            border-color: #4A90E2;
+        }
+
+        .btn-primary:hover {
+            background: #357ABD;
+        }
+
+        .btn-small {
+            padding: 4px 10px;
+            font-size: 11px;
+        }
+
+        /* Charts area */
+        .charts-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        .chart-card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .chart-header {
+            padding: 12px 20px;
+            background: #0a0a0a;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #4A90E2;
+        }
+
+        .chart-close {
+            background: none;
+            border: none;
+            color: #808080;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+        }
+
+        .chart-close:hover {
+            color: #ff4d4f;
+        }
+
+        .chart-body {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .chart-container {
+            flex: 1;
+            height: 280px;
+            min-height: 280px;
+            position: relative;
+        }
+
+        .stats-panel {
+            width: 220px;
+            flex-shrink: 0;
+            font-size: 11px;
+        }
+
+        .stats-section {
+            margin-bottom: 15px;
+        }
+
+        .stats-section-title {
+            font-size: 10px;
+            color: #808080;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 11px;
+        }
+
+        .stat-label {
+            color: #808080;
+        }
+
+        .stat-value {
+            color: #e0e0e0;
+            font-family: monospace;
+            font-weight: 600;
+        }
+
+        .percentile-bar {
+            height: 6px;
+            background: #2a2a2a;
+            border-radius: 3px;
+            margin-top: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .percentile-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4A90E2, #52c41a);
+            border-radius: 3px;
+        }
+
+        /* Scatter plot area */
+        .scatter-area {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        .scatter-area.active {
+            display: flex;
+        }
+
+        .scatter-card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .scatter-card .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .scatter-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .scatter-card .chart-body {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            min-height: 0;
+        }
+
+        .scatter-card .chart-container {
+            flex: 1;
+            height: 100%;
+            min-height: 400px;
+        }
+
+        .scatter-info-panel {
+            width: 280px;
+            flex-shrink: 0;
+            border-left: 1px solid #2a2a2a;
+            padding: 15px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .scatter-info-panel.active {
+            display: block;
+        }
+
+        .scatter-info-panel h4 {
+            font-size: 12px;
+            color: #4A90E2;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .selected-node-card {
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 11px;
+        }
+
+        .selected-node-card .node-id {
+            font-family: monospace;
+            color: #52c41a;
+            font-size: 10px;
+            word-break: break-all;
+            margin-bottom: 8px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .selected-node-card .stat-row {
+            padding: 2px 0;
+        }
+
+        .scatter-stats {
+            padding: 15px 20px;
+            background: #0a0a0a;
+            border-top: 1px solid #2a2a2a;
+            display: flex;
+            gap: 30px;
+            font-size: 12px;
+            flex-wrap: wrap;
+        }
+
+        .scatter-stat {
+            display: flex;
+            gap: 8px;
+        }
+
+        .scatter-stat-label {
+            color: #808080;
+        }
+
+        .scatter-stat-value {
+            color: #4A90E2;
+            font-family: monospace;
+            font-weight: 600;
+        }
+
+        /* Empty state */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #808080;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #606060;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+            max-width: 400px;
+        }
+
+        /* Loading state */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+            color: #808080;
+        }
+
+        /* No data state */
+        .no-data {
+            padding: 40px;
+            text-align: center;
+            color: #808080;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #3a3a3a;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4a4a4a;
+        }
+
+        /* Responsive */
+        @media (max-width: 1000px) {
+            .chart-body {
+                flex-direction: column;
+            }
+            .stats-panel {
+                width: 100%;
+            }
+            .scatter-info-panel {
+                width: 100%;
+                border-left: none;
+                border-top: 1px solid #2a2a2a;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Distribution Analysis</h2>
+                <p id="node-info">Waiting for data...</p>
+            </div>
+            
+            <div class="filter-section">
+                <label>
+                    <input type="checkbox" id="selected-only">
+                    Analyze selected nodes only
+                </label>
+            </div>
+
+            <div class="view-tabs">
+                <button class="view-tab active" data-view="histograms">Histograms</button>
+                <button class="view-tab" data-view="scatter">Scatter Plot</button>
+            </div>
+            
+            <!-- Histogram metrics list -->
+            <div class="metrics-list" id="metrics-list">
+                <div class="loading">Loading metrics...</div>
+            </div>
+
+            <!-- Scatter plot config -->
+            <div class="scatter-config" id="scatter-config">
+                <h4>Axes Configuration</h4>
+                <div class="config-row">
+                    <label>X Axis Metric</label>
+                    <select id="scatter-x"></select>
+                </div>
+                <div class="config-row">
+                    <label>X Scale</label>
+                    <select id="scatter-x-scale">
+                        <option value="linear">Linear</option>
+                        <option value="logarithmic">Logarithmic</option>
+                    </select>
+                </div>
+                <div class="config-row">
+                    <label>Y Axis Metric</label>
+                    <select id="scatter-y"></select>
+                </div>
+                <div class="config-row">
+                    <label>Y Scale</label>
+                    <select id="scatter-y-scale">
+                        <option value="linear">Linear</option>
+                        <option value="logarithmic">Logarithmic</option>
+                    </select>
+                </div>
+                
+                <h4 style="margin-top: 20px;">Color Configuration</h4>
+                <div class="config-row">
+                    <label>Color By (optional)</label>
+                    <select id="scatter-color">
+                        <option value="">None (uniform color)</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-primary" id="render-scatter-btn" style="width:100%; margin-top:20px;">
+                    Render Scatter Plot
+                </button>
+                
+                <div style="margin-top: 15px; font-size: 11px; color: #808080;">
+                    <strong>Zoom:</strong> Scroll wheel<br>
+                    <strong>Pan:</strong> Click and drag<br>
+                    <strong>Select:</strong> Click points<br>
+                    <strong>Reset:</strong> Double-click
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="toolbar">
+                <div class="toolbar-info">
+                    <span id="chart-count">0</span> <span id="chart-label">metrics selected</span>
+                </div>
+                <button class="btn" id="clear-all-btn">Clear All</button>
+                <button class="btn btn-primary" id="refresh-btn">Refresh Data</button>
+            </div>
+
+            <!-- Histograms view -->
+            <div class="charts-area" id="charts-area">
+                <div class="empty-state">
+                    <h3>Select Metrics to Analyze</h3>
+                    <p>Choose one or more metrics from the sidebar to view their distribution histograms and statistics.</p>
+                </div>
+            </div>
+
+            <!-- Scatter plot view -->
+            <div class="scatter-area" id="scatter-area">
+                <div class="scatter-card">
+                    <div class="chart-header">
+                        <span class="chart-title" id="scatter-title">Scatter Plot</span>
+                        <div class="scatter-controls">
+                            <button class="btn btn-small" id="reset-zoom-btn">Reset Zoom</button>
+                            <button class="btn btn-small" id="toggle-info-btn">Show Selection</button>
+                        </div>
+                    </div>
+                    <div class="chart-body">
+                        <div class="chart-container">
+                            <canvas id="scatter-chart"></canvas>
+                        </div>
+                        <div class="scatter-info-panel" id="scatter-info-panel">
+                            <h4>Selected Points</h4>
+                            <div id="selected-points-list">
+                                <p style="color: #808080; font-size: 11px;">Click points on the chart to see details</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="scatter-stats" id="scatter-stats">
+                        <div class="scatter-stat">
+                            <span class="scatter-stat-label">Points:</span>
+                            <span class="scatter-stat-value" id="scatter-points">0</span>
+                        </div>
+                        <div class="scatter-stat">
+                            <span class="scatter-stat-label">Correlation (r):</span>
+                            <span class="scatter-stat-value" id="scatter-correlation">-</span>
+                        </div>
+                        <div class="scatter-stat">
+                            <span class="scatter-stat-label">R²:</span>
+                            <span class="scatter-stat-value" id="scatter-r2">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="distributions.js"></script>
+</body>
+</html>

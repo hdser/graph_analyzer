@@ -174,8 +174,17 @@ body {
     font-size: 13px;
 }
 
+.checkbox-group label:hover {
+    color: #4A90E2;
+}
+
+.checkbox-group input[type="checkbox"] {
+    accent-color: #4A90E2;
+    margin-right: 6px;
+}
+
 #custom-metrics {
-    max-height: 200px;
+    max-height: 280px;
 }
 
 /* Select dropdowns */
@@ -272,6 +281,18 @@ select:focus {
 
 .secondary-btn:hover {
     background: #3a3a3a;
+}
+
+/* Distributions button special styling */
+#distributions-btn {
+    background: linear-gradient(135deg, #2a4055 0%, #1e3a5f 100%);
+    border-color: #4A90E2;
+    margin-top: 15px;
+}
+
+#distributions-btn:hover {
+    background: linear-gradient(135deg, #3a5065 0%, #2e4a6f 100%);
+    border-color: #6bb6ff;
 }
 
 /* Icon buttons for copy/export */

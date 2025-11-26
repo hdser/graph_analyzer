@@ -50,23 +50,21 @@
                     </div>
                     <div class="style-subsection">
                         <div class="style-row">
-                            <label>Target</label>
+                            <label>Target Graph</label>
                             <select id="metrics-graph"></select>
                         </div>
+                        
                         <div class="style-row">
-                            <label>Metrics</label>
-                            <select id="metrics-mode">
-                                <option value="basic">Basic (Fastest)</option>
-                                <option value="topology">Topology</option>
-                                <option value="essential">Essential</option>
-                                <option value="all">All Metrics (Slow)</option>
-                                <option value="custom">Custom...</option>
-                            </select>
+                            <label style="font-size: 11px; color: #808080; width: 100%;">Select Categories:</label>
                         </div>
-                        <div id="custom-metrics" class="checkbox-group" style="display: none;"></div>
+                        <div id="custom-metrics" class="checkbox-group"></div>
                         
                         <button id="metrics-btn" class="primary-btn" disabled>Run Metrics</button>
                         <div id="metrics-status" style="text-align:center; font-size:11px; color:#808080; display:none">Calculating...</div>
+                        
+                        <button id="distributions-btn" class="secondary-btn" title="Open distribution analysis in new window">
+                            Analyze Distributions
+                        </button>
                     </div>
                 </div>
 
@@ -87,8 +85,8 @@
                                 <option value="gt">&gt;</option>
                                 <option value="lt">&lt;</option>
                                 <option value="eq">=</option>
-                                <option value="gte">&ge;</option>
-                                <option value="lte">&le;</option>
+                                <option value="gte">≥</option>
+                                <option value="lte">≤</option>
                             </select>
                             <input type="number" id="filter-value" placeholder="Value" style="flex:1;">
                         </div>
