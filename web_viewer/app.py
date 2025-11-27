@@ -4,6 +4,9 @@ Supports Server-Side Incremental Layout Updates
 FIX: Changed async routes to sync (def) to prevent blocking the event loop.
 FIX: Metrics caching is now version-aware (v1, v2) to prevent cross-contamination.
 FIX: Incremental layout now uses pure Python centroid + spring simulation for speed and consistency.
+NEW: Anomaly detection with multiple algorithms
+NEW: Composite metrics creation and persistence
+NEW: Auto-reload with SSE-based notifications
 """
 
 import os
@@ -13,9 +16,11 @@ import hashlib
 import random
 import re
 import math
+import asyncio
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -24,15 +29,31 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 from dotenv import load_dotenv
 
+# SSE support
+try:
+    from sse_starlette.sse import EventSourceResponse
+    HAS_SSE = True
+except ImportError:
+    HAS_SSE = False
+    print("[WARNING] sse-starlette not installed. Auto-reload SSE will be disabled.")
+
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from graph_metrics import GraphMetrics, METRIC_CATEGORIES, METRIC_PRESETS
+
+# Import anomaly engine
+try:
+    from anomaly_engine import AnomalyEngine, CompositeMetricEngine
+    HAS_ANOMALY = True
+except ImportError:
+    HAS_ANOMALY = False
+    print("[WARNING] anomaly_engine not found. Anomaly detection will be disabled.")
 
 # Try to import py4cytoscape for Cytoscape Desktop support
 try:
@@ -56,6 +77,10 @@ if HAS_CYTOSCAPE_DESKTOP:
     print("Using Cytoscape Desktop for fast, high-quality layouts")
 else:
     print("Using Cytoscape.js layout service")
+if HAS_ANOMALY:
+    print("Anomaly detection engine: AVAILABLE")
+if HAS_SSE:
+    print("SSE auto-reload: AVAILABLE")
 print("=" * 70)
 
 app = FastAPI(title="Graph Analyzer Web Viewer")
@@ -96,6 +121,87 @@ class NetworkState(BaseModel):
     layout_algorithm: str
     layout_cached: bool
     data_source: str  # 'sql' or 'cache'
+
+
+# ============================================================================
+# Anomaly Detection Models
+# ============================================================================
+
+class AnomalyDetectionConfig(BaseModel):
+    """Configuration for anomaly detection request."""
+    name: str = Field(..., description="Name for the resulting anomaly score metric")
+    metrics: List[str] = Field(..., min_length=1, description="Metrics to analyze")
+    algorithm: str = Field(..., description="Algorithm name")
+    parameters: Optional[Dict[str, Any]] = Field(default=None, description="Algorithm parameters")
+    apply_to_graph: bool = Field(default=True, description="Add as node attribute")
+    version: Optional[str] = Field(default=None, description="Graph version filter")
+
+
+class AnomalyDetectionResult(BaseModel):
+    """Result of anomaly detection."""
+    metric_name: str
+    algorithm: str
+    n_anomalies: int
+    n_total: int
+    anomaly_percentage: float
+    computation_time: float
+    top_anomalies: List[Dict[str, Any]]
+    score_statistics: Dict[str, float]
+    metrics_used: List[str]
+    parameters_used: Dict[str, Any]
+    node_updates: Optional[List[Dict[str, Any]]] = None
+
+
+# ============================================================================
+# Composite Metrics Models
+# ============================================================================
+
+class CompositeMetricConfig(BaseModel):
+    """Configuration for composite metric creation."""
+    name: str = Field(..., description="Name for new metric")
+    metrics: List[str] = Field(..., min_length=2, max_length=2, description="Source metrics")
+    operation: str = Field(..., description="Operation name")
+    weights: Optional[List[float]] = Field(default=None, description="For weighted operations")
+    normalize: bool = Field(default=False, description="Normalize inputs first")
+    save: bool = Field(default=True, description="Persist to cache")
+    version: Optional[str] = Field(default=None, description="Graph version")
+
+
+class CompositeMetricResult(BaseModel):
+    """Result of composite metric creation."""
+    metric_name: str
+    formula: str
+    node_updates: List[Dict[str, Any]]
+    statistics: Dict[str, float]
+    saved: bool
+    composite_id: Optional[str] = None
+
+
+# ============================================================================
+# Auto-Reload Models
+# ============================================================================
+
+class AutoReloadConfig(BaseModel):
+    """Configuration for auto-reload."""
+    enabled: bool
+    interval_seconds: int = Field(default=300, ge=60, le=3600)
+    sql_files: Optional[List[str]] = None
+    compute_metrics: bool = Field(default=False)
+    metrics_mode: str = Field(default="topology")
+
+
+class AutoReloadStatus(BaseModel):
+    """Current status of auto-reload system."""
+    enabled: bool
+    interval_seconds: int
+    last_reload_time: Optional[str] = None
+    next_reload_time: Optional[str] = None
+    reload_in_progress: bool
+    current_node_count: int
+    last_reload_duration: Optional[float] = None
+    last_reload_nodes_added: int = 0
+    last_reload_nodes_removed: int = 0
+    error: Optional[str] = None
 
 
 # ============================================================================
@@ -261,6 +367,285 @@ class LocalSpringLayout:
 
 
 # ============================================================================
+# Auto-Reload Manager
+# ============================================================================
+
+class AutoReloadManager:
+    """
+    Manages automatic background reloading of graph data.
+    
+    Features:
+    - Configurable interval (60-3600 seconds)
+    - SSE-based event broadcasting
+    - Atomic state updates
+    - Diff computation (added/removed nodes)
+    - Thread-safe operation
+    """
+    
+    def __init__(self, network_service: 'NetworkService'):
+        self.network_service = network_service
+        self.enabled = False
+        self.interval_seconds = 300
+        self.sql_files: List[str] = []
+        self.compute_metrics = False
+        self.metrics_mode = "topology"
+        
+        # State tracking
+        self.last_reload_time: Optional[datetime] = None
+        self.next_reload_time: Optional[datetime] = None
+        self.reload_in_progress = False
+        self.last_error: Optional[str] = None
+        self.last_reload_duration: Optional[float] = None
+        self.last_nodes_added: int = 0
+        self.last_nodes_removed: int = 0
+        
+        # Threading
+        self._task: Optional[asyncio.Task] = None
+        self._state_lock = threading.Lock()
+        self._stop_event = asyncio.Event()
+        
+        # SSE subscribers
+        self._subscribers: List[asyncio.Queue] = []
+    
+    async def start(self, config: AutoReloadConfig) -> AutoReloadStatus:
+        """Start auto-reload with given configuration."""
+        # Stop any existing task
+        await self.stop()
+        
+        self.enabled = config.enabled
+        self.interval_seconds = config.interval_seconds
+        self.sql_files = config.sql_files or []
+        self.compute_metrics = config.compute_metrics
+        self.metrics_mode = config.metrics_mode
+        
+        if not self.enabled:
+            return self.get_status()
+        
+        if not self.sql_files:
+            # Use currently loaded graphs
+            self.sql_files = [f"{gid}.sql" for gid in self.network_service.graphs.keys()]
+        
+        if not self.sql_files:
+            self.enabled = False
+            self.last_error = "No SQL files specified and no graphs loaded"
+            return self.get_status()
+        
+        # Calculate next reload time
+        self.next_reload_time = datetime.now() + timedelta(seconds=self.interval_seconds)
+        self.last_error = None
+        self._stop_event.clear()
+        
+        # Start background task
+        self._task = asyncio.create_task(self._reload_loop())
+        
+        print(f"[AUTO-RELOAD] Started with interval {self.interval_seconds}s")
+        return self.get_status()
+    
+    async def stop(self) -> AutoReloadStatus:
+        """Stop auto-reload."""
+        self.enabled = False
+        self._stop_event.set()
+        
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        
+        self._task = None
+        self.next_reload_time = None
+        
+        print("[AUTO-RELOAD] Stopped")
+        return self.get_status()
+    
+    def get_status(self) -> AutoReloadStatus:
+        """Get current status."""
+        total_nodes = sum(
+            G.number_of_nodes() 
+            for G in self.network_service.graphs.values()
+        ) if self.network_service.graphs else 0
+        
+        return AutoReloadStatus(
+            enabled=self.enabled,
+            interval_seconds=self.interval_seconds,
+            last_reload_time=self.last_reload_time.isoformat() if self.last_reload_time else None,
+            next_reload_time=self.next_reload_time.isoformat() if self.next_reload_time else None,
+            reload_in_progress=self.reload_in_progress,
+            current_node_count=total_nodes,
+            last_reload_duration=self.last_reload_duration,
+            last_reload_nodes_added=self.last_nodes_added,
+            last_reload_nodes_removed=self.last_nodes_removed,
+            error=self.last_error
+        )
+    
+    def subscribe(self) -> asyncio.Queue:
+        """Subscribe to reload events. Returns queue for SSE."""
+        queue = asyncio.Queue()
+        self._subscribers.append(queue)
+        return queue
+    
+    def unsubscribe(self, queue: asyncio.Queue):
+        """Unsubscribe from reload events."""
+        if queue in self._subscribers:
+            self._subscribers.remove(queue)
+    
+    async def _broadcast_event(self, event_type: str, data: Dict[str, Any]):
+        """Broadcast event to all subscribers."""
+        event = {"type": event_type, "data": data}
+        for queue in self._subscribers:
+            try:
+                await queue.put(event)
+            except Exception as e:
+                print(f"[AUTO-RELOAD] Error broadcasting to subscriber: {e}")
+    
+    async def _reload_loop(self):
+        """Main reload loop - runs in background."""
+        while self.enabled and not self._stop_event.is_set():
+            try:
+                # Wait for interval
+                sleep_time = self.interval_seconds
+                if self.next_reload_time:
+                    remaining = (self.next_reload_time - datetime.now()).total_seconds()
+                    sleep_time = max(1, remaining)
+                
+                try:
+                    await asyncio.wait_for(
+                        self._stop_event.wait(),
+                        timeout=sleep_time
+                    )
+                    # Stop event was set
+                    break
+                except asyncio.TimeoutError:
+                    # Normal timeout, proceed with reload
+                    pass
+                
+                if not self.enabled:
+                    break
+                
+                # Perform reload
+                result = await self._perform_reload()
+                
+                if result:
+                    self.last_reload_time = datetime.now()
+                    self.next_reload_time = datetime.now() + timedelta(seconds=self.interval_seconds)
+                    self.last_reload_duration = result.get('duration_seconds', 0)
+                    self.last_nodes_added = len(result.get('nodes_added', []))
+                    self.last_nodes_removed = len(result.get('nodes_removed', []))
+                    self.last_error = None
+                    
+                    # Broadcast completion
+                    await self._broadcast_event('reload_complete', result)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.last_error = str(e)
+                print(f"[AUTO-RELOAD] Error in reload loop: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                await self._broadcast_event('reload_error', {
+                    'error': str(e),
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                # Wait before retrying
+                await asyncio.sleep(30)
+    
+    async def _perform_reload(self) -> Optional[Dict[str, Any]]:
+        """
+        Perform a single reload cycle.
+        
+        Returns dict with:
+        - nodes_added: List[str]
+        - nodes_removed: List[str]
+        - total_nodes: int
+        - duration_seconds: float
+        - graphs_updated: List[str]
+        """
+        if self.reload_in_progress:
+            return None
+        
+        self.reload_in_progress = True
+        start_time = time.time()
+        
+        try:
+            # Broadcast start
+            await self._broadcast_event('reload_started', {
+                'timestamp': datetime.now().isoformat(),
+                'graphs': list(self.network_service.graphs.keys())
+            })
+            
+            # Get current node sets for diff
+            old_nodes: Dict[str, Set[str]] = {}
+            for gid, G in self.network_service.graphs.items():
+                old_nodes[gid] = set(G.nodes())
+            
+            # Load fresh data
+            config = LoadConfig(
+                sql_files=self.sql_files,
+                use_cached_layout=True,
+                skip_sql=False
+            )
+            
+            # Run in executor to not block event loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self.network_service.load_network(config)
+            )
+            
+            # Compute diff
+            all_added = []
+            all_removed = []
+            
+            for gid, G in self.network_service.graphs.items():
+                new_node_set = set(G.nodes())
+                old_node_set = old_nodes.get(gid, set())
+                
+                added = list(new_node_set - old_node_set)
+                removed = list(old_node_set - new_node_set)
+                
+                all_added.extend(added)
+                all_removed.extend(removed)
+            
+            # Optionally compute metrics
+            if self.compute_metrics and all_added:
+                metrics_config = MetricsConfig(
+                    metrics_mode=self.metrics_mode,
+                    metrics_graph_id=None
+                )
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.network_service.update_metrics(metrics_config)
+                )
+            
+            duration = time.time() - start_time
+            total_nodes = sum(G.number_of_nodes() for G in self.network_service.graphs.values())
+            
+            result = {
+                'timestamp': datetime.now().isoformat(),
+                'duration_seconds': duration,
+                'nodes_added': all_added,
+                'nodes_removed': all_removed,
+                'total_nodes': total_nodes,
+                'graphs_updated': list(self.network_service.graphs.keys())
+            }
+            
+            print(f"[AUTO-RELOAD] Completed in {duration:.2f}s. "
+                  f"+{len(all_added)} nodes, -{len(all_removed)} nodes")
+            
+            return result
+            
+        except Exception as e:
+            print(f"[AUTO-RELOAD] Reload failed: {e}")
+            raise
+        finally:
+            self.reload_in_progress = False
+
+
+# ============================================================================
 # Network Service
 # ============================================================================
 
@@ -306,6 +691,19 @@ class NetworkService:
             convergence_threshold=0.3,
             max_iterations=80
         )
+        
+        # Initialize anomaly and composite engines
+        if HAS_ANOMALY:
+            self.anomaly_engine = AnomalyEngine()
+            self.composite_engine = CompositeMetricEngine(
+                cache_path=str(self.cache_dir / "composite_metrics.json")
+            )
+        else:
+            self.anomaly_engine = None
+            self.composite_engine = None
+        
+        # Initialize auto-reload manager
+        self.auto_reload_manager = AutoReloadManager(self)
     
     def _check_cytoscape_desktop(self) -> bool:
         """Check if Cytoscape Desktop is available"""
@@ -1125,7 +1523,13 @@ class NetworkService:
 
         return elements
 
-
+    def get_metrics_dataframe(self, version: Optional[str] = None) -> Optional[pd.DataFrame]:
+        """Get the metrics DataFrame for a specific version or the first available."""
+        if version and version in self.metrics_dfs:
+            return self.metrics_dfs[version]
+        elif self.metrics_dfs:
+            return list(self.metrics_dfs.values())[0]
+        return None
     
     def list_cached_layouts(self):
         layouts = []
@@ -1153,20 +1557,34 @@ class NetworkService:
 
 network_service = NetworkService()
 
+# ============================================================================
+# Core Endpoints
+# ============================================================================
+
 @app.get("/")
-async def root(): return FileResponse(STATIC_DIR / "index.html")
+async def root(): 
+    return FileResponse(STATIC_DIR / "index.html")
 
 @app.get("/api/config")
 async def get_config():
-    return {
+    config = {
         "sql_files": network_service.available_sql_files,
         "metric_modes": {
             "presets": {k: list(v) for k, v in METRIC_PRESETS.items()},
             "categories": {k: v for k, v in METRIC_CATEGORIES.items()}
         },
         "cytoscape_desktop_available": network_service.cytoscape_available,
-        "cached_layouts": network_service.list_cached_layouts()
+        "cached_layouts": network_service.list_cached_layouts(),
+        "anomaly_available": HAS_ANOMALY,
+        "auto_reload_available": HAS_SSE
     }
+    
+    # Add anomaly algorithms if available
+    if HAS_ANOMALY and network_service.anomaly_engine:
+        config["anomaly_algorithms"] = AnomalyEngine.get_available_algorithms()
+        config["composite_operations"] = CompositeMetricEngine.get_available_operations()
+    
+    return config
 
 @app.post("/api/load")
 def load_network(config: LoadConfig):
@@ -1248,7 +1666,8 @@ def get_graph_edges(
 
 
 @app.get("/api/cached-layouts")
-async def list_cached_layouts(): return network_service.list_cached_layouts()
+async def list_cached_layouts(): 
+    return network_service.list_cached_layouts()
 
 @app.delete("/api/cached-layouts")
 async def clear_cached_layouts(graph_id: Optional[str] = None):
@@ -1257,14 +1676,341 @@ async def clear_cached_layouts(graph_id: Optional[str] = None):
 
 @app.get("/api/state")
 async def get_current_state():
-    if not network_service.graphs: return {"loaded": False}
+    if not network_service.graphs: 
+        return {"loaded": False}
     total_nodes = sum(len(df) for df in network_service.metrics_dfs.values())
     return {
         "loaded": True,
         "graphs": list(network_service.graphs.keys()),
         "cytoscape_available": network_service.cytoscape_available,
-        "node_count": total_nodes
+        "node_count": total_nodes,
+        "anomaly_available": HAS_ANOMALY,
+        "auto_reload_available": HAS_SSE
     }
+
+
+# ============================================================================
+# Anomaly Detection Endpoints
+# ============================================================================
+
+@app.get("/api/anomaly/algorithms")
+async def get_anomaly_algorithms():
+    """Get available anomaly detection algorithms with parameters."""
+    if not HAS_ANOMALY:
+        raise HTTPException(status_code=503, detail="Anomaly detection not available. Install scikit-learn.")
+    return AnomalyEngine.get_available_algorithms()
+
+
+@app.post("/api/anomaly/detect")
+def detect_anomalies(config: AnomalyDetectionConfig):
+    """
+    Run anomaly detection on graph metrics.
+    
+    Returns anomaly scores as new metric that can be used for
+    coloring/filtering in the visualization.
+    """
+    if not HAS_ANOMALY or not network_service.anomaly_engine:
+        raise HTTPException(status_code=503, detail="Anomaly detection not available")
+    
+    if not network_service.graphs:
+        raise HTTPException(status_code=400, detail="No graphs loaded. Please load networks first.")
+    
+    try:
+        # Get metrics DataFrame
+        version = config.version
+        if not version:
+            # Use first available version
+            version = list(network_service.metrics_dfs.keys())[0] if network_service.metrics_dfs else None
+        
+        df = network_service.get_metrics_dataframe(version)
+        if df is None or df.empty:
+            raise HTTPException(status_code=400, detail="No metrics data available. Run metrics first.")
+        
+        # Run anomaly detection
+        result = network_service.anomaly_engine.detect_anomalies(
+            df=df,
+            metrics=config.metrics,
+            algorithm=config.algorithm,
+            parameters=config.parameters
+        )
+        
+        # Prepare response
+        response = AnomalyDetectionResult(
+            metric_name=config.name,
+            algorithm=result.algorithm,
+            n_anomalies=result.n_anomalies,
+            n_total=result.n_total,
+            anomaly_percentage=(result.n_anomalies / result.n_total * 100) if result.n_total > 0 else 0,
+            computation_time=result.computation_time,
+            top_anomalies=result.top_anomalies,
+            score_statistics=result.statistics,
+            metrics_used=result.metrics_used,
+            parameters_used=result.parameters
+        )
+        
+        # Apply to graph if requested
+        if config.apply_to_graph:
+            node_updates = []
+            
+            for gid, G in network_service.graphs.items():
+                graph_version = network_service._extract_version(gid)
+                if version and graph_version != version:
+                    continue
+                
+                for node_id, score in result.scores.items():
+                    if G.has_node(node_id):
+                        G.nodes[node_id][config.name] = score
+                        G.nodes[node_id][f"{config.name}_is_anomaly"] = result.binary_labels.get(node_id, False)
+                        node_updates.append({
+                            'id': node_id,
+                            config.name: score,
+                            f"{config.name}_is_anomaly": result.binary_labels.get(node_id, False)
+                        })
+            
+            response.node_updates = node_updates
+        
+        return response
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"Anomaly detection error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Composite Metrics Endpoints
+# ============================================================================
+
+@app.get("/api/anomaly/composites")
+async def get_composite_metrics(version: Optional[str] = None):
+    """Get list of saved composite metrics."""
+    if not HAS_ANOMALY or not network_service.composite_engine:
+        raise HTTPException(status_code=503, detail="Composite metrics not available")
+    
+    return network_service.composite_engine.get_saved_composites(version)
+
+
+@app.get("/api/metrics/composite/operations")
+async def get_composite_operations():
+    """Get available composite metric operations."""
+    if not HAS_ANOMALY:
+        raise HTTPException(status_code=503, detail="Composite metrics not available")
+    return CompositeMetricEngine.get_available_operations()
+
+
+@app.post("/api/metrics/composite")
+def create_composite_metric(config: CompositeMetricConfig):
+    """
+    Create a composite metric from existing metrics.
+    
+    Optionally saves to cache for reuse across sessions.
+    """
+    if not HAS_ANOMALY or not network_service.composite_engine:
+        raise HTTPException(status_code=503, detail="Composite metrics not available")
+    
+    if not network_service.graphs:
+        raise HTTPException(status_code=400, detail="No graphs loaded. Please load networks first.")
+    
+    try:
+        # Get metrics DataFrame
+        version = config.version
+        if not version:
+            version = list(network_service.metrics_dfs.keys())[0] if network_service.metrics_dfs else None
+        
+        df = network_service.get_metrics_dataframe(version)
+        if df is None or df.empty:
+            raise HTTPException(status_code=400, detail="No metrics data available. Run metrics first.")
+        
+        # Create composite metric
+        result_series, metadata = network_service.composite_engine.create_composite(
+            df=df,
+            name=config.name,
+            metrics=config.metrics,
+            operation=config.operation,
+            weights=config.weights,
+            normalize=config.normalize,
+            save=config.save,
+            version=version or "default"
+        )
+        
+        # Apply to graphs
+        node_updates = []
+        
+        for gid, G in network_service.graphs.items():
+            graph_version = network_service._extract_version(gid)
+            if version and graph_version != version:
+                continue
+            
+            for node_id, value in result_series.items():
+                if G.has_node(node_id):
+                    G.nodes[node_id][config.name] = float(value)
+                    node_updates.append({
+                        'id': node_id,
+                        config.name: float(value)
+                    })
+        
+        return CompositeMetricResult(
+            metric_name=config.name,
+            formula=metadata['formula'],
+            node_updates=node_updates,
+            statistics=metadata['statistics'],
+            saved=metadata.get('saved', False),
+            composite_id=metadata.get('id')
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"Composite metric error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/metrics/composite/{composite_id}")
+async def delete_composite_metric(composite_id: str):
+    """Delete a saved composite metric."""
+    if not HAS_ANOMALY or not network_service.composite_engine:
+        raise HTTPException(status_code=503, detail="Composite metrics not available")
+    
+    success = network_service.composite_engine.delete_composite(composite_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Composite {composite_id} not found")
+    
+    return {"status": "deleted", "composite_id": composite_id}
+
+
+@app.post("/api/metrics/composite/{composite_id}/apply")
+def apply_composite_metric(composite_id: str, version: Optional[str] = None):
+    """Apply a saved composite metric to current graph data."""
+    if not HAS_ANOMALY or not network_service.composite_engine:
+        raise HTTPException(status_code=503, detail="Composite metrics not available")
+    
+    if not network_service.graphs:
+        raise HTTPException(status_code=400, detail="No graphs loaded")
+    
+    try:
+        # Get the composite config
+        composite = network_service.composite_engine.get_composite_by_id(composite_id)
+        if not composite:
+            raise HTTPException(status_code=404, detail=f"Composite {composite_id} not found")
+        
+        # Get metrics DataFrame
+        if not version:
+            version = composite.get('version', 'default')
+        
+        df = network_service.get_metrics_dataframe(version)
+        if df is None or df.empty:
+            raise HTTPException(status_code=400, detail="No metrics data available")
+        
+        # Apply composite
+        result_series, metadata = network_service.composite_engine.apply_saved_composite(
+            composite_id, df
+        )
+        
+        if result_series is None:
+            raise HTTPException(status_code=404, detail=f"Composite {composite_id} not found")
+        
+        # Apply to graphs
+        node_updates = []
+        metric_name = composite['name']
+        
+        for gid, G in network_service.graphs.items():
+            graph_version = network_service._extract_version(gid)
+            if version != 'default' and graph_version != version:
+                continue
+            
+            for node_id, value in result_series.items():
+                if G.has_node(node_id):
+                    G.nodes[node_id][metric_name] = float(value)
+                    node_updates.append({
+                        'id': node_id,
+                        metric_name: float(value)
+                    })
+        
+        return {
+            "metric_name": metric_name,
+            "node_updates": node_updates,
+            "count": len(node_updates)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Auto-Reload Endpoints
+# ============================================================================
+
+@app.post("/api/auto-reload/start")
+async def start_auto_reload(config: AutoReloadConfig):
+    """Start automatic background reloading."""
+    if not HAS_SSE:
+        raise HTTPException(status_code=503, detail="SSE not available. Install sse-starlette.")
+    
+    try:
+        status = await network_service.auto_reload_manager.start(config)
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/auto-reload/stop")
+async def stop_auto_reload():
+    """Stop automatic background reloading."""
+    try:
+        status = await network_service.auto_reload_manager.stop()
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/auto-reload/status")
+async def get_auto_reload_status():
+    """Get current auto-reload status."""
+    return network_service.auto_reload_manager.get_status()
+
+
+@app.get("/api/auto-reload/events")
+async def auto_reload_events(request: Request):
+    """
+    SSE endpoint for real-time reload notifications.
+    
+    Event types:
+    - reload_started
+    - reload_progress
+    - reload_complete
+    - reload_error
+    - status_update
+    """
+    if not HAS_SSE:
+        raise HTTPException(status_code=503, detail="SSE not available")
+    
+    async def event_generator():
+        queue = network_service.auto_reload_manager.subscribe()
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield {
+                        "event": event["type"],
+                        "data": json.dumps(event["data"])
+                    }
+                except asyncio.TimeoutError:
+                    # Send keepalive
+                    yield {"event": "ping", "data": "{}"}
+        finally:
+            network_service.auto_reload_manager.unsubscribe(queue)
+    
+    return EventSourceResponse(event_generator())
+
 
 if __name__ == "__main__":
     import uvicorn

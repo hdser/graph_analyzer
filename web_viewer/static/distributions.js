@@ -15,6 +15,12 @@ let currentView = 'histograms';
 let selectedScatterPoints = [];
 let scatterNodeData = []; // Store node data for scatter plot selection
 
+// Anomaly detection state
+let anomalyAlgorithms = {};
+let lastAnomalyResult = null;
+let anomalyInitialized = false;
+let anomalyHistogramChart = null;
+
 // Communication with parent window
 window.addEventListener('message', (event) => {
     console.log('[Distributions] Received message:', event.data.type);
@@ -114,6 +120,13 @@ function setupEventListeners() {
             btn.textContent = 'Hide Selection';
         }
     });
+
+    // Anomaly detection event listeners
+    document.getElementById('anomaly-algorithm')?.addEventListener('change', updateAlgorithmUI);
+    document.getElementById('run-anomaly-btn')?.addEventListener('click', runAnomalyDetection);
+    document.getElementById('apply-anomaly-btn')?.addEventListener('click', applyAnomalyToGraph);
+    document.getElementById('highlight-anomalies-btn')?.addEventListener('click', highlightAnomalies);
+    document.getElementById('export-anomalies-btn')?.addEventListener('click', exportAnomaliesCSV);
 }
 
 function switchView(view) {
@@ -127,17 +140,27 @@ function switchView(view) {
     // Update sidebar content
     document.getElementById('metrics-list').style.display = view === 'histograms' ? 'block' : 'none';
     document.getElementById('scatter-config').classList.toggle('active', view === 'scatter');
+    document.getElementById('anomaly-config').classList.toggle('active', view === 'anomaly');
 
     // Update main content
     document.getElementById('charts-area').style.display = view === 'histograms' ? 'flex' : 'none';
     document.getElementById('scatter-area').classList.toggle('active', view === 'scatter');
+    document.getElementById('anomaly-area').classList.toggle('active', view === 'anomaly');
 
     // Update toolbar
     if (view === 'histograms') {
         document.getElementById('chart-label').textContent = 'metrics selected';
-    } else {
+    } else if (view === 'scatter') {
         document.getElementById('chart-label').textContent = 'scatter plot';
         document.getElementById('chart-count').textContent = scatterChart ? '1' : '0';
+    } else if (view === 'anomaly') {
+        document.getElementById('chart-label').textContent = 'anomaly detection';
+        document.getElementById('chart-count').textContent = lastAnomalyResult ? '1' : '0';
+    }
+    
+    // Initialize anomaly tab if switching to it for the first time
+    if (view === 'anomaly' && !anomalyInitialized) {
+        initializeAnomalyTab();
     }
 }
 
@@ -156,6 +179,11 @@ function initializeMetrics() {
 
     updateMetricsList();
     populateScatterSelects();
+    
+    // Also update anomaly metrics if tab is active
+    if (anomalyInitialized) {
+        populateAnomalyMetrics();
+    }
 }
 
 function updateMetricsList() {
@@ -898,4 +926,483 @@ function getViridisColor(t, alpha = 1) {
     const b = Math.round(c1[2] + (c2[2] - c1[2]) * localT);
     
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+
+// =============================================================================
+// ANOMALY DETECTION
+// =============================================================================
+
+async function initializeAnomalyTab() {
+    if (anomalyInitialized) return;
+    
+    console.log('[Anomaly] Initializing anomaly detection tab...');
+    
+    try {
+        // Fetch available algorithms from backend
+        const response = await fetch('/api/anomaly/algorithms');
+        if (!response.ok) {
+            throw new Error('Failed to load algorithms');
+        }
+        
+        anomalyAlgorithms = await response.json();
+        console.log('[Anomaly] Loaded algorithms:', Object.keys(anomalyAlgorithms));
+        
+        populateAlgorithmSelect();
+        populateAnomalyMetrics();
+        anomalyInitialized = true;
+        
+    } catch (error) {
+        console.error('[Anomaly] Failed to initialize:', error);
+        document.getElementById('algorithm-description').innerHTML = 
+            '<div style="color: #ff4d4f;">Failed to load algorithms. Is the server running?</div>';
+    }
+}
+
+function populateAlgorithmSelect() {
+    const select = document.getElementById('anomaly-algorithm');
+    if (!select || !anomalyAlgorithms) return;
+    
+    select.innerHTML = Object.entries(anomalyAlgorithms)
+        .map(([key, info]) => `<option value="${key}">${info.name}</option>`)
+        .join('');
+    
+    // Set default and trigger UI update
+    select.value = 'isolation_forest';
+    updateAlgorithmUI();
+}
+
+function updateAlgorithmUI() {
+    const algorithm = document.getElementById('anomaly-algorithm')?.value;
+    if (!algorithm || !anomalyAlgorithms) return;
+    
+    const info = anomalyAlgorithms[algorithm];
+    if (!info) return;
+    
+    // Update description
+    document.getElementById('algorithm-description').innerHTML = `
+        <p>${info.description}</p>
+        <p class="complexity">Complexity: ${info.complexity}</p>
+        <p class="multivariate">${info.multivariate ? '✓ Supports multiple metrics' : '○ Single metric recommended'}</p>
+    `;
+    
+    // Update parameters
+    const paramsContainer = document.getElementById('anomaly-parameters');
+    if (!paramsContainer) return;
+    
+    paramsContainer.innerHTML = Object.entries(info.parameters)
+        .map(([paramName, paramInfo]) => {
+            const inputType = paramInfo.type === 'bool' ? 'checkbox' : 'number';
+            const step = paramInfo.type === 'int' ? '1' : '0.01';
+            
+            if (paramInfo.type === 'bool') {
+                return `
+                    <div class="config-row">
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="param-${paramName}" ${paramInfo.default ? 'checked' : ''}>
+                            ${paramName.replace(/_/g, ' ')}
+                        </label>
+                        <div style="font-size: 10px; color: #606060; margin-top: 2px;">${paramInfo.description}</div>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="config-row">
+                    <label title="${paramInfo.description}">${paramName.replace(/_/g, ' ')}</label>
+                    <input type="${inputType}" 
+                           class="param-input"
+                           id="param-${paramName}"
+                           value="${paramInfo.default}"
+                           min="${paramInfo.min}"
+                           max="${paramInfo.max}"
+                           step="${step}">
+                </div>
+            `;
+        }).join('');
+    
+    // Update metrics list based on multivariate support
+    populateAnomalyMetrics();
+}
+
+function populateAnomalyMetrics() {
+    const container = document.getElementById('anomaly-metrics-list');
+    if (!container) return;
+    
+    const algorithm = document.getElementById('anomaly-algorithm')?.value;
+    const info = anomalyAlgorithms[algorithm];
+    
+    // Filter to numeric metrics
+    const numericMetrics = allMetrics.filter(m => {
+        const sample = nodeData[0]?.[m];
+        return typeof sample === 'number';
+    });
+    
+    if (numericMetrics.length === 0) {
+        container.innerHTML = '<div style="color: #808080; font-size: 11px; padding: 10px;">No numeric metrics available</div>';
+        return;
+    }
+    
+    // For multivariate algorithms, use checkboxes; for single-metric, use radio buttons
+    const inputType = info?.multivariate !== false ? 'checkbox' : 'radio';
+    
+    container.innerHTML = numericMetrics.map(metric => `
+        <label class="metric-checkbox">
+            <input type="${inputType}" name="anomaly-metric" value="${metric}">
+            <span>${metric.replace(/_/g, ' ')}</span>
+        </label>
+    `).join('');
+    
+    // Pre-select reasonable defaults
+    const defaults = ['pagerank', 'total_degree', 'clustering_coefficient', 'in_degree', 'out_degree'];
+    let selectedCount = 0;
+    defaults.forEach(d => {
+        if (selectedCount < 3) {
+            const input = container.querySelector(`input[value="${d}"]`);
+            if (input) {
+                input.checked = true;
+                selectedCount++;
+            }
+        }
+    });
+    
+    // If no defaults found, select first metric
+    if (selectedCount === 0 && numericMetrics.length > 0) {
+        const firstInput = container.querySelector('input');
+        if (firstInput) firstInput.checked = true;
+    }
+}
+
+async function runAnomalyDetection() {
+    const algorithm = document.getElementById('anomaly-algorithm')?.value;
+    if (!algorithm) {
+        showAnomalyError('Please select an algorithm');
+        return;
+    }
+    
+    const info = anomalyAlgorithms[algorithm];
+    if (!info) return;
+    
+    // Get selected metrics
+    const selectedMetrics = Array.from(
+        document.querySelectorAll('#anomaly-metrics-list input:checked')
+    ).map(input => input.value);
+    
+    if (selectedMetrics.length === 0) {
+        showAnomalyError('Please select at least one metric');
+        return;
+    }
+    
+    // Get parameters
+    const parameters = {};
+    Object.keys(info.parameters).forEach(paramName => {
+        const input = document.getElementById(`param-${paramName}`);
+        if (input) {
+            if (info.parameters[paramName].type === 'bool') {
+                parameters[paramName] = input.checked;
+            } else if (info.parameters[paramName].type === 'int') {
+                parameters[paramName] = parseInt(input.value);
+            } else {
+                parameters[paramName] = parseFloat(input.value);
+            }
+        }
+    });
+    
+    const name = document.getElementById('anomaly-name')?.value || 'anomaly_score';
+    
+    // Show progress
+    document.getElementById('anomaly-progress').style.display = 'block';
+    document.getElementById('run-anomaly-btn').disabled = true;
+    
+    try {
+        console.log('[Anomaly] Running detection:', { algorithm, metrics: selectedMetrics, parameters, name });
+        
+        const response = await fetch('/api/anomaly/detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                metrics: selectedMetrics,
+                algorithm: algorithm,
+                parameters: parameters,
+                apply_to_graph: false  // Don't apply yet, let user decide
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Detection failed');
+        }
+        
+        lastAnomalyResult = await response.json();
+        console.log('[Anomaly] Detection complete:', lastAnomalyResult);
+        
+        displayAnomalyResults(lastAnomalyResult);
+        
+        // Enable action buttons
+        document.getElementById('apply-anomaly-btn').disabled = false;
+        document.getElementById('highlight-anomalies-btn').disabled = false;
+        document.getElementById('export-anomalies-btn').disabled = false;
+        
+        // Update toolbar counter
+        document.getElementById('chart-count').textContent = '1';
+        
+    } catch (error) {
+        console.error('[Anomaly] Detection failed:', error);
+        showAnomalyError(error.message);
+    } finally {
+        document.getElementById('anomaly-progress').style.display = 'none';
+        document.getElementById('run-anomaly-btn').disabled = false;
+    }
+}
+
+function showAnomalyError(message) {
+    // Simple toast-like notification
+    const progress = document.getElementById('anomaly-progress');
+    if (progress) {
+        progress.style.display = 'block';
+        progress.style.color = '#ff4d4f';
+        progress.textContent = `Error: ${message}`;
+        setTimeout(() => {
+            progress.style.display = 'none';
+            progress.style.color = '#808080';
+            progress.textContent = 'Running analysis...';
+        }, 3000);
+    }
+}
+
+function displayAnomalyResults(result) {
+    // Hide empty state, show results
+    document.getElementById('anomaly-empty-state').style.display = 'none';
+    document.getElementById('anomaly-summary').classList.add('visible');
+    document.getElementById('anomaly-chart-container').style.display = 'block';
+    document.getElementById('anomaly-table-container').style.display = 'block';
+    
+    // Update summary stats
+    document.getElementById('result-algorithm').textContent = result.algorithm.replace(/_/g, ' ');
+    document.getElementById('result-count').textContent = `${result.n_anomalies} / ${result.n_total}`;
+    document.getElementById('result-percentage').textContent = `${result.anomaly_percentage.toFixed(1)}%`;
+    document.getElementById('result-time').textContent = `${result.computation_time.toFixed(2)}s`;
+    
+    // Render histogram of anomaly scores
+    renderAnomalyHistogram(result);
+    
+    // Populate top anomalies table
+    const tbody = document.getElementById('anomaly-table-body');
+    tbody.innerHTML = result.top_anomalies.map((node, i) => {
+        const nodeIdDisplay = node.id.length > 20 ? node.id.substring(0, 18) + '...' : node.id;
+        const scoreClass = node.score > 0.7 ? 'style="color: #ff4d4f; font-weight: bold;"' : 
+                          node.score > 0.5 ? 'style="color: #faad14;"' : '';
+        
+        return `
+            <tr>
+                <td>${i + 1}</td>
+                <td class="node-id-cell" title="${node.id}">${nodeIdDisplay}</td>
+                <td ${scoreClass}>${node.score.toFixed(4)}</td>
+                <td>
+                    <button class="btn-tiny" onclick="locateNode('${node.id}')">Locate</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderAnomalyHistogram(result) {
+    const canvas = document.getElementById('anomaly-histogram');
+    if (!canvas) return;
+    
+    // Destroy existing chart
+    if (anomalyHistogramChart) {
+        anomalyHistogramChart.destroy();
+    }
+    
+    // Build histogram bins from scores
+    const scores = Object.values(result.top_anomalies).map(n => n.score);
+    
+    // If we have full score statistics, use them to compute distribution
+    const stats = result.score_statistics;
+    const bins = 20;
+    const binWidth = 1.0 / bins;
+    const counts = new Array(bins).fill(0);
+    
+    // Count scores in each bin
+    result.top_anomalies.forEach(node => {
+        const binIdx = Math.min(Math.floor(node.score / binWidth), bins - 1);
+        counts[binIdx]++;
+    });
+    
+    // Create labels
+    const labels = [];
+    for (let i = 0; i < bins; i++) {
+        labels.push(((i + 0.5) * binWidth).toFixed(2));
+    }
+    
+    anomalyHistogramChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Anomaly Score Distribution',
+                data: counts,
+                backgroundColor: labels.map((_, i) => {
+                    const t = i / (bins - 1);
+                    // Red for high scores, blue for low
+                    return t > 0.7 ? 'rgba(255, 77, 79, 0.8)' :
+                           t > 0.5 ? 'rgba(250, 173, 20, 0.8)' :
+                           'rgba(74, 144, 226, 0.8)';
+                }),
+                borderColor: 'rgba(255, 255, 255, 0.2)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: {
+                    display: true,
+                    text: 'Anomaly Score Distribution (Top 20 Nodes)',
+                    color: '#e0e0e0',
+                    font: { size: 14 }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Anomaly Score',
+                        color: '#808080'
+                    },
+                    ticks: { color: '#808080' },
+                    grid: { color: '#2a2a2a' }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Count',
+                        color: '#808080'
+                    },
+                    ticks: { color: '#808080' },
+                    grid: { color: '#2a2a2a' },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function locateNode(nodeId) {
+    if (window.opener) {
+        window.opener.postMessage({
+            type: 'LOCATE_NODE',
+            data: { nodeId }
+        }, '*');
+    }
+}
+
+async function applyAnomalyToGraph() {
+    if (!lastAnomalyResult) return;
+    
+    try {
+        document.getElementById('apply-anomaly-btn').disabled = true;
+        document.getElementById('apply-anomaly-btn').textContent = 'Applying...';
+        
+        const response = await fetch('/api/anomaly/detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: lastAnomalyResult.metric_name,
+                metrics: lastAnomalyResult.metrics_used || [],
+                algorithm: lastAnomalyResult.algorithm,
+                parameters: lastAnomalyResult.parameters_used || {},
+                apply_to_graph: true
+            })
+        });
+        
+        if (!response.ok) throw new Error('Failed to apply');
+        
+        const result = await response.json();
+        
+        // Notify parent window to update
+        if (window.opener) {
+            window.opener.postMessage({
+                type: 'ANOMALY_APPLIED',
+                data: {
+                    metric_name: result.metric_name,
+                    node_updates: result.node_updates
+                }
+            }, '*');
+        }
+        
+        showAnomalySuccess(`Applied ${result.metric_name} to ${result.node_updates?.length || 0} nodes`);
+        
+    } catch (error) {
+        showAnomalyError(error.message);
+    } finally {
+        document.getElementById('apply-anomaly-btn').disabled = false;
+        document.getElementById('apply-anomaly-btn').textContent = 'Apply to Graph';
+    }
+}
+
+function highlightAnomalies() {
+    if (!lastAnomalyResult || !lastAnomalyResult.top_anomalies) return;
+    
+    // Get all anomaly node IDs (those with is_anomaly = true)
+    const anomalyIds = lastAnomalyResult.top_anomalies
+        .filter(n => n.is_anomaly)
+        .map(n => n.id);
+    
+    if (window.opener && window.opener.highlightAnomalies) {
+        window.opener.highlightAnomalies(anomalyIds);
+    }
+}
+
+function exportAnomaliesCSV() {
+    if (!lastAnomalyResult || !lastAnomalyResult.top_anomalies) return;
+    
+    // Build CSV content
+    const headers = ['rank', 'node_id', 'anomaly_score', 'is_anomaly'];
+    const metricsUsed = lastAnomalyResult.metrics_used || [];
+    headers.push(...metricsUsed);
+    
+    const rows = lastAnomalyResult.top_anomalies.map((node, i) => {
+        const row = [
+            i + 1,
+            node.id,
+            node.score.toFixed(6),
+            node.is_anomaly ? 'true' : 'false'
+        ];
+        metricsUsed.forEach(m => {
+            row.push(node[m] !== undefined ? node[m].toFixed(6) : '');
+        });
+        return row.join(',');
+    });
+    
+    const csv = [headers.join(','), ...rows].join('\n');
+    
+    // Download
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `anomalies_${lastAnomalyResult.algorithm}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function showAnomalySuccess(message) {
+    const progress = document.getElementById('anomaly-progress');
+    if (progress) {
+        progress.style.display = 'block';
+        progress.style.color = '#52c41a';
+        progress.textContent = message;
+        setTimeout(() => {
+            progress.style.display = 'none';
+            progress.style.color = '#808080';
+            progress.textContent = 'Running analysis...';
+        }, 2000);
+    }
 }

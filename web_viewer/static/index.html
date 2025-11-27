@@ -43,6 +43,58 @@
                     </div>
                 </div>
 
+                <!-- Auto-Reload Section -->
+                <div class="section collapsible">
+                    <div class="collapsible-header">
+                        <h3>Auto Reload</h3>
+                        <span class="auto-reload-indicator" id="reload-indicator" title="Auto-reload status"></span>
+                        <span class="collapse-icon">▼</span>
+                    </div>
+                    <div class="style-subsection">
+                        <div class="style-row">
+                            <label>Enable</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="auto-reload-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="style-row">
+                            <label>Interval</label>
+                            <select id="reload-interval">
+                                <option value="60">1 minute</option>
+                                <option value="120">2 minutes</option>
+                                <option value="300" selected>5 minutes</option>
+                                <option value="600">10 minutes</option>
+                                <option value="900">15 minutes</option>
+                                <option value="1800">30 minutes</option>
+                            </select>
+                        </div>
+                        <div class="style-row">
+                            <label title="Recompute basic metrics on each reload">
+                                <input type="checkbox" id="reload-compute-metrics"> Recompute Metrics
+                            </label>
+                        </div>
+                        <div id="reload-status-panel" class="reload-status-panel">
+                            <div class="reload-status-row">
+                                <span class="reload-label">Status:</span>
+                                <span id="reload-status-text" class="reload-value">Disabled</span>
+                            </div>
+                            <div class="reload-status-row">
+                                <span class="reload-label">Last reload:</span>
+                                <span id="last-reload-time" class="reload-value">Never</span>
+                            </div>
+                            <div class="reload-status-row">
+                                <span class="reload-label">Next reload:</span>
+                                <span id="next-reload-time" class="reload-value">-</span>
+                            </div>
+                            <div class="reload-status-row">
+                                <span class="reload-label">Last change:</span>
+                                <span id="last-reload-diff" class="reload-value">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="section collapsible">
                     <div class="collapsible-header">
                         <h3>Metrics Analysis</h3>
@@ -96,6 +148,59 @@
                         <div class="style-row">
                             <button id="reset-filter-btn" class="secondary-btn" style="margin-top:5px;">Reset Selection</button>
                        </div>
+                    </div>
+                </div>
+
+                <!-- Composite Metrics Section -->
+                <div class="section collapsible">
+                    <div class="collapsible-header">
+                        <h3>Composite Metrics</h3>
+                        <span class="collapse-icon">▼</span>
+                    </div>
+                    <div class="style-subsection">
+                        <div class="composite-builder">
+                            <div class="style-row">
+                                <label>Metric 1</label>
+                                <select id="composite-metric-1">
+                                    <option value="">Select metric...</option>
+                                </select>
+                            </div>
+                            <div class="operation-selector">
+                                <select id="composite-operation">
+                                    <option value="multiply">× Multiply</option>
+                                    <option value="add">+ Add</option>
+                                    <option value="subtract">- Subtract</option>
+                                    <option value="divide">÷ Divide</option>
+                                    <option value="maximum">max Maximum</option>
+                                    <option value="minimum">min Minimum</option>
+                                    <option value="average">avg Average</option>
+                                </select>
+                            </div>
+                            <div class="style-row">
+                                <label>Metric 2</label>
+                                <select id="composite-metric-2">
+                                    <option value="">Select metric...</option>
+                                </select>
+                            </div>
+                            <div class="style-row">
+                                <label>Name</label>
+                                <input type="text" id="composite-name" placeholder="new_metric_name">
+                            </div>
+                            <div class="style-row">
+                                <label>
+                                    <input type="checkbox" id="composite-normalize"> Normalize inputs (0-1 scale)
+                                </label>
+                            </div>
+                            <button id="create-composite-btn" class="secondary-btn">Create Metric</button>
+                        </div>
+                        
+                        <div class="saved-composites-header">
+                            <span>Saved Composites</span>
+                            <button id="refresh-composites-btn" style="padding:2px 6px; font-size:10px; background:#2a2a2a; border:1px solid #3a3a3a; border-radius:3px; color:#e0e0e0; cursor:pointer;">↻</button>
+                        </div>
+                        <div id="saved-composites-list">
+                            <div class="no-composites">No saved composites</div>
+                        </div>
                     </div>
                 </div>
 

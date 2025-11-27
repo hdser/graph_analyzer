@@ -838,3 +838,255 @@ select:focus {
     background: #4A90E2;
     color: #ffffff;
 }
+
+/* ==========================================================================
+   AUTO-RELOAD STYLES
+   ========================================================================== */
+
+.auto-reload-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #808080;
+    display: inline-block;
+    margin-left: 8px;
+    transition: background 0.3s;
+}
+
+.auto-reload-indicator.active {
+    background: #52c41a;
+    box-shadow: 0 0 6px rgba(82, 196, 26, 0.5);
+}
+
+.auto-reload-indicator.reloading {
+    background: #4A90E2;
+    animation: pulse 1s ease-in-out infinite;
+}
+
+.auto-reload-indicator.error {
+    background: #ff4d4f;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.reload-status-panel {
+    background: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 10px;
+    margin-top: 10px;
+    font-size: 11px;
+}
+
+.reload-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.reload-status-row:last-child {
+    margin-bottom: 0;
+}
+
+.reload-label {
+    color: #808080;
+}
+
+.reload-value {
+    color: #e0e0e0;
+}
+
+.reload-value.success {
+    color: #52c41a;
+}
+
+.reload-value.error {
+    color: #ff4d4f;
+}
+
+/* Toggle switch styling */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 18px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #2a2a2a;
+    transition: 0.3s;
+    border-radius: 18px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 12px;
+    width: 12px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #808080;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #1e3a5f;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(16px);
+    background-color: #4A90E2;
+}
+
+/* ==========================================================================
+   COMPOSITE METRICS STYLES
+   ========================================================================== */
+
+.composite-section {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #2a2a2a;
+}
+
+.composite-builder {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.composite-builder select,
+.composite-builder input[type="text"] {
+    width: 100%;
+    padding: 6px 10px;
+    background: #0a0a0a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+}
+
+.composite-builder select:focus,
+.composite-builder input:focus {
+    border-color: #4A90E2;
+    outline: none;
+}
+
+.operation-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+}
+
+.operation-selector select {
+    width: auto;
+    min-width: 100px;
+}
+
+#saved-composites-list {
+    max-height: 150px;
+    overflow-y: auto;
+    margin-top: 10px;
+}
+
+.saved-composite-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    transition: border-color 0.2s;
+}
+
+.saved-composite-item:hover {
+    border-color: #4A90E2;
+}
+
+.composite-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.composite-name {
+    color: #4A90E2;
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+
+.composite-formula {
+    color: #808080;
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.composite-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.composite-actions button {
+    padding: 3px 8px;
+    font-size: 10px;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 3px;
+    color: #e0e0e0;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.composite-actions button:hover {
+    background: #3a3a3a;
+    border-color: #4A90E2;
+}
+
+.composite-actions button.delete {
+    color: #ff4d4f;
+}
+
+.composite-actions button.delete:hover {
+    background: #3f1e1e;
+    border-color: #ff4d4f;
+}
+
+.saved-composites-header {
+    font-size: 11px;
+    color: #808080;
+    margin-top: 15px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.no-composites {
+    color: #606060;
+    font-size: 10px;
+    font-style: italic;
+    text-align: center;
+    padding: 10px;
+}

@@ -1,7 +1,7 @@
 /**
  * Graph Analyzer Web Viewer - Ultra-Light with Dynamic Style Toggle
  * Updated for Toast Feedback, Fast Loading, Detailed Multi-Selection,
- * Copy/Export Functionality, and Distribution Analysis
+ * Copy/Export Functionality, Distribution Analysis, and Auto-Reload
  */
 
 // Performance utilities
@@ -22,7 +22,7 @@ let currentStyle = null;
 let graphData = {};
 let neighborHighlightState = 0;
 let performanceMode = true; // Start in performance mode
-let edgesLoading = false;   // New: incremental edge loading flag
+let edgesLoading = false;   // Incremental edge loading flag
 let distributionsWindow = null; // Reference to distributions popup
 let styleCache = {
     sizeRange: { min: 0, max: 1 },
@@ -33,6 +33,11 @@ let styleCache = {
 // Store current node/edge data for copy operations
 let currentNodeData = null;
 let currentEdgeData = null;
+
+// Auto-reload state
+let autoReloadSSE = null;
+let autoReloadEnabled = false;
+let autoReloadStatus = null;
 
 // Cache DOM elements
 let domCache = {};
@@ -46,6 +51,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeDefaultStyle();
     addPerformanceToggle();
     setupDistributionsMessaging();
+    setupAutoReload();
+    setupCompositeMetrics();
 });
 
 function cacheDOMElements() {
@@ -69,12 +76,33 @@ function cacheDOMElements() {
         cyContainer: document.getElementById('cy'),
         toastContainer: document.getElementById('toast-container'),
         edgesProgress: document.getElementById('edges-progress'),
-        loadEdgesBtn: document.getElementById('load-edges-btn')
+        loadEdgesBtn: document.getElementById('load-edges-btn'),
+        // Auto-reload elements
+        autoReloadToggle: document.getElementById('auto-reload-toggle'),
+        reloadInterval: document.getElementById('reload-interval'),
+        reloadComputeMetrics: document.getElementById('reload-compute-metrics'),
+        reloadStatusText: document.getElementById('reload-status-text'),
+        lastReloadTime: document.getElementById('last-reload-time'),
+        nextReloadTime: document.getElementById('next-reload-time'),
+        lastReloadDiff: document.getElementById('last-reload-diff'),
+        reloadIndicator: document.getElementById('reload-indicator'),
+        // Composite metrics elements
+        compositeMetric1: document.getElementById('composite-metric-1'),
+        compositeMetric2: document.getElementById('composite-metric-2'),
+        compositeOperation: document.getElementById('composite-operation'),
+        compositeName: document.getElementById('composite-name'),
+        compositeNormalize: document.getElementById('composite-normalize'),
+        createCompositeBtn: document.getElementById('create-composite-btn'),
+        savedCompositesList: document.getElementById('saved-composites-list'),
+        refreshCompositesBtn: document.getElementById('refresh-composites-btn')
     };
 }
 
 
-// --- TOAST NOTIFICATION SYSTEM ---
+// =============================================================================
+// TOAST NOTIFICATION SYSTEM
+// =============================================================================
+
 function showToast(message, type = 'info') {
     if (!domCache.toastContainer) return;
 
@@ -108,6 +136,314 @@ function updateStatus(msg, type) {
 
 
 // =============================================================================
+// AUTO-RELOAD SYSTEM
+// =============================================================================
+
+function setupAutoReload() {
+    // Toggle handler
+    domCache.autoReloadToggle?.addEventListener('change', handleAutoReloadToggle);
+    
+    // Interval change handler
+    domCache.reloadInterval?.addEventListener('change', () => {
+        if (autoReloadEnabled) {
+            // Restart with new interval
+            handleAutoReloadToggle({ target: { checked: true } });
+        }
+    });
+    
+    // Compute metrics change handler
+    domCache.reloadComputeMetrics?.addEventListener('change', () => {
+        if (autoReloadEnabled) {
+            // Restart with new settings
+            handleAutoReloadToggle({ target: { checked: true } });
+        }
+    });
+    
+    // Initial indicator state
+    updateReloadIndicator('disabled');
+}
+
+async function handleAutoReloadToggle(e) {
+    const enabled = e.target.checked;
+    
+    if (enabled) {
+        // Get selected SQL files
+        const selectedFiles = Array.from(document.querySelectorAll('input[name="sql-file"]:checked'))
+            .map(cb => cb.value);
+        
+        if (selectedFiles.length === 0) {
+            showToast('Select SQL files first', 'error');
+            domCache.autoReloadToggle.checked = false;
+            return;
+        }
+        
+        const config = {
+            enabled: true,
+            interval_seconds: parseInt(domCache.reloadInterval.value) || 300,
+            sql_files: selectedFiles,
+            preserve_layout: true,
+            compute_metrics: domCache.reloadComputeMetrics?.checked || false,
+            metrics_mode: 'basic'
+        };
+        
+        try {
+            const response = await fetch('/api/auto-reload/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            
+            if (!response.ok) throw new Error('Failed to start auto-reload');
+            
+            const status = await response.json();
+            autoReloadEnabled = true;
+            updateAutoReloadUI(status);
+            
+            // Connect to SSE
+            connectAutoReloadSSE();
+            
+            showToast('Auto-reload enabled', 'success');
+            
+        } catch (err) {
+            console.error('Auto-reload start error:', err);
+            showToast('Failed to start auto-reload: ' + err.message, 'error');
+            domCache.autoReloadToggle.checked = false;
+        }
+        
+    } else {
+        try {
+            await fetch('/api/auto-reload/stop', { method: 'POST' });
+            autoReloadEnabled = false;
+            
+            // Disconnect SSE
+            disconnectAutoReloadSSE();
+            
+            updateReloadIndicator('disabled');
+            domCache.reloadStatusText.textContent = 'Disabled';
+            domCache.nextReloadTime.textContent = '-';
+            
+            showToast('Auto-reload disabled', 'info');
+            
+        } catch (err) {
+            console.error('Auto-reload stop error:', err);
+        }
+    }
+}
+
+function connectAutoReloadSSE() {
+    if (autoReloadSSE) {
+        autoReloadSSE.close();
+    }
+    
+    autoReloadSSE = new EventSource('/api/auto-reload/events');
+    
+    autoReloadSSE.addEventListener('status_update', (e) => {
+        const status = JSON.parse(e.data);
+        updateAutoReloadUI(status);
+    });
+    
+    autoReloadSSE.addEventListener('reload_started', (e) => {
+        console.log('[AUTO-RELOAD] Reload started');
+        updateReloadIndicator('loading');
+        domCache.reloadStatusText.textContent = 'Reloading...';
+        showToast('Background reload started...', 'info');
+    });
+    
+    autoReloadSSE.addEventListener('reload_complete', (e) => {
+        const data = JSON.parse(e.data);
+        console.log('[AUTO-RELOAD] Reload complete:', data);
+        handleReloadComplete(data);
+    });
+    
+    autoReloadSSE.addEventListener('reload_error', (e) => {
+        const data = JSON.parse(e.data);
+        console.error('[AUTO-RELOAD] Reload error:', data);
+        updateReloadIndicator('error');
+        domCache.reloadStatusText.textContent = 'Error';
+        showToast('Reload failed: ' + data.error, 'error');
+    });
+    
+    autoReloadSSE.addEventListener('keepalive', () => {
+        // Just a keepalive, ignore
+    });
+    
+    autoReloadSSE.onerror = (err) => {
+        console.error('[AUTO-RELOAD] SSE error:', err);
+        // Attempt reconnection after delay
+        setTimeout(() => {
+            if (autoReloadEnabled) {
+                console.log('[AUTO-RELOAD] Attempting SSE reconnection...');
+                connectAutoReloadSSE();
+            }
+        }, 5000);
+    };
+}
+
+function disconnectAutoReloadSSE() {
+    if (autoReloadSSE) {
+        autoReloadSSE.close();
+        autoReloadSSE = null;
+    }
+}
+
+function updateAutoReloadUI(status) {
+    autoReloadStatus = status;
+    
+    if (status.enabled) {
+        updateReloadIndicator(status.reload_in_progress ? 'loading' : 'active');
+        domCache.reloadStatusText.textContent = status.reload_in_progress ? 'Reloading...' : 'Active';
+    } else {
+        updateReloadIndicator('disabled');
+        domCache.reloadStatusText.textContent = 'Disabled';
+    }
+    
+    // Update times
+    if (status.last_reload_time) {
+        const lastTime = new Date(status.last_reload_time);
+        domCache.lastReloadTime.textContent = formatRelativeTime(lastTime);
+    }
+    
+    if (status.next_reload_time) {
+        const nextTime = new Date(status.next_reload_time);
+        domCache.nextReloadTime.textContent = formatRelativeTime(nextTime);
+    }
+    
+    // Update last diff
+    if (status.nodes_added_last_reload !== undefined || status.nodes_removed_last_reload !== undefined) {
+        const added = status.nodes_added_last_reload || 0;
+        const removed = status.nodes_removed_last_reload || 0;
+        if (added > 0 || removed > 0) {
+            domCache.lastReloadDiff.textContent = `+${added} / -${removed}`;
+            domCache.lastReloadDiff.className = 'reload-value ' + (added > removed ? 'positive' : removed > added ? 'negative' : '');
+        } else {
+            domCache.lastReloadDiff.textContent = 'No changes';
+            domCache.lastReloadDiff.className = 'reload-value';
+        }
+    }
+}
+
+function updateReloadIndicator(state) {
+    if (!domCache.reloadIndicator) return;
+    
+    domCache.reloadIndicator.classList.remove('active', 'loading', 'error', 'disabled');
+    domCache.reloadIndicator.classList.add(state);
+    
+    switch (state) {
+        case 'active':
+            domCache.reloadIndicator.title = 'Auto-reload active';
+            break;
+        case 'loading':
+            domCache.reloadIndicator.title = 'Reloading...';
+            break;
+        case 'error':
+            domCache.reloadIndicator.title = 'Reload error';
+            break;
+        default:
+            domCache.reloadIndicator.title = 'Auto-reload disabled';
+    }
+}
+
+function formatRelativeTime(date) {
+    const now = new Date();
+    const diff = date - now;
+    const absDiff = Math.abs(diff);
+    
+    if (absDiff < 60000) {
+        return diff > 0 ? 'in <1 min' : '<1 min ago';
+    } else if (absDiff < 3600000) {
+        const mins = Math.round(absDiff / 60000);
+        return diff > 0 ? `in ${mins} min` : `${mins} min ago`;
+    } else {
+        return date.toLocaleTimeString();
+    }
+}
+
+async function handleReloadComplete(data) {
+    // Update indicator
+    updateReloadIndicator('active');
+    domCache.reloadStatusText.textContent = 'Active';
+    
+    // Update last reload info
+    domCache.lastReloadTime.textContent = 'Just now';
+    domCache.lastReloadDiff.textContent = `+${data.nodes_added} / -${data.nodes_removed}`;
+    domCache.lastReloadDiff.className = 'reload-value ' + 
+        (data.nodes_added > data.nodes_removed ? 'positive' : 
+         data.nodes_removed > data.nodes_added ? 'negative' : '');
+    
+    // Key: Don't switch graphs, just update data for current graph
+    const currentGraphId = currentGraph;
+    
+    if (currentGraphId && data.graphs_updated.includes(currentGraphId)) {
+        try {
+            // Fetch updated node data for current graph
+            const res = await fetch(`/api/graphs/${currentGraphId}/elements?mode=nodes_only`);
+            const newData = await res.json();
+            
+            if (cy && newData.elements) {
+                const existingNodeIds = new Set(cy.nodes().map(n => n.id()));
+                const newNodeIds = new Set(newData.elements.filter(e => e.group === 'nodes').map(e => e.data.id));
+                
+                // Find nodes to add
+                const nodesToAdd = newData.elements.filter(e => 
+                    e.group === 'nodes' && !existingNodeIds.has(e.data.id)
+                );
+                
+                // Find nodes to remove
+                const nodesToRemove = [...existingNodeIds].filter(id => !newNodeIds.has(id));
+                
+                cy.batch(() => {
+                    // Update existing nodes
+                    newData.elements.forEach(elem => {
+                        if (elem.group === 'nodes') {
+                            const existing = cy.getElementById(elem.data.id);
+                            if (existing.length > 0) {
+                                // Update data but keep position
+                                existing.data(elem.data);
+                            }
+                        }
+                    });
+                    
+                    // Add new nodes
+                    if (nodesToAdd.length > 0) {
+                        cy.add(nodesToAdd);
+                    }
+                    
+                    // Remove old nodes
+                    nodesToRemove.forEach(nodeId => {
+                        const node = cy.getElementById(nodeId);
+                        if (node.length > 0) {
+                            node.remove();
+                        }
+                    });
+                });
+                
+                // Update counts
+                domCache.nodeCount.textContent = `${cy.nodes().length} nodes`;
+                
+                // Refresh metric dropdowns if we have new metrics
+                if (nodesToAdd.length > 0 || nodesToRemove.length > 0) {
+                    const nodes = cy.nodes().map(n => ({ data: n.data() }));
+                    populateMetricDropdowns(nodes, null);
+                }
+            }
+            
+        } catch (err) {
+            console.error('[AUTO-RELOAD] Failed to update graph:', err);
+        }
+    }
+    
+    // Show completion toast
+    const changeText = data.nodes_added > 0 || data.nodes_removed > 0 
+        ? `+${data.nodes_added}/-${data.nodes_removed} nodes`
+        : 'No changes';
+    showToast(`Reload complete: ${changeText}`, 'success');
+    
+    // Update distributions window if open
+    sendDataToDistributions();
+}
+
+
+// =============================================================================
 // DISTRIBUTIONS POPUP WINDOW
 // =============================================================================
 
@@ -134,8 +470,8 @@ function openDistributions() {
     }
 
     // Open new window
-    const width = 1200;
-    const height = 800;
+    const width = 1400;
+    const height = 900;
     const left = (screen.width - width) / 2;
     const top = (screen.height - height) / 2;
 
@@ -182,7 +518,8 @@ function sendDataToDistributions() {
         type: 'DISTRIBUTION_DATA',
         data: {
             nodes: nodes,
-            selectedIds: selectedIds
+            selectedIds: selectedIds,
+            availableConfig: availableConfig
         }
     }, '*');
 }
@@ -416,9 +753,8 @@ function exportSelectedToCsv() {
 
 
 // =============================================================================
-// END COPY & EXPORT FUNCTIONS
+// PERFORMANCE TOGGLE
 // =============================================================================
-
 
 function addPerformanceToggle() {
     // Add radio buttons to toolbar
@@ -460,7 +796,7 @@ function toggleRenderMode(toPerformance) {
         cy.style()
             .selector('node')
             .style({
-                'background-color': '#c8c8c8ff', //#666
+                'background-color': '#c8c8c8ff',
                 'width': 10,
                 'height': 10,
                 'label': '',
@@ -468,10 +804,10 @@ function toggleRenderMode(toPerformance) {
             })
             .selector('edge')
             .style({
-                'line-color': '#f0f0f0ff',//#333
+                'line-color': '#f0f0f0ff',
                 'width': 1,
                 'opacity': 0.3,
-                'curve-style': 'straight', // Straight is fastest for WebGL
+                'curve-style': 'straight',
                 'target-arrow-shape': 'none'
             })
             .selector('node:selected')
@@ -502,6 +838,13 @@ function toggleRenderMode(toPerformance) {
                 'border-width': 2,
                 'border-color': '#00FF00',
                 'z-index': 997
+            })
+            .selector('.anomaly')
+            .style({
+                'background-color': '#FF4444',
+                'border-width': 2,
+                'border-color': '#FF0000',
+                'z-index': 996
             })
             .update();
             
@@ -765,6 +1108,7 @@ function setupEventListeners() {
         if(cy) {
             cy.elements().unselect();
             cy.elements().removeClass('highlighted');
+            cy.elements().removeClass('anomaly');
         }
         updateStatus('Selection reset', 'info');
     });
@@ -1020,8 +1364,8 @@ async function displayGraph(graphId) {
             // Enable WebGL Renderer
             renderer: {
                 name: 'canvas',
-                webgl: true,           // Turn on experimental WebGL
-                webglTexSize: 1024,    // Optional: larger texture size for clearer nodes
+                webgl: true,
+                webglTexSize: 1024,
                 showFps: false         
             },
 
@@ -1029,8 +1373,8 @@ async function displayGraph(graphId) {
             minZoom: 1e-2,
             maxZoom: 10,
             wheelSensitivity: 0.3,
-            boxSelectionEnabled: true, // Enabled for multi-selection
-            selectionType: 'additive', // Allows adding to selection
+            boxSelectionEnabled: true,
+            selectionType: 'additive',
             autounselectify: false,
             autoungrabify: false,
             textureOnViewport: true,    
@@ -1185,6 +1529,15 @@ function getPerformanceStyle() {
                 'border-color': '#00FF00',
                 'z-index': 997
             }
+        },
+        {
+            selector: '.anomaly',
+            style: {
+                'background-color': '#FF4444',
+                'border-width': 2,
+                'border-color': '#FF0000',
+                'z-index': 996
+            }
         }
     ];
 }
@@ -1242,6 +1595,9 @@ function populateMetricDropdowns(nodes, edges) {
     
     const colorElem = document.getElementById('node-color-metric');
     if(colorElem) colorElem.dispatchEvent(new Event('change'));
+    
+    // Also populate composite metric dropdowns
+    populateCompositeMetricDropdowns();
 }
 
 function setupCyListeners() {
@@ -1372,7 +1728,10 @@ function showNodeInfo(node) {
         .map(([k, v]) => {
             const val = typeof v === 'number' ? 
                 (Number.isInteger(v) ? v : v.toFixed(4)) : v;
-            return `<div class="metric-row">
+            // Highlight anomaly scores
+            const isAnomaly = k.startsWith('anomaly_score_') || k.startsWith('is_anomaly_');
+            const rowClass = isAnomaly ? 'metric-row anomaly-metric' : 'metric-row';
+            return `<div class="${rowClass}">
                 <span class="metric-label">${k.replace(/_/g, ' ')}</span>
                 <span class="metric-value">${val}</span>
             </div>`;
@@ -1408,7 +1767,7 @@ function showEdgeInfo(edge) {
 // --- IMPROVED MULTI-SELECTION VIEW ---
 function showMultiInfo(collection) {
     hideAllInfo();
-    domCache.infoPanel.style.display = 'flex'; // Flex for layout
+    domCache.infoPanel.style.display = 'flex';
     domCache.multiInfo.style.display = 'flex';
     domCache.multiInfo.style.flexDirection = 'column';
     
@@ -1419,10 +1778,9 @@ function showMultiInfo(collection) {
     document.getElementById('multi-edge-count').textContent = edges.length;
     
     const metricsList = domCache.multiMetricsList;
-    metricsList.innerHTML = ''; // Clear previous
+    metricsList.innerHTML = '';
 
-    // 1. Render Node Cards (Detailed view for each)
-    // Limit to avoid freezing if selection is massive (e.g. > 500)
+    // Limit to avoid freezing if selection is massive
     const LIMIT = 200;
     const renderCount = Math.min(nodes.length, LIMIT);
 
@@ -1432,7 +1790,7 @@ function showMultiInfo(collection) {
         const d = node.data();
         
         // Pick a few key metrics to show in summary
-        const keyMetrics = ['community_id', 'pagerank', 'total_degree']
+        const keyMetrics = ['community_id', 'pagerank', 'total_degree', 'anomaly_score_combined']
             .filter(k => d[k] !== undefined)
             .map(k => {
                 const v = typeof d[k] === 'number' ? (d[k] % 1 === 0 ? d[k] : d[k].toFixed(3)) : d[k];
@@ -1477,7 +1835,6 @@ function showMultiInfo(collection) {
         });
     });
 }
-// ------------------------------------
 
 function updateNeighborList(edges, countId, listId, type) {
     document.getElementById(countId).textContent = edges.length;
@@ -1693,6 +2050,12 @@ function updateCytoscapeStyle() {
             'shadow-color': '#FF0000',
             'z-index': 995
         })
+        .selector('.anomaly').style({
+            'border-width': 3,
+            'border-color': '#FF4444',
+            'background-color': '#FF6666',
+            'z-index': 994
+        })
         .selector('edge').style(edgeStyle)
         .selector('edge:selected').style({
             'line-color': style.edge.colorSelected,
@@ -1726,3 +2089,313 @@ function updateCytoscapeStyle() {
         }
     }
 }
+
+// =============================================================================
+// ANOMALY HIGHLIGHT HELPER (called from distributions window)
+// =============================================================================
+
+window.highlightAnomalies = function(nodeIds) {
+    if (!cy) return;
+    
+    cy.batch(() => {
+        cy.elements().removeClass('anomaly');
+        nodeIds.forEach(id => {
+            const node = cy.getElementById(id);
+            if (node.length > 0) {
+                node.addClass('anomaly');
+            }
+        });
+    });
+    
+    showToast(`Highlighted ${nodeIds.length} anomalous nodes`, 'success');
+};
+
+window.selectAnomalies = function(nodeIds) {
+    if (!cy) return;
+    
+    cy.batch(() => {
+        cy.elements().unselect();
+        nodeIds.forEach(id => {
+            const node = cy.getElementById(id);
+            if (node.length > 0) {
+                node.select();
+            }
+        });
+    });
+    
+    showToast(`Selected ${nodeIds.length} anomalous nodes`, 'success');
+};
+
+
+// =============================================================================
+// COMPOSITE METRICS
+// =============================================================================
+
+function setupCompositeMetrics() {
+    // Create composite button
+    domCache.createCompositeBtn?.addEventListener('click', createCompositeMetric);
+    
+    // Refresh composites button
+    domCache.refreshCompositesBtn?.addEventListener('click', loadSavedComposites);
+    
+    // Load saved composites when graph is loaded
+    document.addEventListener('graphLoaded', loadSavedComposites);
+}
+
+function populateCompositeMetricDropdowns() {
+    if (!cy) return;
+    
+    const metrics = new Set();
+    
+    // Collect all numeric metrics from nodes
+    cy.nodes().forEach(node => {
+        const data = node.data();
+        Object.keys(data).forEach(key => {
+            if (typeof data[key] === 'number' && key !== 'x' && key !== 'y') {
+                metrics.add(key);
+            }
+        });
+    });
+    
+    const sortedMetrics = Array.from(metrics).sort();
+    
+    // Populate dropdowns
+    [domCache.compositeMetric1, domCache.compositeMetric2].forEach(select => {
+        if (!select) return;
+        const currentValue = select.value;
+        
+        select.innerHTML = '<option value="">Select metric...</option>' +
+            sortedMetrics.map(m => `<option value="${m}">${m.replace(/_/g, ' ')}</option>`).join('');
+        
+        // Restore previous selection if still valid
+        if (currentValue && sortedMetrics.includes(currentValue)) {
+            select.value = currentValue;
+        }
+    });
+}
+
+async function createCompositeMetric() {
+    const metric1 = domCache.compositeMetric1?.value;
+    const metric2 = domCache.compositeMetric2?.value;
+    const operation = domCache.compositeOperation?.value;
+    const name = domCache.compositeName?.value?.trim();
+    const normalize = domCache.compositeNormalize?.checked || false;
+    
+    if (!metric1 || !metric2) {
+        showToast('Please select both metrics', 'error');
+        return;
+    }
+    
+    if (!name) {
+        showToast('Please enter a name for the new metric', 'error');
+        return;
+    }
+    
+    // Validate name (alphanumeric and underscores only)
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) {
+        showToast('Name must start with a letter and contain only letters, numbers, and underscores', 'error');
+        return;
+    }
+    
+    try {
+        domCache.createCompositeBtn.disabled = true;
+        domCache.createCompositeBtn.textContent = 'Creating...';
+        
+        const response = await fetch('/api/metrics/composite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                metrics: [metric1, metric2],
+                operation: operation,
+                normalize: normalize,
+                save: true
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to create composite metric');
+        }
+        
+        const result = await response.json();
+        
+        // Update Cytoscape nodes with new metric
+        if (cy && result.node_updates) {
+            cy.batch(() => {
+                result.node_updates.forEach(update => {
+                    const node = cy.getElementById(update.id);
+                    if (node.length > 0) {
+                        node.data(name, update[name]);
+                    }
+                });
+            });
+        }
+        
+        // Refresh metric dropdowns
+        populateMetricDropdowns();
+        populateCompositeMetricDropdowns();
+        
+        // Refresh saved composites list
+        await loadSavedComposites();
+        
+        // Clear name input
+        if (domCache.compositeName) {
+            domCache.compositeName.value = '';
+        }
+        
+        showToast(`Created composite metric: ${name} = ${result.formula}`, 'success');
+        
+    } catch (error) {
+        showToast(error.message, 'error');
+    } finally {
+        if (domCache.createCompositeBtn) {
+            domCache.createCompositeBtn.disabled = false;
+            domCache.createCompositeBtn.textContent = 'Create Metric';
+        }
+    }
+}
+
+async function loadSavedComposites() {
+    const container = domCache.savedCompositesList;
+    if (!container) return;
+    
+    try {
+        const response = await fetch('/api/anomaly/composites');
+        if (!response.ok) {
+            throw new Error('Failed to load composites');
+        }
+        
+        const composites = await response.json();
+        
+        if (!composites || composites.length === 0) {
+            container.innerHTML = '<div class="no-composites">No saved composites</div>';
+            return;
+        }
+        
+        container.innerHTML = composites.map(c => `
+            <div class="saved-composite-item" data-id="${c.id}">
+                <div class="composite-info">
+                    <div class="composite-name">${c.name}</div>
+                    <div class="composite-formula">${c.formula}</div>
+                </div>
+                <div class="composite-actions">
+                    <button class="apply" onclick="applyComposite('${c.id}')" title="Apply to current graph">Apply</button>
+                    <button class="delete" onclick="deleteComposite('${c.id}')" title="Delete">×</button>
+                </div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Failed to load composites:', error);
+        container.innerHTML = '<div class="no-composites">Failed to load</div>';
+    }
+}
+
+window.applyComposite = async function(compositeId) {
+    try {
+        const response = await fetch(`/api/metrics/composite/${compositeId}/apply`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to apply composite');
+        }
+        
+        const result = await response.json();
+        
+        // Update graph
+        if (cy && result.node_updates) {
+            cy.batch(() => {
+                result.node_updates.forEach(update => {
+                    const node = cy.getElementById(update.id);
+                    if (node.length > 0) {
+                        Object.keys(update).forEach(key => {
+                            if (key !== 'id') {
+                                node.data(key, update[key]);
+                            }
+                        });
+                    }
+                });
+            });
+        }
+        
+        // Refresh dropdowns
+        populateMetricDropdowns();
+        populateCompositeMetricDropdowns();
+        
+        showToast(`Applied composite metric: ${result.metric_name}`, 'success');
+        
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+};
+
+window.deleteComposite = async function(compositeId) {
+    if (!confirm('Delete this composite metric?')) return;
+    
+    try {
+        const response = await fetch(`/api/metrics/composite/${compositeId}`, { 
+            method: 'DELETE' 
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to delete composite');
+        }
+        
+        await loadSavedComposites();
+        showToast('Composite metric deleted', 'info');
+        
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+};
+
+
+// =============================================================================
+// MESSAGE HANDLER FOR DISTRIBUTIONS WINDOW
+// =============================================================================
+
+window.addEventListener('message', (event) => {
+    if (event.data.type === 'ANOMALY_APPLIED') {
+        // Refresh node data with new anomaly scores
+        const data = event.data.data;
+        if (cy && data.node_updates) {
+            cy.batch(() => {
+                data.node_updates.forEach(update => {
+                    const node = cy.getElementById(update.id);
+                    if (node.length > 0) {
+                        node.data(data.metric_name, update[data.metric_name]);
+                        if (update[`${data.metric_name}_is_anomaly`] !== undefined) {
+                            node.data(`${data.metric_name}_is_anomaly`, update[`${data.metric_name}_is_anomaly`]);
+                        }
+                    }
+                });
+            });
+        }
+        
+        // Refresh dropdowns to include new metric
+        populateMetricDropdowns();
+        populateCompositeMetricDropdowns();
+        
+        showToast(`Applied anomaly metric: ${data.metric_name}`, 'success');
+    }
+    
+    if (event.data.type === 'LOCATE_NODE') {
+        const nodeId = event.data.data.nodeId;
+        if (cy) {
+            const node = cy.getElementById(nodeId);
+            if (node.length > 0) {
+                cy.animate({ 
+                    center: { eles: node }, 
+                    zoom: 2 
+                }, { 
+                    duration: 500 
+                });
+                node.select();
+                showNodeInfo(node);
+            }
+        }
+    }
+});
