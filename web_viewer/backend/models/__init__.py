@@ -4,14 +4,14 @@ Models Package
 Pydantic models for API requests and responses.
 """
 
-from backend.models.requests import (
+from .requests import (
     LoadConfig,
     MetricsConfig,
     AnomalyDetectionConfig,
     CompositeMetricConfig,
     AutoReloadConfig,
 )
-from backend.models.responses import (
+from .responses import (
     NetworkState,
     AnomalyDetectionResult,
     CompositeMetricResult,
