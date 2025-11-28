@@ -6,10 +6,10 @@ API endpoints for anomaly detection functionality.
 
 from fastapi import APIRouter, HTTPException
 
-from backend.models.requests import AnomalyDetectionConfig
-from backend.models.responses import AnomalyDetectionResult
-from backend.services.network_service import network_service
-from backend.config import HAS_ANOMALY
+from ..models.requests import AnomalyDetectionConfig
+from ..models.responses import AnomalyDetectionResult
+from ..services.network_service import network_service
+from ..config import HAS_ANOMALY
 
 if HAS_ANOMALY:
     from engines.anomaly_engine import AnomalyEngine

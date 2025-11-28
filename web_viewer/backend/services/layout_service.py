@@ -17,7 +17,7 @@ import numpy as np
 import networkx as nx
 import requests
 
-from backend.config import settings, HAS_CYTOSCAPE_DESKTOP
+from ..config import settings, HAS_CYTOSCAPE_DESKTOP
 
 if HAS_CYTOSCAPE_DESKTOP:
     import py4cytoscape as p4c

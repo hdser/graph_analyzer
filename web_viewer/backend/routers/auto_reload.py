@@ -9,9 +9,9 @@ import json
 
 from fastapi import APIRouter, HTTPException, Request
 
-from backend.models.requests import AutoReloadConfig
-from backend.services.network_service import network_service
-from backend.config import HAS_SSE
+from ..models.requests import AutoReloadConfig
+from ..services.network_service import network_service
+from ..config import HAS_SSE
 
 if HAS_SSE:
     from sse_starlette.sse import EventSourceResponse

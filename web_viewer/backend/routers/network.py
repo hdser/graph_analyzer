@@ -12,9 +12,9 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.models.requests import LoadConfig
-from backend.services.network_service import network_service
-from backend.config import HAS_ANOMALY, HAS_SSE
+from ..models.requests import LoadConfig
+from ..services.network_service import network_service
+from ..config import HAS_ANOMALY, HAS_SSE
 
 from engines.graph_metrics import METRIC_CATEGORIES, METRIC_PRESETS
 

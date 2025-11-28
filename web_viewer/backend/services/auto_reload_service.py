@@ -10,9 +10,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Set
 from threading import Lock
 
-from backend.config import settings, HAS_SSE
-from backend.models.requests import AutoReloadConfig
-from backend.models.responses import AutoReloadStatus
+from ..config import settings, HAS_SSE
+from ..models.requests import AutoReloadConfig
+from ..models.responses import AutoReloadStatus
 
 
 class AutoReloadManager:

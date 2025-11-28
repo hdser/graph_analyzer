@@ -6,8 +6,8 @@ API endpoints for metrics computation.
 
 from fastapi import APIRouter, HTTPException
 
-from backend.models.requests import MetricsConfig
-from backend.services.network_service import network_service
+from ..models.requests import MetricsConfig
+from ..services.network_service import network_service
 
 
 router = APIRouter(prefix="/api", tags=["metrics"])

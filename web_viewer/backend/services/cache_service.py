@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import pandas as pd
 
-from backend.config import settings
+from ..config import settings
 
 
 class CacheService:

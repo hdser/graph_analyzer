@@ -8,10 +8,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from backend.models.requests import CompositeMetricConfig
-from backend.models.responses import CompositeMetricResult
-from backend.services.network_service import network_service
-from backend.config import HAS_ANOMALY
+from ..models.requests import CompositeMetricConfig
+from ..models.responses import CompositeMetricResult
+from ..services.network_service import network_service
+from ..config import HAS_ANOMALY
 
 if HAS_ANOMALY:
     from engines.composite_engine import CompositeMetricEngine
