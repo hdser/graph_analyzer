@@ -16,11 +16,11 @@ from ..models.requests import LoadConfig
 from ..services.network_service import network_service
 from ..config import HAS_ANOMALY, HAS_SSE
 
-from ...engines.graph_metrics import METRIC_CATEGORIES, METRIC_PRESETS
+from engines.graph_metrics import METRIC_CATEGORIES, METRIC_PRESETS
 
 if HAS_ANOMALY:
-    from ...engines.anomaly_engine import AnomalyEngine
-    from ...engines.composite_engine import CompositeMetricEngine
+    from engines.anomaly_engine import AnomalyEngine
+    from engines.composite_engine import CompositeMetricEngine
 
 
 router = APIRouter(prefix="/api", tags=["network"])

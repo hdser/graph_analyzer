@@ -22,7 +22,7 @@ from ..models.responses import (
     GroupAnomalyStatsResponse,
 )
 from ..services.network_service import NetworkService
-from ...engines import (
+from engines import (
     AnomalyEngine,
     MetricConfig,
     MetricTransform,

@@ -25,11 +25,11 @@ from .layout_service import LayoutService
 from .auto_reload_service import AutoReloadManager
 from ..utils.helpers import clean_numpy_types
 
-from ...engines.graph_metrics  import GraphMetrics, METRIC_PRESETS
+from engines.graph_metrics  import GraphMetrics, METRIC_PRESETS
 
 if HAS_ANOMALY:
-    from ...engines.anomaly_engine import AnomalyEngine
-    from ...engines.composite_engine import CompositeMetricEngine
+    from engines.anomaly_engine import AnomalyEngine
+    from engines.composite_engine import CompositeMetricEngine
 
 
 class NetworkService:
