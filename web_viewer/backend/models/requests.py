@@ -5,7 +5,6 @@ Pydantic models for API request validation.
 """
 
 from typing import Dict, List, Optional, Any
-
 from pydantic import BaseModel, Field
 
 
@@ -41,30 +40,79 @@ class MetricsConfig(BaseModel):
     )
 
 
-class AnomalyDetectionConfig(BaseModel):
-    """Configuration for anomaly detection."""
+class MetricTransformRequest(BaseModel):
+    """Per-metric transform configuration for anomaly detection preprocessing."""
+    log: bool = Field(False, description="Apply log1p transform")
+    clip_min: Optional[float] = Field(None, description="Lower bound clipping")
+    clip_max: Optional[float] = Field(None, description="Upper bound clipping")
+    drop: bool = Field(False, description="Exclude from analysis")
+    weight: float = Field(1.0, description="Importance weight for weighted aggregation")
+    fill_value: Optional[float] = Field(None, description="Custom NaN fill value")
+
+
+class MetricConfigRequest(BaseModel):
+    """Metric preprocessing configuration for anomaly detection."""
+    id_column: str = Field("avatar", description="Column containing node IDs")
+    group_by: Optional[str] = Field(None, description="Column for group-aware detection")
+    nan_strategy: str = Field("zero", description="NaN handling: zero, mean, median, drop")
+    per_metric: Dict[str, MetricTransformRequest] = Field(
+        default_factory=dict,
+        description="Per-metric transform configurations"
+    )
+    global_scaling: str = Field("none", description="Global scaling: none, standard, robust, minmax")
+    min_group_size: int = Field(3, description="Minimum samples for group detection")
+    use_float32: bool = Field(False, description="Use float32 for memory efficiency")
+
+
+class AlgorithmConfigRequest(BaseModel):
+    """Full algorithm configuration for anomaly detection."""
+    algorithm: str = Field("isolation_forest", description="Algorithm name")
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="Algorithm parameters")
+    top_n: int = Field(20, description="Number of top anomalies to return")
+    score_normalization: str = Field("minmax", description="Score normalization: minmax, rank, none")
+    threshold_method: str = Field("fixed", description="Threshold method: fixed, percentile, auto")
+    threshold_value: float = Field(0.5, description="Threshold value")
+
+
+class AnomalyDetectionRequest(BaseModel):
+    """Request for anomaly detection analysis."""
     name: str = Field(
+        default="anomaly_score",
         description="Name for the anomaly score metric"
     )
     metrics: List[str] = Field(
+        ...,
         description="List of metric names to analyze"
     )
     algorithm: str = Field(
         default="isolation_forest",
         description="Algorithm: zscore, iqr, isolation_forest, lof, dbscan, mahalanobis"
     )
-    parameters: Optional[Dict[str, Any]] = Field(
-        default=None,
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict,
         description="Algorithm-specific parameters"
+    )
+    config: Optional[MetricConfigRequest] = Field(
+        default=None,
+        description="Metric preprocessing configuration"
+    )
+    algorithm_config: Optional[AlgorithmConfigRequest] = Field(
+        default=None,
+        description="Full algorithm configuration (overrides algorithm and parameters)"
+    )
+    sample_size: Optional[int] = Field(
+        default=None,
+        description="Sample size for large datasets (None = use all data)"
     )
     apply_to_graph: bool = Field(
         default=True,
         description="Whether to apply scores as node attributes"
     )
-    version: Optional[str] = Field(
-        default=None,
-        description="Graph version to apply to (v1, v2, etc.)"
-    )
+
+
+class ProfileMetricsRequest(BaseModel):
+    """Request to profile metrics for preprocessing recommendations."""
+    metrics: List[str] = Field(..., description="List of metrics to profile")
 
 
 class CompositeMetricConfig(BaseModel):

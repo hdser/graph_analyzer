@@ -46,13 +46,99 @@ class NetworkState(BaseModel):
     )
 
 
-class AnomalyDetectionResult(BaseModel):
+class AlgorithmParameterResponse(BaseModel):
+    """Parameter specification for an anomaly detection algorithm."""
+    name: str
+    type: str
+    default: Any
+    min: Optional[float] = None
+    max: Optional[float] = None
+    choices: Optional[List[Any]] = None
+    description: str = ""
+
+
+class AlgorithmInfoResponse(BaseModel):
+    """Information about an anomaly detection algorithm."""
+    name: str
+    display_name: str
+    description: str
+    complexity: str
+    multivariate: bool
+    requires_sklearn: bool
+    parameters: Dict[str, AlgorithmParameterResponse]
+
+
+class MetricProfileResponse(BaseModel):
+    """Profile of a single metric from profiling analysis."""
+    name: str
+    dtype: str
+    n_samples: int
+    n_unique: int
+    n_missing: int
+    n_zeros: int
+    n_negative: int
+    n_inf: int
+    min: float
+    max: float
+    mean: float
+    median: float
+    std: float
+    skewness: float
+    kurtosis: float
+    p25: float
+    p75: float
+    p95: float
+    p99: float
+    iqr: float
+    suggested_transform: Dict[str, Any]
+    warnings: List[str]
+
+
+class ProfileMetricsResponse(BaseModel):
+    """Response from metric profiling analysis."""
+    profiles: Dict[str, MetricProfileResponse]
+    suggested_config: Dict[str, Any]
+    report: str
+
+
+class ThresholdInfoResponse(BaseModel):
+    """Information about how anomaly threshold was determined."""
+    method: str
+    value: float
+    percentile: Optional[float] = None
+    auto_reason: Optional[str] = None
+
+
+class GroupAnomalyStatsResponse(BaseModel):
+    """Statistics for a single group in group-aware anomaly detection."""
+    group_value: Any
+    n_samples: int
+    n_anomalies: int
+    anomaly_rate: float
+    mean_score: float
+    std_score: float
+    threshold_used: float
+    top_anomalies: List[Dict[str, Any]]
+
+
+class AnomalyDetectionResponse(BaseModel):
     """Response for anomaly detection operation."""
     metric_name: str = Field(
         description="Name of the anomaly score metric"
     )
     algorithm: str = Field(
-        description="Algorithm used"
+        description="Algorithm used for detection"
+    )
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Algorithm parameters used"
+    )
+    metrics_used: List[str] = Field(
+        default_factory=list,
+        description="Input metrics analyzed"
+    )
+    threshold_info: ThresholdInfoResponse = Field(
+        description="Threshold determination info"
     )
     n_anomalies: int = Field(
         description="Number of anomalies detected"
@@ -61,30 +147,30 @@ class AnomalyDetectionResult(BaseModel):
         description="Total number of nodes analyzed"
     )
     anomaly_percentage: float = Field(
-        description="Percentage of anomalies"
+        description="Percentage of nodes marked as anomalies"
     )
     computation_time: float = Field(
         description="Computation time in seconds"
     )
-    top_anomalies: List[Dict[str, Any]] = Field(
-        default_factory=list,
-        description="Top N most anomalous nodes"
-    )
-    score_statistics: Dict[str, float] = Field(
+    statistics: Dict[str, float] = Field(
         default_factory=dict,
         description="Score statistics (min, max, mean, std, percentiles)"
     )
-    metrics_used: List[str] = Field(
+    top_anomalies: List[Dict[str, Any]] = Field(
         default_factory=list,
-        description="Input metrics analyzed"
+        description="Top N most anomalous nodes with details"
     )
-    parameters_used: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Algorithm parameters used"
+    group_results: Optional[Dict[str, GroupAnomalyStatsResponse]] = Field(
+        default=None,
+        description="Per-group results for group-aware detection"
+    )
+    preprocessing_stats: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Preprocessing statistics per metric"
     )
     node_updates: Optional[List[Dict[str, Any]]] = Field(
         default=None,
-        description="Node attribute updates for frontend"
+        description="Node attribute updates for frontend application"
     )
 
 
@@ -112,6 +198,22 @@ class CompositeMetricResult(BaseModel):
         default=None,
         description="ID of saved composite"
     )
+
+
+class SavedCompositeResponse(BaseModel):
+    """Information about a saved composite metric."""
+    id: str
+    name: str
+    formula: str
+    operation: str
+    source_metrics: List[str]
+    normalize: bool
+    created_at: str
+
+
+class SavedCompositesListResponse(BaseModel):
+    """List of saved composite metrics."""
+    composites: List[SavedCompositeResponse]
 
 
 class AutoReloadStatus(BaseModel):

@@ -1184,27 +1184,203 @@ function displayAnomalyResults(result) {
     document.getElementById('result-percentage').textContent = `${result.anomaly_percentage.toFixed(1)}%`;
     document.getElementById('result-time').textContent = `${result.computation_time.toFixed(2)}s`;
     
+    // Show group count if group results exist
+    const groupsStatEl = document.getElementById('result-groups');
+    if (groupsStatEl) {
+        if (result.group_results && Object.keys(result.group_results).length > 0) {
+            groupsStatEl.textContent = Object.keys(result.group_results).length;
+            groupsStatEl.closest('.summary-stat').style.display = 'block';
+        } else {
+            groupsStatEl.closest('.summary-stat').style.display = 'none';
+        }
+    }
+    
     // Render histogram of anomaly scores
     renderAnomalyHistogram(result);
     
-    // Populate top anomalies table
+    // Get metrics used for table columns
+    const metricsUsed = result.metrics_used || [];
+    
+    // Build table header with metric columns
+    const tableHead = document.querySelector('#anomaly-table thead tr');
+    if (tableHead) {
+        tableHead.innerHTML = `
+            <th>Rank</th>
+            <th>Node ID</th>
+            <th>Score</th>
+            <th>Anomaly</th>
+            ${metricsUsed.map(m => `<th>${m}</th>`).join('')}
+            <th>Actions</th>
+        `;
+    }
+    
+    // Store all data for filtering
+    window.anomalyTableData = result.top_anomalies;
+    window.anomalyMetricsUsed = metricsUsed;
+    
+    // Setup filter checkbox
+    const filterCheckbox = document.getElementById('show-anomalies-only');
+    if (filterCheckbox) {
+        filterCheckbox.checked = false;
+        filterCheckbox.onchange = () => renderAnomalyTable(filterCheckbox.checked);
+    }
+    
+    // Render table with all nodes
+    renderAnomalyTable(false);
+    
+    // Display preprocessing info if available
+    displayPreprocessingInfo(result);
+    
+    // Display group breakdown if group-aware
+    if (result.group_results && Object.keys(result.group_results).length > 0) {
+        displayGroupBreakdown(result.group_results);
+    }
+}
+
+function renderAnomalyTable(anomaliesOnly = false) {
+    const data = window.anomalyTableData || [];
+    const metricsUsed = window.anomalyMetricsUsed || [];
+    
+    // Filter if needed
+    const filteredData = anomaliesOnly 
+        ? data.filter(node => node.is_anomaly) 
+        : data;
+    
+    // Update info text
+    const tableInfo = document.getElementById('table-info');
+    if (tableInfo) {
+        const anomalyCount = data.filter(n => n.is_anomaly).length;
+        if (anomaliesOnly) {
+            tableInfo.textContent = `Showing ${filteredData.length} anomalies`;
+        } else {
+            tableInfo.textContent = `Showing ${filteredData.length} nodes (${anomalyCount} anomalies)`;
+        }
+    }
+    
+    // Render table rows
     const tbody = document.getElementById('anomaly-table-body');
-    tbody.innerHTML = result.top_anomalies.map((node, i) => {
-        const nodeIdDisplay = node.id.length > 20 ? node.id.substring(0, 18) + '...' : node.id;
-        const scoreClass = node.score > 0.7 ? 'style="color: #ff4d4f; font-weight: bold;"' : 
-                          node.score > 0.5 ? 'style="color: #faad14;"' : '';
+    tbody.innerHTML = filteredData.map((node, i) => {
+        const nodeIdDisplay = String(node.id).length > 20 
+            ? String(node.id).substring(0, 18) + '...' 
+            : String(node.id);
+        
+        // Color based on score
+        const scoreColor = node.score > 0.7 ? '#ff4d4f' : 
+                          node.score > 0.5 ? '#faad14' : 
+                          node.score > 0.3 ? '#e0e0e0' : '#808080';
+        
+        // Anomaly indicator
+        const anomalyIndicator = node.is_anomaly 
+            ? '<span style="color:#ff4d4f;font-weight:bold;">Yes</span>' 
+            : '<span style="color:#808080;">No</span>';
+        
+        // Build metric value cells
+        const metricCells = metricsUsed.map(m => {
+            const val = node[m];
+            if (val === undefined || val === null) {
+                return '<td style="color: #606060;">-</td>';
+            }
+            return `<td>${typeof val === 'number' ? val.toFixed(4) : val}</td>`;
+        }).join('');
         
         return `
-            <tr>
-                <td>${i + 1}</td>
+            <tr data-node-id="${node.id}" data-is-anomaly="${node.is_anomaly}">
+                <td>${node.rank || i + 1}</td>
                 <td class="node-id-cell" title="${node.id}">${nodeIdDisplay}</td>
-                <td ${scoreClass}>${node.score.toFixed(4)}</td>
+                <td style="color: ${scoreColor}; font-weight: ${node.score > 0.5 ? 'bold' : 'normal'};">${node.score.toFixed(4)}</td>
+                <td>${anomalyIndicator}</td>
+                ${metricCells}
                 <td>
                     <button class="btn-tiny" onclick="locateNode('${node.id}')">Locate</button>
                 </td>
             </tr>
         `;
     }).join('');
+}
+
+function displayPreprocessingInfo(result) {
+    // Check if there's a preprocessing-info container
+    let infoEl = document.getElementById('preprocessing-info');
+    if (!infoEl) {
+        // Create it before the summary
+        const summaryEl = document.getElementById('anomaly-summary');
+        if (summaryEl) {
+            infoEl = document.createElement('div');
+            infoEl.id = 'preprocessing-info';
+            infoEl.style.cssText = 'background:#0a0a0a;padding:10px;border-radius:4px;margin-bottom:15px;font-size:11px;';
+            summaryEl.parentNode.insertBefore(infoEl, summaryEl);
+        }
+    }
+    
+    if (!infoEl) return;
+    
+    if (result.preprocessing_stats && Object.keys(result.preprocessing_stats).length > 0) {
+        let html = '<strong style="color:#4A90E2;">Preprocessing Applied:</strong><br>';
+        for (const [metric, stats] of Object.entries(result.preprocessing_stats)) {
+            const transforms = stats.transform_applied || [];
+            html += `<span style="color:#e0e0e0;">${metric}</span>: ${transforms.join(', ') || 'none'}<br>`;
+        }
+        infoEl.innerHTML = html;
+        infoEl.style.display = 'block';
+    } else {
+        infoEl.style.display = 'none';
+    }
+}
+
+function displayGroupBreakdown(groupResults) {
+    // Check if there's a group-breakdown container
+    let container = document.getElementById('group-breakdown');
+    if (!container) {
+        // Create it after the table
+        const tableContainer = document.getElementById('anomaly-table-container');
+        if (tableContainer) {
+            container = document.createElement('div');
+            container.id = 'group-breakdown';
+            container.style.cssText = 'margin-top:20px;';
+            tableContainer.parentNode.insertBefore(container, tableContainer.nextSibling);
+        }
+    }
+    
+    if (!container) return;
+    
+    // Build group breakdown table
+    const groups = Object.values(groupResults).sort((a, b) => b.n_anomalies - a.n_anomalies);
+    
+    let html = `
+        <h4 style="font-size:12px;color:#4A90E2;margin-bottom:10px;text-transform:uppercase;">
+            Group Breakdown (${groups.length} groups)
+        </h4>
+        <div style="max-height:200px;overflow-y:auto;">
+        <table id="group-table" style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+                <tr>
+                    <th style="background:#0a0a0a;padding:6px;text-align:left;color:#808080;">Group</th>
+                    <th style="background:#0a0a0a;padding:6px;text-align:right;color:#808080;">Samples</th>
+                    <th style="background:#0a0a0a;padding:6px;text-align:right;color:#808080;">Anomalies</th>
+                    <th style="background:#0a0a0a;padding:6px;text-align:right;color:#808080;">Rate</th>
+                    <th style="background:#0a0a0a;padding:6px;text-align:right;color:#808080;">Mean Score</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    for (const group of groups) {
+        const rateColor = group.anomaly_rate > 20 ? '#ff4d4f' : 
+                          group.anomaly_rate > 10 ? '#faad14' : '#e0e0e0';
+        html += `
+            <tr>
+                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;">${group.group_value}</td>
+                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;text-align:right;">${group.n_samples}</td>
+                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;text-align:right;">${group.n_anomalies}</td>
+                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;text-align:right;color:${rateColor};">${group.anomaly_rate.toFixed(1)}%</td>
+                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;text-align:right;">${group.mean_score.toFixed(4)}</td>
+            </tr>
+        `;
+    }
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+    container.style.display = 'block';
 }
 
 function renderAnomalyHistogram(result) {
@@ -1216,19 +1392,24 @@ function renderAnomalyHistogram(result) {
         anomalyHistogramChart.destroy();
     }
     
-    // Build histogram bins from scores
-    const scores = Object.values(result.top_anomalies).map(n => n.score);
+    // Build histogram bins from all scores
+    const allNodes = result.top_anomalies || [];
+    const scores = allNodes.map(n => n.score);
     
-    // If we have full score statistics, use them to compute distribution
-    const stats = result.score_statistics;
-    const bins = 20;
+    if (scores.length === 0) return;
+    
+    const bins = 30;
     const binWidth = 1.0 / bins;
     const counts = new Array(bins).fill(0);
+    const anomalyCounts = new Array(bins).fill(0);
     
-    // Count scores in each bin
-    result.top_anomalies.forEach(node => {
+    // Count all scores and anomaly scores in each bin
+    allNodes.forEach(node => {
         const binIdx = Math.min(Math.floor(node.score / binWidth), bins - 1);
         counts[binIdx]++;
+        if (node.is_anomaly) {
+            anomalyCounts[binIdx]++;
+        }
     });
     
     // Create labels
@@ -1241,34 +1422,41 @@ function renderAnomalyHistogram(result) {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Anomaly Score Distribution',
-                data: counts,
-                backgroundColor: labels.map((_, i) => {
-                    const t = i / (bins - 1);
-                    // Red for high scores, blue for low
-                    return t > 0.7 ? 'rgba(255, 77, 79, 0.8)' :
-                           t > 0.5 ? 'rgba(250, 173, 20, 0.8)' :
-                           'rgba(74, 144, 226, 0.8)';
-                }),
-                borderColor: 'rgba(255, 255, 255, 0.2)',
-                borderWidth: 1
-            }]
+            datasets: [
+                {
+                    label: 'Normal',
+                    data: counts.map((c, i) => c - anomalyCounts[i]),
+                    backgroundColor: 'rgba(74, 144, 226, 0.7)',
+                    borderColor: 'rgba(74, 144, 226, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Anomalies',
+                    data: anomalyCounts,
+                    backgroundColor: 'rgba(255, 77, 79, 0.8)',
+                    borderColor: 'rgba(255, 77, 79, 1)',
+                    borderWidth: 1
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },
+                legend: { 
+                    display: true,
+                    labels: { color: '#e0e0e0' }
+                },
                 title: {
                     display: true,
-                    text: 'Anomaly Score Distribution (Top 20 Nodes)',
+                    text: `Anomaly Score Distribution (${allNodes.length} nodes)`,
                     color: '#e0e0e0',
                     font: { size: 14 }
                 }
             },
             scales: {
                 x: {
+                    stacked: true,
                     title: {
                         display: true,
                         text: 'Anomaly Score',
@@ -1278,6 +1466,7 @@ function renderAnomalyHistogram(result) {
                     grid: { color: '#2a2a2a' }
                 },
                 y: {
+                    stacked: true,
                     title: {
                         display: true,
                         text: 'Count',
@@ -1296,7 +1485,7 @@ function locateNode(nodeId) {
     if (window.opener) {
         window.opener.postMessage({
             type: 'LOCATE_NODE',
-            data: { nodeId }
+            nodeId: nodeId
         }, '*');
     }
 }
@@ -1353,8 +1542,22 @@ function highlightAnomalies() {
         .filter(n => n.is_anomaly)
         .map(n => n.id);
     
-    if (window.opener && window.opener.highlightAnomalies) {
-        window.opener.highlightAnomalies(anomalyIds);
+    if (anomalyIds.length === 0) {
+        showAnomalyError('No anomalies to highlight');
+        return;
+    }
+    
+    if (window.opener) {
+        // Try direct function call first
+        if (window.opener.highlightAnomalies) {
+            window.opener.highlightAnomalies(anomalyIds);
+        } else {
+            // Fall back to message
+            window.opener.postMessage({
+                type: 'HIGHLIGHT_ANOMALIES',
+                nodeIds: anomalyIds
+            }, '*');
+        }
     }
 }
 

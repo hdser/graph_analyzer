@@ -20,9 +20,9 @@ from sqlalchemy import create_engine, text
 from ..config import settings, HAS_ANOMALY, HAS_SSE
 from ..models.requests import LoadConfig, MetricsConfig
 from ..models.responses import NetworkState
-from ..services.cache_service import CacheService
-from ..services.layout_service import LayoutService
-from ..services.auto_reload_service import AutoReloadManager
+from .cache_service import CacheService
+from .layout_service import LayoutService
+from .auto_reload_service import AutoReloadManager
 from ..utils.helpers import clean_numpy_types
 
 from engines.graph_metrics import GraphMetrics, METRIC_PRESETS
@@ -552,6 +552,38 @@ class NetworkService:
     def clear_layout_cache(self, graph_id: Optional[str] = None):
         """Clear layout cache."""
         self.cache_service.clear_layout_cache(graph_id)
+
+    def get_current_metrics_df(self) -> Optional[pd.DataFrame]:
+        """
+        Get the current metrics DataFrame.
+        
+        Alias for get_metrics_dataframe() for compatibility with anomaly router.
+        
+        Returns:
+            Metrics DataFrame or None if no data loaded
+        """
+        return self.get_metrics_dataframe()
+    
+    def update_node_data(self, node_updates: List[Dict[str, Any]]) -> None:
+        """
+        Update node attributes in all graphs.
+        
+        Used by anomaly detection to apply scores to graph nodes.
+        
+        Args:
+            node_updates: List of dicts with 'id' and attribute key-value pairs
+        """
+        for update in node_updates:
+            node_id = update.get('id')
+            if not node_id:
+                continue
+            
+            # Update in all graphs
+            for gid, G in self.graphs.items():
+                if G.has_node(node_id):
+                    for key, value in update.items():
+                        if key != 'id':
+                            G.nodes[node_id][key] = value
 
 
 # Singleton instance
