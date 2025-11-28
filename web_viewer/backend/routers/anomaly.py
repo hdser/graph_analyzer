@@ -22,7 +22,7 @@ from ..models.responses import (
     GroupAnomalyStatsResponse,
 )
 from ..services.network_service import NetworkService
-from engines import (
+from ...engines import (
     AnomalyEngine,
     MetricConfig,
     MetricTransform,
@@ -51,7 +51,7 @@ def get_engine() -> AnomalyEngine:
 
 def get_network_service() -> NetworkService:
     """Get network service instance."""
-    from backend.services import network_service
+    from ..services import network_service
     return network_service
 
 

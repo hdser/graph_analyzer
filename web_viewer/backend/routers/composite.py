@@ -14,7 +14,7 @@ from ..services.network_service import network_service
 from ..config import HAS_ANOMALY
 
 if HAS_ANOMALY:
-    from engines.composite_engine import CompositeMetricEngine
+    from ...engines.composite_engine import CompositeMetricEngine
 
 
 router = APIRouter(prefix="/api/metrics/composite", tags=["composite"])
