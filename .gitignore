@@ -42,6 +42,7 @@ env/
 cytoscape/*.cys 
 logs/
 
+node_modules/
 # Jupyter Notebook
 .ipynb_checkpoints
 

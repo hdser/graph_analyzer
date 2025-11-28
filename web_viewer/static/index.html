@@ -4,20 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Graph Analyzer Web Viewer</title>
-    <link rel="stylesheet" href="static/style.css">
+    <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.31.0/cytoscape.min.js"></script>
-    <script src="static/app.js"></script>
 </head>
 <body>
     <div class="container">
         <div class="sidebar">
-            <h2>Graph Analyzer</h2>
+            <div class="app-header">
+                <span class="app-logo" data-icon="appLogo"></span>
+                <span class="app-title">Network Analyzer</span>
+            </div>
             <div class="sidebar-content">
                 
                 <div class="section collapsible">
                     <div class="collapsible-header">
                         <h3>Data Source (Load)</h3>
-                        <span class="collapse-icon">▼</span>
+                        <span class="collapse-icon" data-icon="chevronDown"></span>
                     </div>
                     <div class="style-subsection">
                         <div class="style-row">
@@ -25,7 +27,7 @@
                             <div class="custom-dropdown" id="sql-files-dropdown">
                                 <div class="dropdown-header" id="sql-dropdown-header">Select files...</div>
                                 <div class="dropdown-list" id="sql-files-list">
-                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="style-row">
@@ -48,7 +50,7 @@
                     <div class="collapsible-header">
                         <h3>Auto Reload</h3>
                         <span class="auto-reload-indicator" id="reload-indicator" title="Auto-reload status"></span>
-                        <span class="collapse-icon">▼</span>
+                        <span class="collapse-icon" data-icon="chevronDown"></span>
                     </div>
                     <div class="style-subsection">
                         <div class="style-row">
@@ -98,7 +100,7 @@
                 <div class="section collapsible">
                     <div class="collapsible-header">
                         <h3>Metrics Analysis</h3>
-                        <span class="collapse-icon">▼</span>
+                        <span class="collapse-icon" data-icon="chevronDown"></span>
                     </div>
                     <div class="style-subsection">
                         <div class="style-row">
@@ -122,8 +124,57 @@
 
                 <div class="section collapsible">
                     <div class="collapsible-header">
+                        <h3>Composite Metrics</h3>
+                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                    </div>
+                    <div class="style-subsection">
+                        <div class="style-row">
+                            <label>Metric 1</label>
+                            <select id="composite-metric-1">
+                                <option value="">Select...</option>
+                            </select>
+                        </div>
+                        <div class="style-row">
+                            <label>Operation</label>
+                            <select id="composite-operation">
+                                <option value="multiply">Multiply (×)</option>
+                                <option value="add">Add (+)</option>
+                                <option value="subtract">Subtract (−)</option>
+                                <option value="divide">Divide (÷)</option>
+                                <option value="maximum">Maximum</option>
+                                <option value="minimum">Minimum</option>
+                                <option value="average">Average</option>
+                            </select>
+                        </div>
+                        <div class="style-row">
+                            <label>Metric 2</label>
+                            <select id="composite-metric-2">
+                                <option value="">Select...</option>
+                            </select>
+                        </div>
+                        <div class="style-row">
+                            <label>Name</label>
+                            <input type="text" id="composite-name" placeholder="my_composite">
+                        </div>
+                        <div class="style-row">
+                            <label>
+                                <input type="checkbox" id="composite-normalize"> Normalize (0-1)
+                            </label>
+                        </div>
+                        <button id="create-composite-btn" class="primary-btn">Create</button>
+                        
+                        <div style="margin-top: 15px;">
+                            <label style="font-size: 11px; color: #808080;">Saved Composites:</label>
+                            <button id="refresh-composites-btn" class="icon-btn" style="float: right;" title="Refresh" data-icon="refresh"></button>
+                        </div>
+                        <div id="saved-composites-list" class="saved-composites-list"></div>
+                    </div>
+                </div>
+
+                <div class="section collapsible">
+                    <div class="collapsible-header">
                         <h3>Filter Nodes</h3>
-                        <span class="collapse-icon">▼</span>
+                        <span class="collapse-icon" data-icon="chevronDown"></span>
                     </div>
                     <div class="style-subsection">
                         <div class="style-row">
@@ -151,122 +202,59 @@
                     </div>
                 </div>
 
-                <!-- Composite Metrics Section -->
-                <div class="section collapsible">
-                    <div class="collapsible-header">
-                        <h3>Composite Metrics</h3>
-                        <span class="collapse-icon">▼</span>
-                    </div>
-                    <div class="style-subsection">
-                        <div class="composite-builder">
-                            <div class="style-row">
-                                <label>Metric 1</label>
-                                <select id="composite-metric-1">
-                                    <option value="">Select metric...</option>
-                                </select>
-                            </div>
-                            <div class="operation-selector">
-                                <select id="composite-operation">
-                                    <option value="multiply">× Multiply</option>
-                                    <option value="add">+ Add</option>
-                                    <option value="subtract">- Subtract</option>
-                                    <option value="divide">÷ Divide</option>
-                                    <option value="maximum">max Maximum</option>
-                                    <option value="minimum">min Minimum</option>
-                                    <option value="average">avg Average</option>
-                                </select>
-                            </div>
-                            <div class="style-row">
-                                <label>Metric 2</label>
-                                <select id="composite-metric-2">
-                                    <option value="">Select metric...</option>
-                                </select>
-                            </div>
-                            <div class="style-row">
-                                <label>Name</label>
-                                <input type="text" id="composite-name" placeholder="new_metric_name">
-                            </div>
-                            <div class="style-row">
-                                <label>
-                                    <input type="checkbox" id="composite-normalize"> Normalize inputs (0-1 scale)
-                                </label>
-                            </div>
-                            <button id="create-composite-btn" class="secondary-btn">Create Metric</button>
-                        </div>
-                        
-                        <div class="saved-composites-header">
-                            <span>Saved Composites</span>
-                            <button id="refresh-composites-btn" style="padding:2px 6px; font-size:10px; background:#2a2a2a; border:1px solid #3a3a3a; border-radius:3px; color:#e0e0e0; cursor:pointer;">↻</button>
-                        </div>
-                        <div id="saved-composites-list">
-                            <div class="no-composites">No saved composites</div>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="section collapsible">
                     <div class="collapsible-header">
                         <h3>Visual Style</h3>
-                        <span class="collapse-icon">▼</span>
+                        <span class="collapse-icon" data-icon="chevronDown"></span>
                     </div>
-                  
-                        <div class="style-subsection">
-                            <h4>Nodes</h4>
-                            <div class="style-row">
-                                <label>Size Metric</label>
-                                <select id="node-size-metric">
-                                    <option value="fixed">Fixed Size</option>
-                                </select>
-                            </div>
-                            <div class="style-row">
-                                <label>Size Range</label>
-                                <input type="number" id="node-size-min" value="20" style="width:50px">
-                                <span style="font-size:10px; color:#808080">to</span>
-                                <input type="number" id="node-size-max" value="60" style="width:50px">
-                            </div>
-                            <div class="style-row">
-                                <label>Color Metric</label>
-                                <select id="node-color-metric">
-                                    <option value="fixed">Fixed Color</option>
-                                </select>
-                            </div>
-                            <div class="style-row" id="gradient-selector" style="display:none">
-                                <label>Gradient</label>
-                                <select id="node-color-gradient"></select>
-                            </div>
-                            <div class="style-row" id="fixed-color-selector">
-                                <label>Fixed Color</label>
-                                <input type="color" id="node-color-fixed" value="#4A90E2">
-                            </div>
-                        
-
-                            <h4>Edges</h4>
-                            <div class="style-row">
-                                <label>Width Metric</label>
-                                <select id="edge-width-metric">
-                                    <option value="fixed">Fixed</option>
-                                </select>
-                            </div>
-                            <div class="style-row">
-                                <label>Width Range</label>
-                                <input type="number" id="edge-width-min" value="2" min="0.1" max="10" step="0.1" style="width:50px">
-                                <span style="font-size:10px; color:#808080">to</span>
-                                <input type="number" id="edge-width-max" value="5" min="0.1" max="20" step="0.1" style="width:50px">
-                            </div>
-                            <div class="style-row">
-                                <label>Opacity</label>
-                                <input type="range" id="edge-opacity" min="0" max="100" value="20">
-                                <span id="edge-opacity-value" style="font-size:10px; width:30px">20%</span>
-                            </div>
-                            <div class="style-row">
-                                <label>Color</label>
-                                <input type="color" id="edge-color" value="#fcfafa">
-                            </div>
-                        <button id="apply-style-btn" class="secondary-btn">Apply Style</button>
+                    <div class="style-subsection">
+                        <h4>Node Size</h4>
+                        <div class="style-row">
+                            <label>Metric</label>
+                            <select id="node-size-metric">
+                                <option value="">Uniform</option>
+                            </select>
                         </div>
-
+                        <div class="style-row">
+                            <label>Range</label>
+                            <input type="number" id="node-size-min" value="8" min="1" max="50" style="width:50px">
+                            <span style="font-size:10px; color:#808080">to</span>
+                            <input type="number" id="node-size-max" value="25" min="1" max="100" style="width:50px">
+                        </div>
+                        
+                        <h4 style="margin-top:15px">Node Color</h4>
+                        <div class="style-row">
+                            <label>Metric</label>
+                            <select id="node-color-metric">
+                                <option value="">Uniform</option>
+                            </select>
+                        </div>
+                        <div class="style-row">
+                            <label>Gradient</label>
+                            <select id="node-color-gradient">
+                                <option value="spectral">Spectral</option>
+                            </select>
+                        </div>
+                        
+                        <h4 style="margin-top:15px">Edges</h4>
+                        <div class="style-row">
+                            <label>Width Range</label>
+                            <input type="number" id="edge-width-min" value="2" min="0.1" max="10" step="0.1" style="width:50px">
+                            <span style="font-size:10px; color:#808080">to</span>
+                            <input type="number" id="edge-width-max" value="5" min="0.1" max="20" step="0.1" style="width:50px">
+                        </div>
+                        <div class="style-row">
+                            <label>Opacity</label>
+                            <input type="range" id="edge-opacity" min="0" max="100" value="20">
+                            <span id="edge-opacity-value" style="font-size:10px; width:30px">20%</span>
+                        </div>
+                        <div class="style-row">
+                            <label>Color</label>
+                            <input type="color" id="edge-color" value="#fcfafa">
+                        </div>
+                        <button id="apply-style-btn" class="secondary-btn">Apply Style</button>
                     </div>
-
+                </div>
 
             </div>
         </div>
@@ -278,8 +266,8 @@
                          <select id="graph-select"></select>
                     </div>
                     <input type="text" id="node-search" placeholder="Search node ID...">
-                    <button id="search-btn">🔍</button>
-                    <button id="clear-search-btn" style="display:none">✕</button>
+                    <button id="search-btn" class="icon-btn" title="Search" data-icon="search"></button>
+                    <button id="clear-search-btn" class="icon-btn" style="display:none" title="Clear" data-icon="close"></button>
                 </div>
                 <div class="toolbar-info" id="graph-stats">
                     <span id="node-count">0 nodes</span>
@@ -306,17 +294,17 @@
         <div id="info-panel" class="info-panel-right" style="display:none">
             <div class="info-header">
                 <h3>Node Information</h3>
-                <button class="close-btn">×</button>
+                <button class="close-btn" data-icon="close"></button>
             </div>
             
             <div id="node-info" style="display:none">
                 <div class="info-node-id">
                     <span id="node-id"></span>
-                    <button id="copy-node-id-btn" class="icon-btn" title="Copy Node ID">📋</button>
+                    <button id="copy-node-id-btn" class="icon-btn" title="Copy Node ID" data-icon="copy"></button>
                 </div>
                 <div class="info-actions">
                     <button id="neighbor-toggle-btn" class="secondary-btn">Highlight Neighbors: Off</button>
-                    <button id="copy-node-data-btn" class="secondary-btn" title="Copy all node data">📋 Copy Data</button>
+                    <button id="copy-node-data-btn" class="secondary-btn" title="Copy all node data"><span data-icon="copy"></span> Copy Data</button>
                 </div>
                 <div class="info-tabs">
                     <button class="tab-btn active" data-tab="metrics">Metrics</button>
@@ -342,7 +330,7 @@
             <div id="edge-info" style="display:none">
                 <div class="info-edge-header">
                     Edge Information
-                    <button id="copy-edge-data-btn" class="icon-btn" title="Copy edge data">📋</button>
+                    <button id="copy-edge-data-btn" class="icon-btn" title="Copy edge data" data-icon="copy"></button>
                 </div>
                 <div class="metric-row">
                     <span class="metric-label">Source</span>
@@ -359,8 +347,8 @@
                 <div class="info-multi-header">
                     <h3>Multiple Selection</h3>
                     <div class="multi-actions">
-                        <button id="copy-selected-btn" class="icon-btn" title="Copy selected data">📋</button>
-                        <button id="export-csv-btn" class="icon-btn" title="Export to CSV">💾</button>
+                        <button id="copy-selected-btn" class="icon-btn" title="Copy selected data" data-icon="copy"></button>
+                        <button id="export-csv-btn" class="icon-btn" title="Export to CSV" data-icon="save"></button>
                     </div>
                 </div>
                 <div class="multi-summary">
@@ -384,5 +372,22 @@
     </div>
 
     <div id="toast-container"></div>
+
+    <!-- Load JS modules in dependency order -->
+    <script src="/static/js/icons.js"></script>
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/state.js"></script>
+    <script src="/static/js/toast.js"></script>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/cytoscape-manager.js"></script>
+    <script src="/static/js/info-panel.js"></script>
+    <script src="/static/js/graph-loader.js"></script>
+    <script src="/static/js/metrics.js"></script>
+    <script src="/static/js/auto-reload.js"></script>
+    <script src="/static/js/distributions.js"></script>
+    <script src="/static/js/composite-metrics.js"></script>
+    <script src="/static/js/search.js"></script>
+    <script src="/static/js/export.js"></script>
+    <script src="/static/js/app.js"></script>
 </body>
 </html>

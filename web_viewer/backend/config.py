@@ -1,0 +1,114 @@
+"""
+Configuration Module
+
+Centralized configuration for the Graph Analyzer Web Viewer.
+All settings are loaded from environment variables with sensible defaults.
+"""
+
+import os
+from pathlib import Path
+from typing import Optional
+
+from dotenv import load_dotenv
+
+# Load .env file if present
+load_dotenv()
+
+
+class Settings:
+    """Application settings loaded from environment variables."""
+    
+    # Base paths
+    BASE_DIR: Path = Path(__file__).parent.parent
+    SQL_DIR: Path = BASE_DIR.parent / "sql"
+    CACHE_DIR: Path = BASE_DIR / "cache"
+    LAYOUTS_DIR: Path = CACHE_DIR / "layouts"
+    DATA_CACHE_DIR: Path = CACHE_DIR / "data"
+    STATIC_DIR: Path = BASE_DIR / "static"
+    
+    # Database configuration
+    DB_USER: str = os.getenv("DB_USER", "readonly_user")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
+    DB_HOST: str = os.getenv("DB_HOST", "localhost")
+    DB_PORT: str = os.getenv("DB_PORT", "5432")
+    DB_NAME: str = os.getenv("DB_NAME", "circles")
+    
+    # Layout service
+    LAYOUT_SERVICE_URL: str = os.getenv("LAYOUT_SERVICE_URL", "http://localhost:3000/layout")
+    
+    # Metrics settings
+    DEFAULT_METRICS_MODE: str = os.getenv("DEFAULT_METRICS_MODE", "essential")
+    N_JOBS: int = int(os.getenv("N_JOBS", "-1"))
+    
+    # Layout algorithm parameters
+    SPRING_STRENGTH: float = float(os.getenv("SPRING_STRENGTH", "0.0008"))
+    SPRING_LENGTH: float = float(os.getenv("SPRING_LENGTH", "200"))
+    REPULSION_STRENGTH: float = float(os.getenv("REPULSION_STRENGTH", "5000"))
+    DAMPING: float = float(os.getenv("DAMPING", "0.9"))
+    MAX_VELOCITY: float = float(os.getenv("MAX_VELOCITY", "50"))
+    CONVERGENCE_THRESHOLD: float = float(os.getenv("CONVERGENCE_THRESHOLD", "0.5"))
+    MAX_ITERATIONS: int = int(os.getenv("MAX_ITERATIONS", "100"))
+    
+    # Performance limits
+    MAX_NODES_FOR_LOF: int = int(os.getenv("MAX_NODES_FOR_LOF", "50000"))
+    MAX_EDGES_FOR_CYTOSCAPE_DESKTOP: int = int(os.getenv("MAX_EDGES_FOR_CYTOSCAPE_DESKTOP", "5000000"))
+    EDGE_CHUNK_SIZE: int = int(os.getenv("EDGE_CHUNK_SIZE", "50000"))
+    
+    # Auto-reload settings
+    AUTO_RELOAD_MIN_INTERVAL: int = 60
+    AUTO_RELOAD_MAX_INTERVAL: int = 3600
+    AUTO_RELOAD_DEFAULT_INTERVAL: int = 300
+    
+    @property
+    def database_url(self) -> str:
+        """Construct database URL from components."""
+        return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+    
+    def ensure_directories(self):
+        """Create required directories if they don't exist."""
+        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.LAYOUTS_DIR.mkdir(parents=True, exist_ok=True)
+        self.DATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# Global settings instance
+settings = Settings()
+settings.ensure_directories()
+
+
+# Feature availability flags
+try:
+    from sse_starlette.sse import EventSourceResponse
+    HAS_SSE = True
+except ImportError:
+    HAS_SSE = False
+
+try:
+    from sklearn.ensemble import IsolationForest
+    HAS_SKLEARN = True
+except ImportError:
+    HAS_SKLEARN = False
+
+try:
+    import py4cytoscape as p4c
+    HAS_CYTOSCAPE_DESKTOP = True
+except ImportError:
+    HAS_CYTOSCAPE_DESKTOP = False
+
+HAS_ANOMALY = HAS_SKLEARN
+
+
+def print_startup_banner():
+    """Print startup information banner."""
+    print("\n" + "=" * 60)
+    print("  Graph Analyzer Web Viewer v2.0.0")
+    print("=" * 60)
+    print(f"  Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
+    print(f"  SQL Dir:  {settings.SQL_DIR}")
+    print(f"  Cache:    {settings.CACHE_DIR}")
+    print(f"  Static:   {settings.STATIC_DIR}")
+    print("-" * 60)
+    print(f"  SSE Support:        {'✓' if HAS_SSE else '✗'}")
+    print(f"  Anomaly Detection:  {'✓' if HAS_ANOMALY else '✗'}")
+    print(f"  Cytoscape Desktop:  {'✓' if HAS_CYTOSCAPE_DESKTOP else '✗'}")
+    print("=" * 60 + "\n")

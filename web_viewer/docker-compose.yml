@@ -1,29 +1,24 @@
 version: '3.8'
 
 services:
-  layout-service:
-    build: ./layout_service
-    ports:
-      - "3001:3001"
-    environment:
-      - PORT=3001
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  web-app:
+  web:
     build: .
     ports:
       - "8000:8000"
     environment:
-      - LAYOUT_SERVICE_URL=http://layout-service:3001
-      - DB_USER=${DB_USER}
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-circles}
+      - DB_USER=${DB_USER:-readonly_user}
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-    depends_on:
-      - layout-service
+      - LAYOUT_SERVICE_URL=http://layout:3000/layout
     volumes:
-      - ../sql:/app/sql:ro
+      - ./cache:/app/cache
+      - ../sql:/app/../sql:ro
+    depends_on:
+      - layout
+
+  layout:
+    build: ./layout_service
+    ports:
+      - "3000:3000"

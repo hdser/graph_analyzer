@@ -44,11 +44,33 @@ body {
     will-change: transform;
 }
 
-.sidebar h2 {
-    padding: 20px;
-    font-size: 18px;
-    color: #4A90E2;
+/* App header with logo */
+.app-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
     border-bottom: 1px solid #2a2a2a;
+    background: linear-gradient(180deg, #1a1a1a 0%, #151515 100%);
+}
+
+.app-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.app-logo svg {
+    width: 36px;
+    height: 36px;
+}
+
+.app-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #4A90E2;
+    letter-spacing: 0.5px;
 }
 
 .sidebar-content {
@@ -431,6 +453,10 @@ select:focus {
     perspective: 1000;
     -webkit-perspective: 1000;
     will-change: transform;
+    /* Isolate this element from affecting other layout */
+    contain: strict;
+    /* Prevent pointer events from bubbling unnecessarily */
+    touch-action: none;
 }
 
 /* RIGHT INFO PANEL */
