@@ -6,11 +6,13 @@ API endpoints for network/graph management:
 - Getting graph elements
 - State queries
 - Cache management
+- Neighbor queries
 """
 
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from ..models.requests import LoadConfig
 from ..services.network_service import network_service
@@ -24,6 +26,12 @@ if HAS_ANOMALY:
 
 
 router = APIRouter(prefix="/api", tags=["network"])
+
+
+class NeighborRequest(BaseModel):
+    """Request model for neighbor queries."""
+    node_ids: List[str]
+    direction: str = "both"  # "in", "out", or "both"
 
 
 @router.get("/config")
@@ -97,6 +105,34 @@ def get_graph_edges(
     """
     try:
         return network_service.get_graph_edges_chunk(graph_id, offset, limit)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/network/graphs/{graph_id}/neighbors")
+def get_neighbors(graph_id: str, request: NeighborRequest):
+    """
+    Get neighbors of specified nodes.
+    
+    This allows finding neighbors even when edges aren't loaded on the frontend.
+    Uses the NetworkX graph stored in memory.
+    
+    Args:
+        graph_id: The graph to query
+        request.node_ids: List of node IDs to find neighbors for
+        request.direction: "in", "out", or "both"
+    
+    Returns:
+        Dict with incoming/outgoing neighbor lists and counts
+    """
+    try:
+        return network_service.get_neighbors(
+            graph_id, 
+            request.node_ids, 
+            request.direction
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

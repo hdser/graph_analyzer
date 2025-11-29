@@ -585,6 +585,48 @@ class NetworkService:
                         if key != 'id':
                             G.nodes[node_id][key] = value
 
+    def get_neighbors(self, graph_id: str, node_ids: List[str], direction: str = "both") -> Dict[str, Any]:
+        """
+        Get neighbors of specified nodes from the graph.
+        
+        Args:
+            graph_id: The graph to query
+            node_ids: List of node IDs to find neighbors for
+            direction: "in" for predecessors, "out" for successors, "both" for all
+            
+        Returns:
+            Dict with incoming, outgoing neighbor lists and counts
+        """
+        if graph_id not in self.graphs:
+            raise ValueError(f"Graph {graph_id} not found")
+        
+        G = self.graphs[graph_id]
+        
+        incoming_set = set()
+        outgoing_set = set()
+        
+        for node_id in node_ids:
+            if not G.has_node(node_id):
+                continue
+            
+            if direction in ("in", "both"):
+                incoming_set.update(G.predecessors(node_id))
+            
+            if direction in ("out", "both"):
+                outgoing_set.update(G.successors(node_id))
+        
+        # Remove the source nodes from results
+        source_set = set(node_ids)
+        incoming_set -= source_set
+        outgoing_set -= source_set
+        
+        return {
+            "incoming": list(incoming_set),
+            "outgoing": list(outgoing_set),
+            "incoming_count": len(incoming_set),
+            "outgoing_count": len(outgoing_set),
+            "source_nodes": node_ids,
+        }
 
 # Singleton instance
 network_service = NetworkService()
