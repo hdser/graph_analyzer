@@ -1,7 +1,7 @@
 /**
  * Distributions Analysis Window
  * Standalone window for analyzing metric distributions
- * Features: Histograms with stats, Scatter plots with zoom and selection
+ * Features: Histograms with stats, Scatter plots with zoom and selection, PCA Analysis, Anomaly Detection
  */
 
 // Global state
@@ -20,6 +20,12 @@ let anomalyAlgorithms = {};
 let lastAnomalyResult = null;
 let anomalyInitialized = false;
 let anomalyHistogramChart = null;
+
+// PCA analysis state
+let pcaResult = null;
+let pcaInitialized = false;
+let pcaScatterChart = null;
+let pcaVarianceChart = null;
 
 // Communication with parent window
 window.addEventListener('message', (event) => {
@@ -127,6 +133,11 @@ function setupEventListeners() {
     document.getElementById('apply-anomaly-btn')?.addEventListener('click', applyAnomalyToGraph);
     document.getElementById('highlight-anomalies-btn')?.addEventListener('click', highlightAnomalies);
     document.getElementById('export-anomalies-btn')?.addEventListener('click', exportAnomaliesCSV);
+
+    // PCA analysis event listeners
+    document.getElementById('run-pca-btn')?.addEventListener('click', runPCAAnalysis);
+    document.getElementById('export-pca-btn')?.addEventListener('click', exportPCAResults);
+    document.getElementById('apply-pca-btn')?.addEventListener('click', applyPCAToGraph);
 }
 
 function switchView(view) {
@@ -140,11 +151,13 @@ function switchView(view) {
     // Update sidebar content
     document.getElementById('metrics-list').style.display = view === 'histograms' ? 'block' : 'none';
     document.getElementById('scatter-config').classList.toggle('active', view === 'scatter');
+    document.getElementById('pca-config').classList.toggle('active', view === 'pca');
     document.getElementById('anomaly-config').classList.toggle('active', view === 'anomaly');
 
     // Update main content
     document.getElementById('charts-area').style.display = view === 'histograms' ? 'flex' : 'none';
     document.getElementById('scatter-area').classList.toggle('active', view === 'scatter');
+    document.getElementById('pca-area').classList.toggle('active', view === 'pca');
     document.getElementById('anomaly-area').classList.toggle('active', view === 'anomaly');
 
     // Update toolbar
@@ -153,14 +166,20 @@ function switchView(view) {
     } else if (view === 'scatter') {
         document.getElementById('chart-label').textContent = 'scatter plot';
         document.getElementById('chart-count').textContent = scatterChart ? '1' : '0';
+    } else if (view === 'pca') {
+        document.getElementById('chart-label').textContent = 'PCA analysis';
+        document.getElementById('chart-count').textContent = pcaResult ? '1' : '0';
     } else if (view === 'anomaly') {
         document.getElementById('chart-label').textContent = 'anomaly detection';
         document.getElementById('chart-count').textContent = lastAnomalyResult ? '1' : '0';
     }
     
-    // Initialize anomaly tab if switching to it for the first time
+    // Initialize tabs if switching to them for the first time
     if (view === 'anomaly' && !anomalyInitialized) {
         initializeAnomalyTab();
+    }
+    if (view === 'pca' && !pcaInitialized) {
+        initializePCATab();
     }
 }
 
@@ -183,6 +202,11 @@ function initializeMetrics() {
     // Also update anomaly metrics if tab is active
     if (anomalyInitialized) {
         populateAnomalyMetrics();
+    }
+    
+    // Also update PCA metrics if tab is active
+    if (pcaInitialized) {
+        populatePCAMetrics();
     }
 }
 
@@ -589,7 +613,10 @@ function formatNumber(n) {
     return n.toExponential(3);
 }
 
-// Scatter Plot Functions
+// =============================================================================
+// SCATTER PLOT
+// =============================================================================
+
 function renderScatterPlot() {
     const xMetric = document.getElementById('scatter-x').value;
     const yMetric = document.getElementById('scatter-y').value;
@@ -930,6 +957,496 @@ function getViridisColor(t, alpha = 1) {
 
 
 // =============================================================================
+// PCA ANALYSIS
+// =============================================================================
+
+function initializePCATab() {
+    if (pcaInitialized) return;
+    
+    console.log('[PCA] Initializing PCA analysis tab...');
+    populatePCAMetrics();
+    pcaInitialized = true;
+}
+
+function populatePCAMetrics() {
+    const container = document.getElementById('pca-metrics-list');
+    if (!container) return;
+    
+    // Filter to numeric metrics
+    const numericMetrics = allMetrics.filter(m => {
+        const sample = nodeData[0]?.[m];
+        return typeof sample === 'number';
+    });
+    
+    if (numericMetrics.length === 0) {
+        container.innerHTML = '<div style="color: #808080; font-size: 11px; padding: 10px;">No numeric metrics available</div>';
+        return;
+    }
+    
+    container.innerHTML = numericMetrics.map(metric => `
+        <label class="metric-checkbox">
+            <input type="checkbox" name="pca-metric" value="${metric}">
+            <span>${metric.replace(/_/g, ' ')}</span>
+        </label>
+    `).join('');
+    
+    // Pre-select reasonable defaults
+    const defaults = ['pagerank', 'total_degree', 'in_degree', 'out_degree', 'clustering_coefficient', 
+                      'betweenness_centrality', 'closeness_centrality', 'eigenvector_centrality'];
+    let selectedCount = 0;
+    defaults.forEach(d => {
+        if (selectedCount < 6) {
+            const input = container.querySelector(`input[value="${d}"]`);
+            if (input) {
+                input.checked = true;
+                selectedCount++;
+            }
+        }
+    });
+    
+    // If less than 3 defaults found, select first available metrics
+    if (selectedCount < 3) {
+        const inputs = container.querySelectorAll('input');
+        for (let i = 0; i < Math.min(5, inputs.length) && selectedCount < 5; i++) {
+            if (!inputs[i].checked) {
+                inputs[i].checked = true;
+                selectedCount++;
+            }
+        }
+    }
+}
+
+async function runPCAAnalysis() {
+    // Get selected metrics
+    const selectedPCAMetrics = Array.from(
+        document.querySelectorAll('#pca-metrics-list input:checked')
+    ).map(input => input.value);
+    
+    if (selectedPCAMetrics.length < 2) {
+        showPCAError('Please select at least 2 metrics for PCA analysis');
+        return;
+    }
+    
+    const nComponents = document.getElementById('pca-n-components')?.value || 'auto';
+    const standardize = document.getElementById('pca-standardize')?.value === 'true';
+    
+    // Show progress
+    document.getElementById('pca-progress').style.display = 'block';
+    document.getElementById('run-pca-btn').disabled = true;
+    
+    try {
+        console.log('[PCA] Running analysis:', { metrics: selectedPCAMetrics, nComponents, standardize });
+        
+        const response = await fetch('/api/anomaly/pca', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                metrics: selectedPCAMetrics,
+                n_components: nComponents,
+                standardize: standardize
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'PCA analysis failed');
+        }
+        
+        pcaResult = await response.json();
+        console.log('[PCA] Analysis complete:', pcaResult);
+        
+        displayPCAResults(pcaResult);
+        
+        // Enable action buttons
+        document.getElementById('export-pca-btn').disabled = false;
+        document.getElementById('apply-pca-btn').disabled = false;
+        
+        // Update toolbar counter
+        document.getElementById('chart-count').textContent = '1';
+        
+    } catch (error) {
+        console.error('[PCA] Analysis failed:', error);
+        showPCAError(error.message);
+    } finally {
+        document.getElementById('pca-progress').style.display = 'none';
+        document.getElementById('run-pca-btn').disabled = false;
+    }
+}
+
+function showPCAError(message) {
+    const progress = document.getElementById('pca-progress');
+    if (progress) {
+        progress.style.display = 'block';
+        progress.style.color = '#ff4d4f';
+        progress.textContent = `Error: ${message}`;
+        setTimeout(() => {
+            progress.style.display = 'none';
+            progress.style.color = '#808080';
+            progress.textContent = 'Running PCA analysis...';
+        }, 3000);
+    }
+}
+
+function showPCASuccess(message) {
+    const progress = document.getElementById('pca-progress');
+    if (progress) {
+        progress.style.display = 'block';
+        progress.style.color = '#52c41a';
+        progress.textContent = message;
+        setTimeout(() => {
+            progress.style.display = 'none';
+            progress.style.color = '#808080';
+            progress.textContent = 'Running PCA analysis...';
+        }, 2000);
+    }
+}
+
+function displayPCAResults(result) {
+    // Hide empty state, show results
+    document.getElementById('pca-empty-state').style.display = 'none';
+    document.getElementById('pca-summary').style.display = 'flex';
+    document.getElementById('pca-charts-row').style.display = 'flex';
+    document.getElementById('pca-loadings-panel').style.display = 'block';
+    
+    // Update summary stats
+    document.getElementById('pca-n-components-result').textContent = result.n_components;
+    document.getElementById('pca-variance-explained').textContent = 
+        `${(result.total_variance_explained * 100).toFixed(1)}%`;
+    document.getElementById('pca-features-used').textContent = result.features.length;
+    document.getElementById('pca-samples').textContent = result.n_samples.toLocaleString();
+    
+    // Render charts
+    renderPCAScatterChart(result);
+    renderPCAVarianceChart(result);
+    renderPCALoadingsTable(result);
+}
+
+function renderPCAScatterChart(result) {
+    const ctx = document.getElementById('pca-scatter-chart');
+    if (!ctx) return;
+    
+    // Destroy existing chart
+    if (pcaScatterChart) {
+        pcaScatterChart.destroy();
+        pcaScatterChart = null;
+    }
+    
+    // Get first two components
+    const pc1 = result.transformed_data.PC1 || [];
+    const pc2 = result.transformed_data.PC2 || [];
+    const nodeIds = result.node_ids || [];
+    
+    // Create data points
+    const data = pc1.map((x, i) => ({
+        x: x,
+        y: pc2[i] || 0,
+        id: nodeIds[i] || i
+    }));
+    
+    // Color by reconstruction error if available
+    let backgroundColors;
+    if (result.reconstruction_errors) {
+        const errors = result.reconstruction_errors;
+        const maxError = Math.max(...errors);
+        const minError = Math.min(...errors);
+        backgroundColors = errors.map(e => {
+            const t = maxError > minError ? (e - minError) / (maxError - minError) : 0;
+            return getViridisColor(t, 0.6);
+        });
+    } else {
+        backgroundColors = 'rgba(74, 144, 226, 0.6)';
+    }
+    
+    const variance1 = (result.explained_variance_ratio[0] * 100).toFixed(1);
+    const variance2 = (result.explained_variance_ratio[1] * 100).toFixed(1);
+    
+    pcaScatterChart = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+            datasets: [{
+                label: 'Nodes',
+                data: data,
+                backgroundColor: backgroundColors,
+                borderColor: 'rgba(74, 144, 226, 0.8)',
+                borderWidth: 0.5,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => {
+                            const point = context.raw;
+                            const lines = [
+                                `ID: ${String(point.id).substring(0, 25)}...`,
+                                `PC1: ${point.x.toFixed(4)}`,
+                                `PC2: ${point.y.toFixed(4)}`
+                            ];
+                            if (result.reconstruction_errors) {
+                                const idx = context.dataIndex;
+                                lines.push(`Recon. Error: ${result.reconstruction_errors[idx].toFixed(4)}`);
+                            }
+                            return lines;
+                        }
+                    }
+                },
+                zoom: {
+                    pan: { enabled: true, mode: 'xy' },
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'xy'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: `PC1 (${variance1}% variance)`,
+                        color: '#808080'
+                    },
+                    ticks: { color: '#808080' },
+                    grid: { color: '#2a2a2a' }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: `PC2 (${variance2}% variance)`,
+                        color: '#808080'
+                    },
+                    ticks: { color: '#808080' },
+                    grid: { color: '#2a2a2a' }
+                }
+            }
+        }
+    });
+}
+
+function renderPCAVarianceChart(result) {
+    const ctx = document.getElementById('pca-variance-chart');
+    if (!ctx) return;
+    
+    // Destroy existing chart
+    if (pcaVarianceChart) {
+        pcaVarianceChart.destroy();
+        pcaVarianceChart = null;
+    }
+    
+    const variances = result.explained_variance_ratio.map(v => v * 100);
+    const labels = variances.map((_, i) => `PC${i + 1}`);
+    
+    // Calculate cumulative variance
+    let cumulative = 0;
+    const cumulativeData = variances.map(v => {
+        cumulative += v;
+        return cumulative;
+    });
+    
+    pcaVarianceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Individual',
+                    data: variances,
+                    backgroundColor: 'rgba(74, 144, 226, 0.7)',
+                    borderColor: 'rgba(74, 144, 226, 1)',
+                    borderWidth: 1,
+                    order: 2
+                },
+                {
+                    label: 'Cumulative',
+                    data: cumulativeData,
+                    type: 'line',
+                    borderColor: '#52c41a',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#52c41a',
+                    order: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: { color: '#808080', font: { size: 10 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => {
+                            return `${context.dataset.label}: ${context.raw.toFixed(1)}%`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#808080', font: { size: 10 } },
+                    grid: { color: '#2a2a2a' }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Variance Explained (%)',
+                        color: '#808080',
+                        font: { size: 10 }
+                    },
+                    ticks: { color: '#808080', font: { size: 10 } },
+                    grid: { color: '#2a2a2a' },
+                    max: 100
+                }
+            }
+        }
+    });
+}
+
+function renderPCALoadingsTable(result) {
+    const container = document.getElementById('pca-loadings-table');
+    if (!container) return;
+    
+    const loadings = result.loadings;
+    const features = result.features;
+    const nComponents = Math.min(result.n_components, 5); // Show max 5 components
+    
+    // Build table headers
+    let headerCells = '<th>Feature</th>';
+    for (let i = 0; i < nComponents; i++) {
+        const variance = (result.explained_variance_ratio[i] * 100).toFixed(1);
+        headerCells += `<th>PC${i + 1} (${variance}%)</th>`;
+    }
+    
+    // Build table rows
+    let rows = '';
+    features.forEach((feature, fIdx) => {
+        rows += `<tr><td style="font-family: monospace; color: #4A90E2;">${feature.replace(/_/g, ' ')}</td>`;
+        for (let i = 0; i < nComponents; i++) {
+            const loading = loadings[`PC${i + 1}`]?.[fIdx] || 0;
+            const absLoading = Math.abs(loading);
+            const isPositive = loading >= 0;
+            const width = Math.min(absLoading * 100, 100);
+            
+            rows += `
+                <td>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 50px; font-family: monospace; font-size: 10px; text-align: right;">
+                            ${loading.toFixed(3)}
+                        </span>
+                        <div class="loading-bar" style="flex: 1; max-width: 100px;">
+                            <div class="loading-bar-fill ${isPositive ? 'positive' : 'negative'}" 
+                                 style="width: ${width}%;"></div>
+                        </div>
+                    </div>
+                </td>
+            `;
+        }
+        rows += '</tr>';
+    });
+    
+    container.innerHTML = `
+        <table>
+            <thead><tr>${headerCells}</tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+    `;
+}
+
+function exportPCAResults() {
+    if (!pcaResult) return;
+    
+    // Build CSV content
+    const headers = ['node_id'];
+    for (let i = 1; i <= pcaResult.n_components; i++) {
+        headers.push(`PC${i}`);
+    }
+    if (pcaResult.reconstruction_errors) {
+        headers.push('reconstruction_error');
+    }
+    
+    const nodeIds = pcaResult.node_ids || [];
+    const rows = nodeIds.map((id, idx) => {
+        const row = [id];
+        for (let i = 1; i <= pcaResult.n_components; i++) {
+            row.push(pcaResult.transformed_data[`PC${i}`]?.[idx]?.toFixed(6) || '');
+        }
+        if (pcaResult.reconstruction_errors) {
+            row.push(pcaResult.reconstruction_errors[idx]?.toFixed(6) || '');
+        }
+        return row.join(',');
+    });
+    
+    const csv = [headers.join(','), ...rows].join('\n');
+    
+    // Download
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pca_results_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showPCASuccess('Results exported to CSV');
+}
+
+async function applyPCAToGraph() {
+    if (!pcaResult) return;
+    
+    document.getElementById('apply-pca-btn').disabled = true;
+    document.getElementById('apply-pca-btn').textContent = 'Applying...';
+    
+    try {
+        // Build node updates with PC scores
+        const nodeIds = pcaResult.node_ids || [];
+        const updates = nodeIds.map((id, idx) => {
+            const update = { id: id };
+            for (let i = 1; i <= Math.min(pcaResult.n_components, 3); i++) {
+                update[`pca_${i}`] = pcaResult.transformed_data[`PC${i}`]?.[idx] || 0;
+            }
+            if (pcaResult.reconstruction_errors) {
+                update['pca_reconstruction_error'] = pcaResult.reconstruction_errors[idx] || 0;
+            }
+            return update;
+        });
+        
+        // Send to parent window
+        if (window.opener) {
+            window.opener.postMessage({
+                type: 'PCA_APPLIED',
+                data: {
+                    node_updates: updates,
+                    n_components: pcaResult.n_components
+                }
+            }, '*');
+        }
+        
+        showPCASuccess(`Applied PCA scores to ${updates.length} nodes`);
+        
+    } catch (error) {
+        showPCAError(error.message);
+    } finally {
+        document.getElementById('apply-pca-btn').disabled = false;
+        document.getElementById('apply-pca-btn').textContent = 'Apply to Graph';
+    }
+}
+
+
+// =============================================================================
 // ANOMALY DETECTION
 // =============================================================================
 
@@ -964,7 +1481,7 @@ function populateAlgorithmSelect() {
     if (!select || !anomalyAlgorithms) return;
     
     select.innerHTML = Object.entries(anomalyAlgorithms)
-        .map(([key, info]) => `<option value="${key}">${info.name}</option>`)
+        .map(([key, info]) => `<option value="${key}">${info.display_name || info.name}</option>`)
         .join('');
     
     // Set default and trigger UI update
@@ -983,7 +1500,7 @@ function updateAlgorithmUI() {
     document.getElementById('algorithm-description').innerHTML = `
         <p>${info.description}</p>
         <p class="complexity">Complexity: ${info.complexity}</p>
-        <p class="multivariate">${info.multivariate ? '+ Supports multiple metrics' : '- Single metric recommended'}</p>
+        <p class="multivariate">${info.multivariate ? '✓ Supports multiple metrics' : '○ Single metric recommended'}</p>
     `;
     
     // Update parameters
@@ -1007,6 +1524,21 @@ function updateAlgorithmUI() {
                 `;
             }
             
+            // Handle choice-based parameters
+            if (paramInfo.choices && paramInfo.choices.length > 0) {
+                const options = paramInfo.choices.map(c => 
+                    `<option value="${c}" ${c == paramInfo.default ? 'selected' : ''}>${c}</option>`
+                ).join('');
+                return `
+                    <div class="config-row">
+                        <label title="${paramInfo.description}">${paramName.replace(/_/g, ' ')}</label>
+                        <select class="param-input" id="param-${paramName}">
+                            ${options}
+                        </select>
+                    </div>
+                `;
+            }
+            
             return `
                 <div class="config-row">
                     <label title="${paramInfo.description}">${paramName.replace(/_/g, ' ')}</label>
@@ -1014,8 +1546,8 @@ function updateAlgorithmUI() {
                            class="param-input"
                            id="param-${paramName}"
                            value="${paramInfo.default}"
-                           min="${paramInfo.min}"
-                           max="${paramInfo.max}"
+                           min="${paramInfo.min || ''}"
+                           max="${paramInfo.max || ''}"
                            step="${step}">
                 </div>
             `;
@@ -1084,11 +1616,11 @@ async function runAnomalyDetection() {
     if (!info) return;
     
     // Get selected metrics
-    const selectedMetrics = Array.from(
+    const selectedAnomalyMetrics = Array.from(
         document.querySelectorAll('#anomaly-metrics-list input:checked')
     ).map(input => input.value);
     
-    if (selectedMetrics.length === 0) {
+    if (selectedAnomalyMetrics.length === 0) {
         showAnomalyError('Please select at least one metric');
         return;
     }
@@ -1102,6 +1634,8 @@ async function runAnomalyDetection() {
                 parameters[paramName] = input.checked;
             } else if (info.parameters[paramName].type === 'int') {
                 parameters[paramName] = parseInt(input.value);
+            } else if (info.parameters[paramName].type === 'str') {
+                parameters[paramName] = input.value;
             } else {
                 parameters[paramName] = parseFloat(input.value);
             }
@@ -1115,14 +1649,14 @@ async function runAnomalyDetection() {
     document.getElementById('run-anomaly-btn').disabled = true;
     
     try {
-        console.log('[Anomaly] Running detection:', { algorithm, metrics: selectedMetrics, parameters, name });
+        console.log('[Anomaly] Running detection:', { algorithm, metrics: selectedAnomalyMetrics, parameters, name });
         
         const response = await fetch('/api/anomaly/detect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 name: name,
-                metrics: selectedMetrics,
+                metrics: selectedAnomalyMetrics,
                 algorithm: algorithm,
                 parameters: parameters,
                 apply_to_graph: false  // Don't apply yet, let user decide
@@ -1174,7 +1708,7 @@ function showAnomalyError(message) {
 function displayAnomalyResults(result) {
     // Hide empty state, show results
     document.getElementById('anomaly-empty-state').style.display = 'none';
-    document.getElementById('anomaly-summary').classList.add('visible');
+    document.getElementById('anomaly-summary').style.display = 'flex';
     document.getElementById('anomaly-chart-container').style.display = 'block';
     document.getElementById('anomaly-table-container').style.display = 'block';
     
@@ -1183,17 +1717,6 @@ function displayAnomalyResults(result) {
     document.getElementById('result-count').textContent = `${result.n_anomalies} / ${result.n_total}`;
     document.getElementById('result-percentage').textContent = `${result.anomaly_percentage.toFixed(1)}%`;
     document.getElementById('result-time').textContent = `${result.computation_time.toFixed(2)}s`;
-    
-    // Show group count if group results exist
-    const groupsStatEl = document.getElementById('result-groups');
-    if (groupsStatEl) {
-        if (result.group_results && Object.keys(result.group_results).length > 0) {
-            groupsStatEl.textContent = Object.keys(result.group_results).length;
-            groupsStatEl.closest('.summary-stat').style.display = 'block';
-        } else {
-            groupsStatEl.closest('.summary-stat').style.display = 'none';
-        }
-    }
     
     // Render histogram of anomaly scores
     renderAnomalyHistogram(result);
@@ -1227,14 +1750,6 @@ function displayAnomalyResults(result) {
     
     // Render table with all nodes
     renderAnomalyTable(false);
-    
-    // Display preprocessing info if available
-    displayPreprocessingInfo(result);
-    
-    // Display group breakdown if group-aware
-    if (result.group_results && Object.keys(result.group_results).length > 0) {
-        displayGroupBreakdown(result.group_results);
-    }
 }
 
 function renderAnomalyTable(anomaliesOnly = false) {
@@ -1296,91 +1811,6 @@ function renderAnomalyTable(anomaliesOnly = false) {
             </tr>
         `;
     }).join('');
-}
-
-function displayPreprocessingInfo(result) {
-    // Check if there's a preprocessing-info container
-    let infoEl = document.getElementById('preprocessing-info');
-    if (!infoEl) {
-        // Create it before the summary
-        const summaryEl = document.getElementById('anomaly-summary');
-        if (summaryEl) {
-            infoEl = document.createElement('div');
-            infoEl.id = 'preprocessing-info';
-            infoEl.style.cssText = 'background:#0a0a0a;padding:10px;border-radius:4px;margin-bottom:15px;font-size:11px;';
-            summaryEl.parentNode.insertBefore(infoEl, summaryEl);
-        }
-    }
-    
-    if (!infoEl) return;
-    
-    if (result.preprocessing_stats && Object.keys(result.preprocessing_stats).length > 0) {
-        let html = '<strong style="color:#4A90E2;">Preprocessing Applied:</strong><br>';
-        for (const [metric, stats] of Object.entries(result.preprocessing_stats)) {
-            const transforms = stats.transform_applied || [];
-            html += `<span style="color:#e0e0e0;">${metric}</span>: ${transforms.join(', ') || 'none'}<br>`;
-        }
-        infoEl.innerHTML = html;
-        infoEl.style.display = 'block';
-    } else {
-        infoEl.style.display = 'none';
-    }
-}
-
-function displayGroupBreakdown(groupResults) {
-    // Check if there's a group-breakdown container
-    let container = document.getElementById('group-breakdown');
-    if (!container) {
-        // Create it after the table
-        const tableContainer = document.getElementById('anomaly-table-container');
-        if (tableContainer) {
-            container = document.createElement('div');
-            container.id = 'group-breakdown';
-            container.style.cssText = 'margin-top:20px;';
-            tableContainer.parentNode.insertBefore(container, tableContainer.nextSibling);
-        }
-    }
-    
-    if (!container) return;
-    
-    // Build group breakdown table
-    const groups = Object.values(groupResults).sort((a, b) => b.n_anomalies - a.n_anomalies);
-    
-    let html = `
-        <h4 style="font-size:12px;color:#4A90E2;margin-bottom:10px;text-transform:uppercase;">
-            Group Breakdown (${groups.length} groups)
-        </h4>
-        <div style="max-height:200px;overflow-y:auto;">
-        <table id="group-table" style="width:100%;border-collapse:collapse;font-size:11px;">
-            <thead>
-                <tr>
-                    <th style="background:#0a0a0a;padding:6px;text-align:left;color:#808080;">Group</th>
-                    <th style="background:#0a0a0a;padding:6px;text-align:right;color:#808080;">Samples</th>
-                    <th style="background:#0a0a0a;padding:6px;text-align:right;color:#808080;">Anomalies</th>
-                    <th style="background:#0a0a0a;padding:6px;text-align:right;color:#808080;">Rate</th>
-                    <th style="background:#0a0a0a;padding:6px;text-align:right;color:#808080;">Mean Score</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-    
-    for (const group of groups) {
-        const rateColor = group.anomaly_rate > 20 ? '#ff4d4f' : 
-                          group.anomaly_rate > 10 ? '#faad14' : '#e0e0e0';
-        html += `
-            <tr>
-                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;">${group.group_value}</td>
-                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;text-align:right;">${group.n_samples}</td>
-                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;text-align:right;">${group.n_anomalies}</td>
-                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;text-align:right;color:${rateColor};">${group.anomaly_rate.toFixed(1)}%</td>
-                <td style="padding:4px 6px;border-bottom:1px solid #1a1a1a;text-align:right;">${group.mean_score.toFixed(4)}</td>
-            </tr>
-        `;
-    }
-    
-    html += '</tbody></table></div>';
-    container.innerHTML = html;
-    container.style.display = 'block';
 }
 
 function renderAnomalyHistogram(result) {
@@ -1504,7 +1934,7 @@ async function applyAnomalyToGraph() {
                 name: lastAnomalyResult.metric_name,
                 metrics: lastAnomalyResult.metrics_used || [],
                 algorithm: lastAnomalyResult.algorithm,
-                parameters: lastAnomalyResult.parameters_used || {},
+                parameters: lastAnomalyResult.parameters || {},
                 apply_to_graph: true
             })
         });

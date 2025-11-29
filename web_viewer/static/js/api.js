@@ -70,6 +70,20 @@ const API = {
         return this.fetch(`/api/graphs/${graphId}/edges?offset=${offset}&limit=${limit}`);
     },
 
+    /**
+     * Get neighbors of specified nodes
+     * @param {string} graphId - Graph ID
+     * @param {string[]} nodeIds - List of node IDs
+     * @param {string} direction - "in", "out", or "both"
+     */
+    getNeighbors(graphId, nodeIds, direction = 'both') {
+        return this.fetch(`/api/network/graphs/${graphId}/neighbors`, {
+            method: 'POST',
+            body: JSON.stringify({ node_ids: nodeIds, direction: direction })
+        });
+    },
+
+
     // =========================================================================
     // Metrics
     // =========================================================================

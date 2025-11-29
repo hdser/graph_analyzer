@@ -11,6 +11,7 @@ from .base import (
     AnomalyAlgorithmBase,
     ParameterSpec,
     AlgorithmInfo,
+    AlgorithmOutput,
 )
 from .statistical import ZScoreAlgorithm, IQRAlgorithm
 from .distance_based import MahalanobisAlgorithm
@@ -29,6 +30,8 @@ if HAS_SKLEARN:
         IsolationForestAlgorithm,
         LOFAlgorithm,
         DBSCANAlgorithm,
+        PCAReconstructionAlgorithm,
+        OneClassSVMAlgorithm,
     )
 
 
@@ -44,6 +47,8 @@ if HAS_SKLEARN:
         "isolation_forest": IsolationForestAlgorithm,
         "lof": LOFAlgorithm,
         "dbscan": DBSCANAlgorithm,
+        "pca_reconstruction": PCAReconstructionAlgorithm,
+        "one_class_svm": OneClassSVMAlgorithm,
     })
 
 
@@ -97,22 +102,30 @@ def get_algorithm_info(name: str) -> AlgorithmInfo:
 
 
 __all__ = [
+    # Base classes
     "AnomalyAlgorithmBase",
     "ParameterSpec",
     "AlgorithmInfo",
+    "AlgorithmOutput",
+    # Registry functions
     "get_algorithm",
     "list_algorithms",
     "get_algorithm_info",
     "ALGORITHM_REGISTRY",
     "HAS_SKLEARN",
+    # Statistical algorithms
     "ZScoreAlgorithm",
     "IQRAlgorithm",
+    # Distance-based algorithms
     "MahalanobisAlgorithm",
 ]
 
 if HAS_SKLEARN:
     __all__.extend([
+        # ML-based algorithms
         "IsolationForestAlgorithm",
         "LOFAlgorithm",
         "DBSCANAlgorithm",
+        "PCAReconstructionAlgorithm",
+        "OneClassSVMAlgorithm",
     ])

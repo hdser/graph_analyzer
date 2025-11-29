@@ -12,7 +12,7 @@
         <div class="sidebar">
             <div class="app-header">
                 <span class="app-logo" data-icon="appLogo"></span>
-                <span class="app-title">Network Analyzer</span>
+                <span class="app-title">Network <span style="color: #d33a47;">Analyzer</span></span>
             </div>
             <div class="sidebar-content">
                 
@@ -291,27 +291,37 @@
             </div>
         </div>
 
-        <div id="info-panel" class="info-panel-right" style="display:none">
+       <div id="info-panel" class="info-panel-right" style="display:none">
             <div class="info-header">
                 <h3>Node Information</h3>
                 <button class="close-btn" data-icon="close"></button>
             </div>
             
+            <!-- Single Node -->
             <div id="node-info" style="display:none">
                 <div class="info-node-id">
                     <span id="node-id"></span>
-                    <button id="copy-node-id-btn" class="icon-btn" title="Copy Node ID" data-icon="copy"></button>
+                    <button id="copy-id-btn" class="icon-btn" title="Copy Node ID" data-icon="copy"></button>
                 </div>
-                <div class="info-actions">
-                    <button id="neighbor-toggle-btn" class="secondary-btn">Highlight Neighbors: Off</button>
-                    <button id="copy-node-data-btn" class="secondary-btn" title="Copy all node data"><span data-icon="copy"></span> Copy Data</button>
+                
+                <!-- Origin & Hop Info -->
+                <div class="origin-info-box" style="display:none;"></div>
+                
+                <!-- Navigation -->
+                <div class="nav-bar">
+                    <button class="nav-btn nav-back-btn" disabled>← Back</button>
+                    <button class="nav-btn nav-in-btn" title="Select incoming neighbors">← In</button>
+                    <button class="nav-btn nav-out-btn" title="Select outgoing neighbors">Out →</button>
+                    <button id="neighbor-toggle-btn" class="nav-btn" title="Highlight neighbors">Highlight</button>
                 </div>
+                
                 <div class="info-tabs">
                     <button class="tab-btn active" data-tab="metrics">Metrics</button>
                     <button class="tab-btn" data-tab="neighbors">Neighbors</button>
                 </div>
+                
                 <div class="info-content">
-                    <div id="metrics-tab" class="tab-content">
+                    <div id="metrics-tab" class="tab-content active">
                         <div id="all-metrics" class="metrics-list selectable"></div>
                     </div>
                     <div id="neighbors-tab" class="tab-content" style="display:none">
@@ -327,23 +337,17 @@
                 </div>
             </div>
 
+            <!-- Edge Info -->
             <div id="edge-info" style="display:none">
                 <div class="info-edge-header">
                     Edge Information
                     <button id="copy-edge-data-btn" class="icon-btn" title="Copy edge data" data-icon="copy"></button>
                 </div>
-                <div class="metric-row">
-                    <span class="metric-label">Source</span>
-                    <span class="address-value selectable" id="edge-source">-</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Target</span>
-                    <span class="address-value selectable" id="edge-target">-</span>
-                </div>
                 <div id="edge-metrics" class="selectable"></div>
             </div>
 
-            <div id="multi-info" style="display:none; height: 100%;">
+            <!-- Multi-Selection -->
+            <div id="multi-info">
                 <div class="info-multi-header">
                     <h3>Multiple Selection</h3>
                     <div class="multi-actions">
@@ -351,21 +355,46 @@
                         <button id="export-csv-btn" class="icon-btn" title="Export to CSV" data-icon="save"></button>
                     </div>
                 </div>
+                
+                <!-- Summary -->
                 <div class="multi-summary">
-                    <div class="metric-row">
-                        <span class="metric-label">Nodes Selected</span>
-                        <span class="metric-value" id="multi-node-count">0</span>
+                    <div class="summary-row">
+                        <span>Nodes</span>
+                        <span id="multi-node-count">0</span>
                     </div>
-                    <div class="metric-row">
-                        <span class="metric-label">Edges Selected</span>
-                        <span class="metric-value" id="multi-edge-count">0</span>
+                    <div class="summary-row">
+                        <span>Edges</span>
+                        <span id="multi-edge-count">0</span>
                     </div>
                 </div>
                 
-                <div class="multi-details-header">
-                    <span>Selected Nodes Details</span>
+                <!-- Origin & Hop Info -->
+                <div class="origin-info-box" style="display:none;"></div>
+                
+                <!-- Navigation -->
+                <div class="nav-bar">
+                    <button class="nav-btn nav-back-btn" disabled>← Back</button>
+                    <button class="nav-btn nav-origin-btn" title="Reset to origin">Origin</button>
+                    <button class="nav-btn nav-in-btn" title="Add incoming neighbors">← In</button>
+                    <button class="nav-btn nav-out-btn" title="Add outgoing neighbors">Out →</button>
                 </div>
-                <div id="multi-metrics-list" class="metrics-list selectable">
+                
+                <!-- Scrollable content area -->
+                <div class="multi-scroll-area">
+                    <!-- Selected Nodes List -->
+                    <div class="multi-section">
+                        <div class="multi-section-header">
+                            <span>Selected Nodes</span>
+                            <button id="copy-all-selected-btn" class="mini-btn" title="Copy all IDs">Copy IDs</button>
+                        </div>
+                        <div id="selected-nodes-list" class="selected-nodes-list"></div>
+                    </div>
+                    
+                    <!-- Aggregated Metrics -->
+                    <div class="multi-section">
+                        <div class="multi-section-header">Aggregated Metrics</div>
+                        <div id="multi-metrics-list" class="metrics-list"></div>
+                    </div>
                 </div>
             </div>
         </div>

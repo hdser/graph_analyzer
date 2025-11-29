@@ -4,6 +4,21 @@
  */
 
 /**
+ * Debounce helper - prevents function from firing too frequently
+ */
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+/**
  * Color gradient definitions
  */
 const COLOR_GRADIENTS = {
@@ -138,8 +153,8 @@ const CytoscapeManager = {
                 selector: 'node:selected',
                 style: {
                     'background-color': '#FF0000',
-                    'width': 20,
-                    'height': 20,
+                    'border-width': 3,
+                    'border-color': '#FF0000',
                     'z-index': 999
                 }
             },
@@ -204,7 +219,6 @@ const CytoscapeManager = {
             } else {
                 InfoPanel.showNode(e.target);
             }
-            DistributionsComm.sendSelectionUpdate();
         });
         
         // Edge tap
@@ -212,30 +226,38 @@ const CytoscapeManager = {
             InfoPanel.showEdge(e.target);
         });
         
-        // Background tap - close panel
+        // Background tap - close panel and clear navigation
         cy.on('tap', (e) => {
             if (e.target === cy) {
                 DOMCache.infoPanel.style.display = 'none';
+                InfoPanel.clearNavigation();  // Reset origin for next selection
             }
         });
         
-        // Selection changes
-        cy.on('select unselect', () => {
+        // Selection changes - DEBOUNCED to prevent freezing when selecting many nodes
+        cy.on('select unselect', debounce(() => {
+            const selected = cy.$(':selected');
+            if (selected.length > 1) {
+                InfoPanel.showMultiSelect(selected);
+            } else if (selected.length === 1) {
+                if (selected.isNode()) {
+                    InfoPanel.showNode(selected[0]);
+                } else {
+                    InfoPanel.showEdge(selected[0]);
+                }
+            }
+            // Update distributions window with new selection
+            DistributionsComm.sendSelectionUpdate();
+        }, 100));  // 100ms debounce - matches original app.js
+        
+        // Box selection - DEBOUNCED
+        cy.on('boxend', debounce(() => {
             const selected = cy.nodes(':selected');
             if (selected.length > 1) {
                 InfoPanel.showMultiSelect(selected);
             }
             DistributionsComm.sendSelectionUpdate();
-        });
-        
-        // Box selection
-        cy.on('boxend', () => {
-            const selected = cy.nodes(':selected');
-            if (selected.length > 1) {
-                InfoPanel.showMultiSelect(selected);
-            }
-            DistributionsComm.sendSelectionUpdate();
-        });
+        }, 100));
     },
 
     /**
@@ -249,7 +271,7 @@ const CytoscapeManager = {
     },
 
     /**
-     * Update node styling based on metrics
+     * Update styling based on current metric selections
      */
     updateStyle() {
         if (!State.cy || State.performanceMode) return;
@@ -258,9 +280,7 @@ const CytoscapeManager = {
         const colorMetric = document.getElementById('node-color-metric')?.value;
         const gradientName = document.getElementById('node-color-gradient')?.value || 'spectral';
         
-        if (!sizeMetric && !colorMetric) return;
-        
-        // Calculate ranges for size metric
+        // Update size range
         if (sizeMetric) {
             const values = State.cy.nodes()
                 .map(n => n.data(sizeMetric))
@@ -273,7 +293,7 @@ const CytoscapeManager = {
             }
         }
         
-        // Calculate ranges for color metric
+        // Update color range
         if (colorMetric) {
             const values = State.cy.nodes()
                 .map(n => n.data(colorMetric))

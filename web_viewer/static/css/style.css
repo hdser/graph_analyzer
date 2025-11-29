@@ -68,7 +68,7 @@ body {
 
 .app-title {
     font-size: 18px;
-    font-weight: 600;
+    font-weight: 800;
     color: #4A90E2;
     letter-spacing: 0.5px;
 }
@@ -459,7 +459,10 @@ select:focus {
     touch-action: none;
 }
 
-/* RIGHT INFO PANEL */
+/* ==========================================================================
+   RIGHT INFO PANEL - FIXED FOR PROPER SCROLLING
+   ========================================================================== */
+
 .info-panel-right {
     position: absolute;
     top: 0;
@@ -472,6 +475,7 @@ select:focus {
     display: flex;
     flex-direction: column;
     box-shadow: -2px 0 10px rgba(0, 0, 0, 0.5);
+    overflow: hidden; /* CRITICAL: Panel doesn't scroll, children do */
     /* GPU acceleration */
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
@@ -485,6 +489,7 @@ select:focus {
     justify-content: space-between;
     align-items: center;
     background: #0a0a0a;
+    flex-shrink: 0; /* Don't shrink header */
 }
 
 .info-header h3 {
@@ -515,6 +520,7 @@ select:focus {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    flex-shrink: 0;
 }
 
 #node-id {
@@ -541,6 +547,7 @@ select:focus {
     display: flex;
     gap: 10px;
     border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
 }
 
 .info-actions .secondary-btn {
@@ -555,6 +562,7 @@ select:focus {
     display: flex;
     background: #0a0a0a;
     border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
 }
 
 .tab-btn {
@@ -573,17 +581,28 @@ select:focus {
     border-bottom-color: #4A90E2;
 }
 
+/* Node info panel */
+#node-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* CRITICAL for flex child scrolling */
+    overflow: hidden;
+}
+
 .info-content {
     flex: 1;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-height: 0; /* CRITICAL */
 }
 
 .tab-content {
     flex: 1;
     overflow-y: auto;
     padding: 20px;
+    min-height: 0; /* CRITICAL */
 }
 
 /* Metrics */
@@ -667,9 +686,21 @@ select:focus {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
 }
 
-/* Multi-selection info */
+/* ==========================================================================
+   MULTI-INFO PANEL - FIXED FOR SCROLLING
+   ========================================================================== */
+
+#multi-info {
+    flex: 1; /* CRITICAL: Take all remaining space */
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* CRITICAL: Allow shrinking below content size */
+    overflow: hidden;
+}
+
 .info-multi-header {
     padding: 15px 20px;
     border-bottom: 1px solid #2a2a2a;
@@ -677,6 +708,7 @@ select:focus {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0; /* Don't shrink */
 }
 
 .info-multi-header h3 {
@@ -690,23 +722,224 @@ select:focus {
     gap: 8px;
 }
 
+/* Multi-select summary - fixed height */
 .multi-summary {
-    padding: 10px 20px;
+    padding: 12px 20px;
+    background: #0f0f0f;
     border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0; /* Don't shrink */
 }
 
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+.summary-row span:first-child {
+    color: #808080;
+}
+
+.summary-row span:last-child {
+    color: #4A90E2;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+/* Origin/Hop Info Display */
+.origin-info-box {
+    padding: 8px 20px;
+    background: linear-gradient(90deg, #1a2a1a 0%, #0a0a0a 100%);
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 12px;
+    color: #4A90E2;
+    font-family: monospace;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0; /* Don't shrink */
+}
+
+.origin-info-box .hop-label {
+    color: #52c41a;
+    font-weight: 600;
+}
+
+/* Navigation Bar */
+.nav-bar {
+    display: flex;
+    gap: 6px;
+    padding: 10px 20px;
+    background: #0a0a0a;
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0; /* Don't shrink */
+}
+
+.nav-btn {
+    flex: 1;
+    padding: 8px 10px;
+    font-size: 11px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    color: #a0a0a0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.nav-btn:hover:not(:disabled) {
+    background: #2a2a2a;
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
+.nav-btn:active:not(:disabled) {
+    background: #4A90E2;
+    color: #fff;
+}
+
+.nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Multi details header */
 .multi-details-header {
     padding: 10px 20px;
     font-size: 12px;
     color: #4A90E2;
     font-weight: 600;
     border-bottom: 1px solid #2a2a2a;
+    background: #0f0f0f;
+    flex-shrink: 0; /* Don't shrink */
 }
 
+/* CRITICAL: Multi metrics list - THIS IS THE SCROLLABLE AREA */
 #multi-metrics-list {
+    flex: 1; /* Take remaining space */
+    overflow-y: auto; /* Enable scrolling */
+    min-height: 0; /* CRITICAL for flex scrolling */
+    padding: 10px 20px 20px 20px;
+}
+
+/* Multi metric groups */
+.multi-metric-group {
+    padding: 10px 0;
+    border-bottom: 1px solid #1a1a1a;
+}
+
+.multi-metric-group:last-child {
+    border-bottom: none;
+}
+
+.multi-metric-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #b0b0b0;
+    margin-bottom: 5px;
+    text-transform: capitalize;
+}
+
+.multi-metric-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    color: #707070;
+}
+
+.multi-metric-stats span {
+    background: #0a0a0a;
+    padding: 3px 8px;
+    border-radius: 3px;
+}
+
+/* Multi-select sections (for new navigation UI) */
+.multi-section {
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.multi-section:last-child {
+    border-bottom: none;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.multi-section-header {
+    padding: 10px 20px;
+    font-size: 12px;
+    color: #4A90E2;
+    font-weight: 600;
+    background: #0f0f0f;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.mini-btn {
+    padding: 3px 8px;
+    font-size: 10px;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 3px;
+    color: #808080;
+    cursor: pointer;
+}
+
+.mini-btn:hover {
+    background: #3a3a3a;
+    color: #4A90E2;
+    border-color: #4A90E2;
+}
+
+/* Selected nodes list */
+.selected-nodes-list {
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 5px 20px;
+    background: #0a0a0a;
+}
+
+.selected-node-item {
+    padding: 4px 8px;
+    font-size: 10px;
+    font-family: monospace;
+    color: #808080;
+    cursor: pointer;
+    border-radius: 3px;
+    margin: 2px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.selected-node-item:hover {
+    background: #1a1a1a;
+    color: #4A90E2;
+}
+
+/* Scrollable area for multi-info content */
+.multi-scroll-area {
     flex: 1;
     overflow-y: auto;
-    padding: 10px 20px 20px 20px;
+    min-height: 0; /* Important for flex child scrolling */
+}
+
+/* No neighbors message */
+.no-neighbors {
+    padding: 15px;
+    text-align: center;
+    color: #505050;
+    font-size: 11px;
+    font-style: italic;
 }
 
 /* Loading overlay */
@@ -1115,4 +1348,15 @@ select:focus {
     font-style: italic;
     text-align: center;
     padding: 10px;
+}
+
+/* Origin Info Display (legacy) */
+.origin-info {
+    padding: 8px 20px;
+    background: #0f0f0f;
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 11px;
+    color: #4A90E2;
+    font-family: monospace;
+    flex-shrink: 0;
 }

@@ -73,12 +73,16 @@ class AnomalyEngine:
     # Threshold for automatic chunked processing
     CHUNKED_THRESHOLD = 20000
     
-    # Maximum nodes for LOF (O(nÂ²) complexity)
+    # Maximum nodes for LOF (O(n²) complexity)
     MAX_NODES_LOF = 50000
+    
+    # Maximum nodes for One-Class SVM (O(n² × d) to O(n³) complexity)
+    MAX_NODES_OCSVM = 20000
     
     def __init__(
         self,
         max_nodes_for_lof: int = 50000,
+        max_nodes_for_ocsvm: int = 20000,
         n_jobs: int = -1,
         verbose: bool = True,
     ):
@@ -87,10 +91,12 @@ class AnomalyEngine:
         
         Args:
             max_nodes_for_lof: Maximum nodes for LOF algorithm
+            max_nodes_for_ocsvm: Maximum nodes for One-Class SVM algorithm
             n_jobs: Number of parallel jobs (-1 for all CPUs)
             verbose: Print progress information
         """
         self.max_nodes_for_lof = max_nodes_for_lof
+        self.max_nodes_for_ocsvm = max_nodes_for_ocsvm
         self.n_jobs = n_jobs
         self.verbose = verbose
         
@@ -114,7 +120,8 @@ class AnomalyEngine:
         Args:
             df: DataFrame with node data
             metrics: List of metric column names to analyze
-            algorithm: Algorithm name (zscore, iqr, isolation_forest, lof, dbscan, mahalanobis)
+            algorithm: Algorithm name (zscore, iqr, isolation_forest, lof, dbscan, 
+                      mahalanobis, pca_reconstruction, one_class_svm)
             parameters: Algorithm-specific parameters (optional)
             config: Metric preprocessing configuration (optional)
             algorithm_config: Full algorithm configuration (optional, overrides algorithm/parameters)
@@ -157,8 +164,15 @@ class AnomalyEngine:
         # Check LOF size limit
         if algorithm == "lof" and len(df) > self.max_nodes_for_lof:
             warnings.warn(
-                f"LOF with {len(df)} nodes may be slow (O(nÂ²)). "
+                f"LOF with {len(df)} nodes may be slow (O(n²)). "
                 f"Consider using isolation_forest or sampling."
+            )
+        
+        # Check One-Class SVM size limit
+        if algorithm == "one_class_svm" and len(df) > self.max_nodes_for_ocsvm:
+            warnings.warn(
+                f"One-Class SVM with {len(df)} nodes may be slow (O(n² × d) to O(n³)). "
+                f"Consider using isolation_forest, pca_reconstruction, or sampling."
             )
         
         # Check for group-aware detection
@@ -538,6 +552,10 @@ class AnomalyEngine:
         # Single metric
         if n_metrics == 1:
             return "iqr"
+        
+        # Medium-sized graphs with many features - PCA is good
+        if n_nodes > 10000 and n_metrics >= 5:
+            return "pca_reconstruction"
         
         # Moderate size, multiple metrics
         if n_nodes > 10000:

@@ -73,18 +73,20 @@
         .view-tabs {
             display: flex;
             border-bottom: 1px solid #2a2a2a;
+            flex-wrap: wrap;
         }
 
         .view-tab {
             flex: 1;
-            padding: 12px 10px;
+            padding: 12px 8px;
             background: none;
             border: none;
             color: #808080;
-            font-size: 12px;
+            font-size: 11px;
             cursor: pointer;
             border-bottom: 2px solid transparent;
             transition: all 0.2s;
+            min-width: 60px;
         }
 
         .view-tab:hover {
@@ -133,8 +135,8 @@
             white-space: nowrap;
         }
 
-        /* Scatter plot config panel */
-        .scatter-config {
+        /* Config panels (scatter, anomaly, pca) */
+        .scatter-config, .anomaly-config, .pca-config {
             padding: 15px;
             display: none;
             flex-direction: column;
@@ -142,11 +144,11 @@
             overflow-y: auto;
         }
 
-        .scatter-config.active {
+        .scatter-config.active, .anomaly-config.active, .pca-config.active {
             display: flex;
         }
 
-        .scatter-config h4 {
+        .scatter-config h4, .anomaly-config h4, .pca-config h4 {
             font-size: 12px;
             color: #4A90E2;
             margin-bottom: 12px;
@@ -165,7 +167,7 @@
             margin-bottom: 4px;
         }
 
-        .config-row select {
+        .config-row select, .config-row input[type="number"], .config-row input[type="text"] {
             width: 100%;
             padding: 8px 10px;
             background: #0a0a0a;
@@ -175,7 +177,7 @@
             font-size: 12px;
         }
 
-        .config-row select:focus {
+        .config-row select:focus, .config-row input:focus {
             outline: none;
             border-color: #4A90E2;
         }
@@ -189,6 +191,67 @@
         .config-row-inline .config-row {
             flex: 1;
             margin-bottom: 0;
+        }
+
+        .checkbox-list {
+            height: 150px;
+            min-height: 150px;
+            max-height: 150px;
+            overflow-y: auto;
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            padding: 8px;
+        }
+
+        .metric-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            cursor: pointer;
+            font-size: 12px;
+            border-radius: 3px;
+        }
+
+        .metric-checkbox:hover {
+            background: #1a1a1a;
+        }
+
+        .metric-checkbox input {
+            accent-color: #4A90E2;
+        }
+
+        .param-input {
+            width: 100%;
+            padding: 6px 8px;
+            background: #0a0a0a;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 12px;
+        }
+
+        .algorithm-description {
+            font-size: 11px;
+            color: #808080;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #0a0a0a;
+            border-radius: 4px;
+            line-height: 1.5;
+        }
+
+        .algorithm-description p {
+            margin-bottom: 5px;
+        }
+
+        .algorithm-description .complexity {
+            color: #faad14;
+        }
+
+        .algorithm-description .multivariate {
+            color: #52c41a;
         }
 
         /* Main content area */
@@ -449,213 +512,39 @@
             font-size: 10px;
             word-break: break-all;
             margin-bottom: 8px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .selected-node-card .stat-row {
-            padding: 2px 0;
         }
 
         .scatter-stats {
-            padding: 15px 20px;
+            padding: 10px 20px;
             background: #0a0a0a;
             border-top: 1px solid #2a2a2a;
             display: flex;
             gap: 30px;
-            font-size: 12px;
-            flex-wrap: wrap;
+            flex-shrink: 0;
         }
 
         .scatter-stat {
-            display: flex;
-            gap: 8px;
+            font-size: 12px;
         }
 
         .scatter-stat-label {
             color: #808080;
+            margin-right: 8px;
         }
 
         .scatter-stat-value {
-            color: #4A90E2;
+            color: #e0e0e0;
             font-family: monospace;
             font-weight: 600;
         }
 
-        /* Empty state */
-        .empty-state {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: #808080;
-            text-align: center;
-            padding: 40px;
-        }
-
-        .empty-state h3 {
-            font-size: 18px;
-            margin-bottom: 10px;
-            color: #606060;
-        }
-
-        .empty-state p {
-            font-size: 14px;
-            max-width: 400px;
-        }
-
-        /* Loading state */
-        .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 40px;
-            color: #808080;
-        }
-
-        /* No data state */
-        .no-data {
-            padding: 40px;
-            text-align: center;
-            color: #808080;
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #0a0a0a;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #3a3a3a;
-            border-radius: 3px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #4a4a4a;
-        }
-
-        /* Responsive */
-        @media (max-width: 1000px) {
-            .chart-body {
-                flex-direction: column;
-            }
-            .stats-panel {
-                width: 100%;
-            }
-            .scatter-info-panel {
-                width: 100%;
-                border-left: none;
-                border-top: 1px solid #2a2a2a;
-            }
-        }
-
-        /* ==========================================================================
-           ANOMALY DETECTION STYLES
-           ========================================================================== */
-
-        .anomaly-config {
-            padding: 15px;
-            display: none;
-            flex-direction: column;
-            flex: 1;
-            overflow-y: auto;
-        }
-
-        .anomaly-config.active {
-            display: flex;
-        }
-
-        .anomaly-config h4 {
-            font-size: 12px;
-            color: #4A90E2;
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .algorithm-description {
-            font-size: 11px;
-            color: #808080;
-            background: #0a0a0a;
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 15px;
-            border-left: 3px solid #4A90E2;
-        }
-
-        .algorithm-description .complexity {
-            margin-top: 5px;
-            color: #52c41a;
-        }
-
-        .algorithm-description .multivariate {
-            margin-top: 3px;
-            font-style: italic;
-        }
-
-        .checkbox-list {
-            height: 150px;
-            min-height: 150px;
-            max-height: 150px;
-            overflow-y: auto;
-            background: #0a0a0a;
-            border: 1px solid #2a2a2a;
-            border-radius: 4px;
-            padding: 8px;
-        }
-
-        .metric-checkbox {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 8px;
-            cursor: pointer;
-            font-size: 12px;
-            border-radius: 3px;
-        }
-
-        .metric-checkbox:hover {
-            background: #1a1a1a;
-        }
-
-        .metric-checkbox input {
-            accent-color: #4A90E2;
-        }
-
-        .param-input {
-            width: 100%;
-            padding: 6px 10px;
-            background: #0a0a0a;
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            color: #e0e0e0;
-            font-size: 12px;
-        }
-
-        .param-input:focus {
-            outline: none;
-            border-color: #4A90E2;
-        }
-
-        #anomaly-progress {
-            text-align: center;
-            color: #808080;
-            padding: 10px;
-        }
-
-        /* Anomaly results area */
+        /* Anomaly detection area */
         .anomaly-area {
-            display: none;
             flex: 1;
-            padding: 20px;
-            overflow-y: auto;
+            display: none;
             flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
         }
 
         .anomaly-area.active {
@@ -666,70 +555,70 @@
             background: #1a1a1a;
             border: 1px solid #2a2a2a;
             border-radius: 8px;
-            overflow: hidden;
             flex: 1;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         .anomaly-actions {
             display: flex;
-            gap: 8px;
+            gap: 10px;
         }
 
         .anomaly-body {
-            padding: 20px;
             flex: 1;
-            display: flex;
-            flex-direction: column;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .anomaly-empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #808080;
+        }
+
+        .anomaly-empty-state h3 {
+            color: #e0e0e0;
+            margin-bottom: 10px;
         }
 
         .anomaly-summary {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
             margin-bottom: 20px;
-            display: none;
-        }
-
-        .anomaly-summary.visible {
-            display: grid;
+            padding: 15px;
+            background: #0a0a0a;
+            border-radius: 8px;
         }
 
         .summary-stat {
-            background: #0a0a0a;
-            padding: 15px;
-            border-radius: 6px;
             text-align: center;
+            min-width: 100px;
         }
 
         .summary-stat .stat-label {
             display: block;
-            font-size: 11px;
+            font-size: 10px;
             color: #808080;
-            margin-bottom: 5px;
             text-transform: uppercase;
+            margin-bottom: 5px;
         }
 
         .summary-stat .stat-value {
-            display: block;
             font-size: 18px;
-            color: #4A90E2;
             font-weight: 600;
+            color: #4A90E2;
         }
 
         .anomaly-chart-container {
             height: 250px;
-            min-height: 200px;
             margin-bottom: 20px;
         }
 
         .anomaly-table-container {
-            margin-top: 20px;
             flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
         }
 
         .anomaly-table-header {
@@ -742,22 +631,20 @@
         .anomaly-table-header h4 {
             font-size: 14px;
             color: #e0e0e0;
-            margin: 0;
         }
 
         .anomaly-table-controls {
             display: flex;
-            gap: 10px;
+            gap: 15px;
             align-items: center;
             font-size: 12px;
-            color: #808080;
         }
 
         .anomaly-table-wrapper {
-            flex: 1;
+            max-height: 300px;
             overflow-y: auto;
-            max-height: 400px;
-            min-height: 200px;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
         }
 
         #anomaly-table {
@@ -766,55 +653,196 @@
             font-size: 12px;
         }
 
-        #anomaly-table th {
-            background: #0a0a0a;
-            padding: 10px;
+        #anomaly-table th, #anomaly-table td {
+            padding: 10px 15px;
             text-align: left;
-            color: #808080;
-            font-weight: 500;
-            position: sticky;
-            top: 0;
+            border-bottom: 1px solid #2a2a2a;
         }
 
-        #anomaly-table td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #2a2a2a;
+        #anomaly-table th {
+            background: #0a0a0a;
+            color: #808080;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 10px;
+            position: sticky;
+            top: 0;
         }
 
         #anomaly-table tr:hover {
             background: #252525;
         }
 
-        .node-id-cell {
-            font-family: monospace;
+        #anomaly-table .anomaly-row {
+            background: #2a1a1a;
+        }
+
+        #anomaly-table .anomaly-row:hover {
+            background: #3a2a2a;
+        }
+
+        .anomaly-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
             font-size: 10px;
-            color: #52c41a;
+            background: #ff4d4f33;
+            color: #ff4d4f;
         }
 
-        .btn-tiny {
-            padding: 3px 8px;
-            font-size: 10px;
-            background: #2a2a2a;
-            border: 1px solid #3a3a3a;
-            border-radius: 3px;
-            color: #e0e0e0;
-            cursor: pointer;
+        /* PCA Analysis area */
+        .pca-area {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
         }
 
-        .btn-tiny:hover {
-            background: #3a3a3a;
-            border-color: #4A90E2;
+        .pca-area.active {
+            display: flex;
         }
 
-        .anomaly-empty-state {
+        .pca-results-card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .pca-body {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .pca-empty-state {
             text-align: center;
             padding: 60px 20px;
             color: #808080;
         }
 
-        .anomaly-empty-state h3 {
-            color: #606060;
+        .pca-empty-state h3 {
+            color: #e0e0e0;
             margin-bottom: 10px;
+        }
+
+        .pca-summary {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            padding: 15px;
+            background: #0a0a0a;
+            border-radius: 8px;
+        }
+
+        .pca-charts-row {
+            display: flex;
+            gap: 20px;
+            min-height: 300px;
+        }
+
+        .pca-chart-panel {
+            flex: 1;
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pca-chart-panel h4 {
+            font-size: 12px;
+            color: #4A90E2;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .pca-chart-container {
+            flex: 1;
+            min-height: 250px;
+            position: relative;
+        }
+
+        .pca-loadings-table {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .pca-loadings-table table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .pca-loadings-table th, .pca-loadings-table td {
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .pca-loadings-table th {
+            background: #1a1a1a;
+            color: #808080;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 10px;
+            position: sticky;
+            top: 0;
+        }
+
+        .loading-bar {
+            height: 8px;
+            background: #2a2a2a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .loading-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+        }
+
+        .loading-bar-fill.positive {
+            background: #52c41a;
+        }
+
+        .loading-bar-fill.negative {
+            background: #ff4d4f;
+        }
+
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #808080;
+            padding: 40px;
+        }
+
+        .empty-state h3 {
+            color: #e0e0e0;
+            margin-bottom: 10px;
+        }
+
+        .no-data {
+            padding: 20px;
+            text-align: center;
+            color: #808080;
+        }
+
+        .loading {
+            padding: 20px;
+            text-align: center;
+            color: #808080;
         }
     </style>
 </head>
@@ -835,7 +863,8 @@
 
             <div class="view-tabs">
                 <button class="view-tab active" data-view="histograms">Histograms</button>
-                <button class="view-tab" data-view="scatter">Scatter Plot</button>
+                <button class="view-tab" data-view="scatter">Scatter</button>
+                <button class="view-tab" data-view="pca">PCA</button>
                 <button class="view-tab" data-view="anomaly">Anomaly</button>
             </div>
             
@@ -887,6 +916,53 @@
                     <strong>Pan:</strong> Click and drag<br>
                     <strong>Select:</strong> Click points<br>
                     <strong>Reset:</strong> Double-click
+                </div>
+            </div>
+
+            <!-- PCA config -->
+            <div class="pca-config" id="pca-config">
+                <h4>PCA Configuration</h4>
+                
+                <div class="config-row">
+                    <label>Number of Components</label>
+                    <select id="pca-n-components">
+                        <option value="2">2 Components</option>
+                        <option value="3">3 Components</option>
+                        <option value="5">5 Components</option>
+                        <option value="10">10 Components</option>
+                        <option value="auto" selected>Auto (95% variance)</option>
+                    </select>
+                </div>
+                
+                <div class="config-row">
+                    <label>Standardize Features</label>
+                    <select id="pca-standardize">
+                        <option value="true" selected>Yes (recommended)</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+                
+                <h4 style="margin-top: 15px;">Metrics to Include</h4>
+                <div id="pca-metrics-list" class="checkbox-list">
+                    <div style="color: #808080; font-size: 11px; padding: 10px;">Loading metrics...</div>
+                </div>
+                
+                <button class="btn btn-primary" id="run-pca-btn" style="width:100%; margin-top:20px;">
+                    Run PCA Analysis
+                </button>
+                
+                <div id="pca-progress" style="display: none; margin-top: 10px; font-size: 11px; color: #808080;">
+                    Running PCA analysis...
+                </div>
+                
+                <div style="margin-top: 15px; font-size: 11px; color: #808080;">
+                    <strong>PCA</strong> (Principal Component Analysis) reduces dimensionality while preserving variance. Use it to:
+                    <ul style="margin-top: 8px; padding-left: 15px; line-height: 1.6;">
+                        <li>Visualize high-dimensional data</li>
+                        <li>Find feature correlations</li>
+                        <li>Identify important metrics</li>
+                        <li>Detect outliers</li>
+                    </ul>
                 </div>
             </div>
 
@@ -975,8 +1051,76 @@
                             <span class="scatter-stat-value" id="scatter-correlation">-</span>
                         </div>
                         <div class="scatter-stat">
-                            <span class="scatter-stat-label">RÃ‚Â²:</span>
+                            <span class="scatter-stat-label">R²:</span>
                             <span class="scatter-stat-value" id="scatter-r2">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PCA Analysis view -->
+            <div class="pca-area" id="pca-area">
+                <div class="pca-results-card">
+                    <div class="chart-header">
+                        <span class="chart-title" id="pca-results-title">PCA Analysis Results</span>
+                        <div class="pca-actions">
+                            <button class="btn btn-small" id="export-pca-btn" disabled>Export Results</button>
+                            <button class="btn btn-small" id="apply-pca-btn" disabled>Apply to Graph</button>
+                        </div>
+                    </div>
+                    
+                    <div class="pca-body">
+                        <!-- Empty state shown initially -->
+                        <div class="pca-empty-state" id="pca-empty-state">
+                            <h3>Run PCA Analysis</h3>
+                            <p>Select metrics from the sidebar and click "Run PCA Analysis" to perform dimensionality reduction and visualize your data.</p>
+                        </div>
+
+                        <!-- Summary stats (hidden until results) -->
+                        <div class="pca-summary" id="pca-summary" style="display: none;">
+                            <div class="summary-stat">
+                                <span class="stat-label">Components</span>
+                                <span class="stat-value" id="pca-n-components-result">-</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span class="stat-label">Variance Explained</span>
+                                <span class="stat-value" id="pca-variance-explained">-</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span class="stat-label">Features Used</span>
+                                <span class="stat-value" id="pca-features-used">-</span>
+                            </div>
+                            <div class="summary-stat">
+                                <span class="stat-label">Samples</span>
+                                <span class="stat-value" id="pca-samples">-</span>
+                            </div>
+                        </div>
+
+                        <!-- Charts row -->
+                        <div class="pca-charts-row" id="pca-charts-row" style="display: none;">
+                            <!-- Scatter plot of first 2 components -->
+                            <div class="pca-chart-panel" style="flex: 2;">
+                                <h4>Principal Components Plot</h4>
+                                <div class="pca-chart-container">
+                                    <canvas id="pca-scatter-chart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <!-- Explained variance (scree plot) -->
+                            <div class="pca-chart-panel" style="flex: 1;">
+                                <h4>Explained Variance</h4>
+                                <div class="pca-chart-container">
+                                    <canvas id="pca-variance-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Loadings table -->
+                        <div class="pca-chart-panel" id="pca-loadings-panel" style="display: none;">
+                            <h4>Feature Loadings (Component Contributions)</h4>
+                            <div class="pca-loadings-table" id="pca-loadings-table">
+                                <!-- Populated dynamically -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1002,7 +1146,7 @@
                         </div>
 
                         <!-- Summary stats (hidden until results) -->
-                        <div class="anomaly-summary" id="anomaly-summary">
+                        <div class="anomaly-summary" id="anomaly-summary" style="display: none;">
                             <div class="summary-stat">
                                 <span class="stat-label">Algorithm</span>
                                 <span class="stat-value" id="result-algorithm">-</span>
@@ -1019,10 +1163,6 @@
                                 <span class="stat-label">Time</span>
                                 <span class="stat-value" id="result-time">-</span>
                             </div>
-                            <div class="summary-stat" style="display:none;">
-                                <span class="stat-label">Groups</span>
-                                <span class="stat-value" id="result-groups">-</span>
-                            </div>
                         </div>
                         
                         <!-- Score distribution chart -->
@@ -1030,7 +1170,7 @@
                             <canvas id="anomaly-histogram"></canvas>
                         </div>
                         
-                        <!-- Anomalies table with pagination -->
+                        <!-- Anomalies table -->
                         <div class="anomaly-table-container" id="anomaly-table-container" style="display: none;">
                             <div class="anomaly-table-header">
                                 <h4>All Nodes (Sorted by Anomaly Score)</h4>

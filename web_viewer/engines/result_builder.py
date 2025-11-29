@@ -16,6 +16,49 @@ from scipy import stats as scipy_stats
 from .anomaly_config import ScoreNormalization, ThresholdMethod
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """
+    Safely convert a value to a JSON-compatible float.
+    
+    Handles NaN, inf, -inf, and numpy types.
+    """
+    if value is None:
+        return default
+    try:
+        f = float(value)
+        if np.isnan(f) or np.isinf(f):
+            return default
+        return f
+    except (ValueError, TypeError):
+        return default
+
+
+def _sanitize_dict(d: Dict[str, Any], default: float = 0.0) -> Dict[str, Any]:
+    """
+    Recursively sanitize a dictionary to ensure all float values are JSON-compatible.
+    """
+    result = {}
+    for key, value in d.items():
+        if isinstance(value, dict):
+            result[key] = _sanitize_dict(value, default)
+        elif isinstance(value, (float, np.floating)):
+            result[key] = _safe_float(value, default)
+        elif isinstance(value, (int, np.integer)):
+            result[key] = int(value)
+        elif isinstance(value, np.ndarray):
+            result[key] = [_safe_float(v, default) for v in value.flatten()]
+        elif isinstance(value, list):
+            result[key] = [
+                _sanitize_dict(v, default) if isinstance(v, dict)
+                else _safe_float(v, default) if isinstance(v, (float, np.floating))
+                else v
+                for v in value
+            ]
+        else:
+            result[key] = value
+    return result
+
+
 @dataclass
 class ThresholdInfo:
     """Information about how the anomaly threshold was determined."""
@@ -25,12 +68,12 @@ class ThresholdInfo:
     auto_reason: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        return _sanitize_dict({
             'method': self.method,
             'value': self.value,
             'percentile': self.percentile,
             'auto_reason': self.auto_reason,
-        }
+        })
 
 
 @dataclass
@@ -45,15 +88,15 @@ class PreprocessingStats:
     final_range: Tuple[float, float]
     
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        return _sanitize_dict({
             'original_dtype': self.original_dtype,
             'n_missing': self.n_missing,
             'n_inf': self.n_inf,
             'n_zeros': self.n_zeros,
             'transform_applied': self.transform_applied,
-            'original_range': list(self.original_range),
-            'final_range': list(self.final_range),
-        }
+            'original_range': [_safe_float(v) for v in self.original_range],
+            'final_range': [_safe_float(v) for v in self.final_range],
+        })
 
 
 @dataclass
@@ -69,7 +112,7 @@ class GroupAnomalyStats:
     top_anomalies: List[Dict[str, Any]]
     
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        return _sanitize_dict({
             'group_value': self.group_value,
             'n_samples': self.n_samples,
             'n_anomalies': self.n_anomalies,
@@ -78,7 +121,7 @@ class GroupAnomalyStats:
             'std_score': self.std_score,
             'threshold_used': self.threshold_used,
             'top_anomalies': self.top_anomalies,
-        }
+        })
 
 
 @dataclass
@@ -128,26 +171,32 @@ class AnomalyResult:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
+        # Sanitize scores dict
+        sanitized_scores = {k: _safe_float(v) for k, v in self.scores.items()}
+        
         result = {
-            'scores': self.scores,
+            'scores': sanitized_scores,
             'binary_labels': self.binary_labels,
             'algorithm': self.algorithm,
-            'parameters': self.parameters,
+            'parameters': _sanitize_dict(self.parameters),
             'metrics_used': self.metrics_used,
             'threshold_info': self.threshold_info.to_dict(),
             'n_anomalies': self.n_anomalies,
             'n_total': self.n_total,
-            'anomaly_rate': self.anomaly_rate,
-            'computation_time': self.computation_time,
-            'statistics': self.statistics,
-            'top_anomalies': self.top_anomalies,
+            'anomaly_rate': _safe_float(self.anomaly_rate),
+            'computation_time': _safe_float(self.computation_time),
+            'statistics': _sanitize_dict(self.statistics),
+            'top_anomalies': [_sanitize_dict(a) for a in self.top_anomalies],
         }
         
         if self.raw_scores is not None:
-            result['raw_scores'] = self.raw_scores
+            result['raw_scores'] = {k: _safe_float(v) for k, v in self.raw_scores.items()}
         
         if self.per_metric_scores is not None:
-            result['per_metric_scores'] = self.per_metric_scores
+            result['per_metric_scores'] = {
+                metric: {k: _safe_float(v) for k, v in scores.items()}
+                for metric, scores in self.per_metric_scores.items()
+            }
         
         if self.group_results is not None:
             result['group_results'] = {
@@ -217,12 +266,16 @@ class ResultBuilder:
         Returns:
             Complete AnomalyResult object
         """
+        # Clean raw scores first - replace NaN/inf with 0
+        raw_scores = np.asarray(raw_scores, dtype=np.float64)
+        raw_scores = np.nan_to_num(raw_scores, nan=0.0, posinf=0.0, neginf=0.0)
+        
         # Normalize scores
         normalized_scores = self._normalize_scores(raw_scores, score_normalization)
         
-        # Build dictionaries
+        # Build dictionaries with safe float conversion
         score_dict = {
-            avatar: float(score) 
+            avatar: _safe_float(score) 
             for avatar, score in zip(avatars, normalized_scores)
         }
         
@@ -233,7 +286,7 @@ class ResultBuilder:
         
         # Raw scores dict (before normalization)
         raw_score_dict = {
-            avatar: float(score) 
+            avatar: _safe_float(score) 
             for avatar, score in zip(avatars, raw_scores)
         }
         
@@ -255,9 +308,11 @@ class ResultBuilder:
         if per_metric_scores is not None:
             per_metric_score_dicts = {}
             for metric, scores in per_metric_scores.items():
+                # Clean per-metric scores
+                clean_scores = np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
                 per_metric_score_dicts[metric] = {
-                    avatar: float(score) 
-                    for avatar, score in zip(avatars, scores)
+                    avatar: _safe_float(score) 
+                    for avatar, score in zip(avatars, clean_scores)
                 }
         
         return AnomalyResult(
@@ -269,7 +324,7 @@ class ResultBuilder:
             threshold_info=threshold_info,
             n_anomalies=int(np.sum(anomaly_mask)),
             n_total=len(avatars),
-            computation_time=computation_time,
+            computation_time=_safe_float(computation_time),
             statistics=statistics,
             top_anomalies=top_anomalies,
             raw_scores=raw_score_dict,
@@ -295,12 +350,16 @@ class ResultBuilder:
         """
         scores = np.asarray(scores, dtype=np.float64)
         
+        # Clean NaN/inf values first
+        scores = np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
+        
         if method == ScoreNormalization.NONE:
             return scores
         
         if method == ScoreNormalization.RANK:
             # Percentile rank (0 to 1)
-            return scipy_stats.rankdata(scores, method='average') / len(scores)
+            ranked = scipy_stats.rankdata(scores, method='average') / len(scores)
+            return np.nan_to_num(ranked, nan=0.0, posinf=0.0, neginf=0.0)
         
         # Default: minmax normalization
         if np.std(scores) < 1e-10:
@@ -313,18 +372,23 @@ class ResultBuilder:
             return np.zeros_like(scores)
         
         normalized = (scores - min_val) / (max_val - min_val)
-        return np.clip(normalized, 0.0, 1.0)
+        normalized = np.clip(normalized, 0.0, 1.0)
+        return np.nan_to_num(normalized, nan=0.0, posinf=0.0, neginf=0.0)
     
     def _compute_statistics(self, scores: np.ndarray) -> Dict[str, Any]:
         """
         Compute summary statistics for anomaly scores.
         
         All operations are vectorized for performance.
+        All outputs are sanitized to be JSON-compatible.
         """
         scores = np.asarray(scores, dtype=np.float64)
         
-        # Handle empty or all-nan case
-        if len(scores) == 0 or np.all(np.isnan(scores)):
+        # Clean NaN/inf values
+        scores = np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Handle empty case
+        if len(scores) == 0:
             return {
                 'min': 0.0, 'max': 0.0, 'mean': 0.0, 'std': 0.0, 'median': 0.0,
                 'p25': 0.0, 'p75': 0.0, 'p90': 0.0, 'p95': 0.0, 'p99': 0.0,
@@ -334,19 +398,35 @@ class ResultBuilder:
         # Compute percentiles in single call
         percentiles = np.percentile(scores, [25, 50, 75, 90, 95, 99])
         
+        # Compute skewness and kurtosis with NaN handling
+        skewness = 0.0
+        kurtosis = 0.0
+        if len(scores) > 2:
+            try:
+                skew_val = scipy_stats.skew(scores)
+                skewness = _safe_float(skew_val, 0.0)
+            except Exception:
+                skewness = 0.0
+        if len(scores) > 3:
+            try:
+                kurt_val = scipy_stats.kurtosis(scores)
+                kurtosis = _safe_float(kurt_val, 0.0)
+            except Exception:
+                kurtosis = 0.0
+        
         return {
-            'min': float(np.min(scores)),
-            'max': float(np.max(scores)),
-            'mean': float(np.mean(scores)),
-            'std': float(np.std(scores)),
-            'median': float(percentiles[1]),
-            'p25': float(percentiles[0]),
-            'p75': float(percentiles[2]),
-            'p90': float(percentiles[3]),
-            'p95': float(percentiles[4]),
-            'p99': float(percentiles[5]),
-            'skewness': float(scipy_stats.skew(scores)) if len(scores) > 2 else 0.0,
-            'kurtosis': float(scipy_stats.kurtosis(scores)) if len(scores) > 3 else 0.0,
+            'min': _safe_float(np.min(scores)),
+            'max': _safe_float(np.max(scores)),
+            'mean': _safe_float(np.mean(scores)),
+            'std': _safe_float(np.std(scores)),
+            'median': _safe_float(percentiles[1]),
+            'p25': _safe_float(percentiles[0]),
+            'p75': _safe_float(percentiles[2]),
+            'p90': _safe_float(percentiles[3]),
+            'p95': _safe_float(percentiles[4]),
+            'p99': _safe_float(percentiles[5]),
+            'skewness': skewness,
+            'kurtosis': kurtosis,
         }
     
     def _build_threshold_info(
@@ -357,12 +437,14 @@ class ResultBuilder:
         anomaly_mask: np.ndarray,
     ) -> ThresholdInfo:
         """Build threshold information object."""
+        value = _safe_float(value)
+        
         if method == ThresholdMethod.PERCENTILE:
             actual_percentile = 100 * (1 - np.sum(anomaly_mask) / len(anomaly_mask))
             return ThresholdInfo(
                 method=method.value,
                 value=value,
-                percentile=actual_percentile,
+                percentile=_safe_float(actual_percentile),
             )
         elif method == ThresholdMethod.AUTO:
             # Compute what percentile the threshold corresponds to
@@ -374,7 +456,7 @@ class ResultBuilder:
             return ThresholdInfo(
                 method=method.value,
                 value=value,
-                percentile=percentile,
+                percentile=_safe_float(percentile),
                 auto_reason="Algorithm-determined threshold",
             )
         else:
@@ -412,7 +494,7 @@ class ResultBuilder:
             
             anomaly_info = {
                 'id': avatar,
-                'score': float(scores[idx]),
+                'score': _safe_float(scores[idx]),
                 'is_anomaly': bool(anomaly_mask[idx]),
                 'rank': len(top_anomalies) + 1,
             }
@@ -424,7 +506,7 @@ class ResultBuilder:
                     if metric in df.columns:
                         try:
                             val = df.iloc[row_idx][metric]
-                            anomaly_info[metric] = float(val) if pd.notna(val) else 0.0
+                            anomaly_info[metric] = _safe_float(val) if pd.notna(val) else 0.0
                         except (IndexError, KeyError):
                             anomaly_info[metric] = 0.0
             else:
@@ -433,7 +515,7 @@ class ResultBuilder:
                     for metric in metrics:
                         if metric in df.columns:
                             val = df.iloc[idx][metric]
-                            anomaly_info[metric] = float(val) if pd.notna(val) else 0.0
+                            anomaly_info[metric] = _safe_float(val) if pd.notna(val) else 0.0
                 except (IndexError, KeyError):
                     # Last resort - just add 0.0 for all metrics
                     for metric in metrics:
@@ -518,27 +600,27 @@ class ResultBuilder:
         total_samples = 0
         
         for group_key, result in group_results.items():
-            # Merge scores and labels
-            all_scores.update(result.scores)
+            # Merge scores and labels (sanitize scores)
+            all_scores.update({k: _safe_float(v) for k, v in result.scores.items()})
             all_labels.update(result.binary_labels)
             if result.raw_scores:
-                all_raw_scores.update(result.raw_scores)
+                all_raw_scores.update({k: _safe_float(v) for k, v in result.raw_scores.items()})
             
             # Collect group stats
             group_stats[group_key] = GroupAnomalyStats(
                 group_value=group_key,
                 n_samples=result.n_total,
                 n_anomalies=result.n_anomalies,
-                anomaly_rate=result.anomaly_rate,
-                mean_score=result.statistics.get('mean', 0.0),
-                std_score=result.statistics.get('std', 0.0),
-                threshold_used=result.threshold_info.value,
+                anomaly_rate=_safe_float(result.anomaly_rate),
+                mean_score=_safe_float(result.statistics.get('mean', 0.0)),
+                std_score=_safe_float(result.statistics.get('std', 0.0)),
+                threshold_used=_safe_float(result.threshold_info.value),
                 top_anomalies=result.top_anomalies[:5],  # Top 5 per group
             )
             
             # Add top anomalies from this group
             for item in result.top_anomalies:
-                item_copy = item.copy()
+                item_copy = _sanitize_dict(item.copy())
                 item_copy['group'] = group_key
                 all_top_anomalies.append(item_copy)
             
@@ -546,7 +628,7 @@ class ResultBuilder:
             total_samples += result.n_total
         
         # Sort all top anomalies by score and take top_n
-        all_top_anomalies.sort(key=lambda x: x['score'], reverse=True)
+        all_top_anomalies.sort(key=lambda x: x.get('score', 0), reverse=True)
         top_anomalies = all_top_anomalies[:top_n]
         
         # Recompute ranks
@@ -573,7 +655,7 @@ class ResultBuilder:
             threshold_info=threshold_info,
             n_anomalies=total_anomalies,
             n_total=total_samples,
-            computation_time=total_computation_time,
+            computation_time=_safe_float(total_computation_time),
             statistics=statistics,
             top_anomalies=top_anomalies,
             raw_scores=all_raw_scores if all_raw_scores else None,

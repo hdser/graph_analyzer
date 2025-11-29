@@ -122,50 +122,47 @@ const Metrics = {
 
     /**
      * Filter nodes by metric criteria
+     * Uses the same pattern as the original working implementation
      */
     filter() {
         if (!State.cy) return;
         
         const metric = document.getElementById('filter-metric').value;
-        const operator = document.getElementById('filter-operator').value;
-        const value = parseFloat(document.getElementById('filter-value').value);
-        
-        if (!metric) {
-            updateStatus('Select a metric to filter', 'error');
-            return;
+        const op = document.getElementById('filter-operator').value;
+        const rawVal = document.getElementById('filter-value').value;
+        const val = parseFloat(rawVal);
+
+        if (!metric || isNaN(val)) {
+            return updateStatus('Please select a metric and enter a numeric value', 'error');
         }
         
-        if (isNaN(value)) {
-            updateStatus('Enter a valid number', 'error');
-            return;
-        }
-        
-        let count = 0;
-        
+        updateStatus('Applying filter...', 'info');
+
         State.cy.batch(() => {
-            State.cy.nodes().forEach(node => {
-                const nodeValue = node.data(metric);
-                if (typeof nodeValue !== 'number') return;
-                
-                let matches = false;
-                switch (operator) {
-                    case 'gt': matches = nodeValue > value; break;
-                    case 'gte': matches = nodeValue >= value; break;
-                    case 'lt': matches = nodeValue < value; break;
-                    case 'lte': matches = nodeValue <= value; break;
-                    case 'eq': matches = nodeValue === value; break;
-                    case 'neq': matches = nodeValue !== value; break;
-                }
-                
-                if (matches) {
-                    node.select();
-                    count++;
+            State.cy.elements().unselect();
+            
+            // Use cy.nodes().filter() which returns a collection directly
+            const matches = State.cy.nodes().filter(n => {
+                const d = n.data(metric);
+                if (d === undefined) return false;
+                switch(op) {
+                    case 'gt': return d > val;
+                    case 'lt': return d < val;
+                    case 'eq': return d == val;  // Use loose equality for type coercion
+                    case 'gte': return d >= val;
+                    case 'lte': return d <= val;
+                    case 'neq': return d != val;
+                    default: return false;
                 }
             });
+            
+            if (matches.length > 0) {
+                matches.select();  // Select entire collection at once
+                updateStatus(`Selected ${matches.length} matching nodes`, 'success');
+            } else {
+                updateStatus('No nodes match criteria', 'info');
+            }
         });
-        
-        updateStatus(`Selected ${count} nodes matching filter`, 'success');
-        DistributionsComm.sendData();
     },
 
     /**
