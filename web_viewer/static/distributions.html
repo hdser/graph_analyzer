@@ -82,11 +82,11 @@
             background: none;
             border: none;
             color: #808080;
-            font-size: 11px;
+            font-size: 10px;
             cursor: pointer;
             border-bottom: 2px solid transparent;
             transition: all 0.2s;
-            min-width: 60px;
+            min-width: 50px;
         }
 
         .view-tab:hover {
@@ -135,8 +135,8 @@
             white-space: nowrap;
         }
 
-        /* Config panels (scatter, anomaly, pca) */
-        .scatter-config, .anomaly-config, .pca-config {
+        /* Config panels (scatter, anomaly, pca, composite) */
+        .scatter-config, .anomaly-config, .pca-config, .composite-config {
             padding: 15px;
             display: none;
             flex-direction: column;
@@ -144,11 +144,11 @@
             overflow-y: auto;
         }
 
-        .scatter-config.active, .anomaly-config.active, .pca-config.active {
+        .scatter-config.active, .anomaly-config.active, .pca-config.active, .composite-config.active {
             display: flex;
         }
 
-        .scatter-config h4, .anomaly-config h4, .pca-config h4 {
+        .scatter-config h4, .anomaly-config h4, .pca-config h4, .composite-config h4 {
             font-size: 12px;
             color: #4A90E2;
             margin-bottom: 12px;
@@ -248,10 +248,12 @@
 
         .algorithm-description .complexity {
             color: #faad14;
+            margin-top: 8px;
         }
 
         .algorithm-description .multivariate {
             color: #52c41a;
+            margin-top: 4px;
         }
 
         /* Main content area */
@@ -267,31 +269,34 @@
             background: #1a1a1a;
             border-bottom: 1px solid #2a2a2a;
             display: flex;
+            gap: 10px;
             align-items: center;
-            gap: 15px;
         }
 
         .toolbar-info {
+            flex: 1;
             font-size: 13px;
             color: #808080;
         }
 
-        .toolbar-info strong {
+        .toolbar-info span:first-child {
             color: #4A90E2;
+            font-weight: 600;
         }
 
         .btn {
             padding: 8px 16px;
-            background: #2a2a2a;
             border: 1px solid #3a3a3a;
             border-radius: 4px;
+            background: #252525;
             color: #e0e0e0;
-            font-size: 12px;
             cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
         }
 
         .btn:hover {
-            background: #3a3a3a;
+            background: #303030;
         }
 
         .btn-primary {
@@ -300,48 +305,61 @@
         }
 
         .btn-primary:hover {
-            background: #357ABD;
+            background: #357abd;
         }
 
         .btn-small {
-            padding: 4px 10px;
+            padding: 5px 10px;
             font-size: 11px;
+        }
+
+        .btn-tiny {
+            padding: 3px 8px;
+            font-size: 10px;
+            background: #252525;
+            border: 1px solid #3a3a3a;
+            border-radius: 3px;
+            color: #e0e0e0;
+            cursor: pointer;
+        }
+
+        .btn-tiny:hover {
+            background: #303030;
         }
 
         /* Charts area */
         .charts-area {
             flex: 1;
-            overflow-y: auto;
             padding: 20px;
+            overflow-y: auto;
             display: flex;
-            flex-direction: column;
-            gap: 25px;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-content: flex-start;
         }
 
         .chart-card {
+            width: calc(50% - 10px);
+            min-width: 400px;
+            max-height: 320px;
             background: #1a1a1a;
             border: 1px solid #2a2a2a;
             border-radius: 8px;
             overflow: hidden;
-            flex-shrink: 0;
-            height: 480px;
-            display: flex;
-            flex-direction: column;
         }
 
         .chart-header {
-            padding: 12px 20px;
-            background: #0a0a0a;
-            border-bottom: 1px solid #2a2a2a;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-shrink: 0;
+            padding: 10px 16px;
+            border-bottom: 1px solid #2a2a2a;
+            background: #151515;
         }
 
         .chart-title {
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 13px;
+            font-weight: 500;
             color: #4A90E2;
         }
 
@@ -351,9 +369,7 @@
             color: #808080;
             font-size: 18px;
             cursor: pointer;
-            padding: 0;
-            width: 24px;
-            height: 24px;
+            padding: 0 5px;
         }
 
         .chart-close:hover {
@@ -362,24 +378,19 @@
 
         .chart-body {
             display: flex;
-            gap: 20px;
-            padding: 20px;
-            flex: 1;
-            min-height: 0;
+            padding: 12px 15px;
         }
 
         .chart-container {
             flex: 1;
+            height: 250px;
             min-height: 250px;
-            position: relative;
         }
 
         .stats-panel {
-            width: 220px;
-            flex-shrink: 0;
-            font-size: 11px;
-            overflow-y: auto;
-            max-height: 100%;
+            width: 150px;
+            padding-left: 12px;
+            border-left: 1px solid #2a2a2a;
         }
 
         .stats-section {
@@ -390,17 +401,14 @@
             font-size: 10px;
             color: #808080;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
             margin-bottom: 8px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #2a2a2a;
         }
 
         .stat-row {
             display: flex;
             justify-content: space-between;
-            padding: 4px 0;
             font-size: 11px;
+            padding: 2px 0;
         }
 
         .stat-label {
@@ -410,21 +418,19 @@
         .stat-value {
             color: #e0e0e0;
             font-family: monospace;
-            font-weight: 600;
         }
 
         .percentile-bar {
             height: 6px;
-            background: #2a2a2a;
+            background: #252525;
             border-radius: 3px;
-            margin-top: 8px;
-            position: relative;
+            margin-top: 5px;
             overflow: hidden;
         }
 
         .percentile-fill {
             height: 100%;
-            background: linear-gradient(90deg, #4A90E2, #52c41a);
+            background: #4A90E2;
             border-radius: 3px;
         }
 
@@ -450,12 +456,17 @@
             flex-direction: column;
             overflow: hidden;
             min-height: 0;
+            max-height: 100%;
         }
 
         .scatter-card .chart-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid #2a2a2a;
+            background: #151515;
+            flex-shrink: 0;
         }
 
         .scatter-controls {
@@ -466,22 +477,24 @@
 
         .scatter-card .chart-body {
             flex: 1;
-            padding: 20px;
+            padding: 15px;
             display: flex;
             min-height: 0;
+            overflow: hidden;
         }
 
         .scatter-card .chart-container {
             flex: 1;
-            height: 100%;
-            min-height: 400px;
+            min-height: 500px;
+            position: relative;
+            overflow: hidden;
         }
 
         .scatter-info-panel {
-            width: 280px;
+            width: 260px;
             flex-shrink: 0;
             border-left: 1px solid #2a2a2a;
-            padding: 15px;
+            padding: 12px;
             overflow-y: auto;
             display: none;
         }
@@ -491,7 +504,7 @@
         }
 
         .scatter-info-panel h4 {
-            font-size: 12px;
+            font-size: 11px;
             color: #4A90E2;
             margin-bottom: 10px;
             text-transform: uppercase;
@@ -501,41 +514,140 @@
             background: #0a0a0a;
             border: 1px solid #2a2a2a;
             border-radius: 4px;
-            padding: 10px;
-            margin-bottom: 10px;
-            font-size: 11px;
+            padding: 8px;
+            margin-bottom: 8px;
+            font-size: 10px;
         }
 
         .selected-node-card .node-id {
             font-family: monospace;
             color: #52c41a;
-            font-size: 10px;
+            font-size: 9px;
             word-break: break-all;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .scatter-stats {
-            padding: 10px 20px;
+            padding: 8px 16px;
             background: #0a0a0a;
             border-top: 1px solid #2a2a2a;
             display: flex;
-            gap: 30px;
+            gap: 25px;
             flex-shrink: 0;
         }
 
         .scatter-stat {
-            font-size: 12px;
+            font-size: 11px;
         }
 
         .scatter-stat-label {
             color: #808080;
-            margin-right: 8px;
+            margin-right: 6px;
         }
 
         .scatter-stat-value {
             color: #e0e0e0;
             font-family: monospace;
             font-weight: 600;
+        }
+
+        /* PCA area */
+        .pca-area {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        .pca-area.active {
+            display: flex;
+        }
+
+        .pca-results-card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .pca-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .pca-body {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .pca-empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #808080;
+        }
+
+        .pca-empty-state h3 {
+            color: #e0e0e0;
+            margin-bottom: 10px;
+        }
+
+        .pca-summary {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #0a0a0a;
+            border-radius: 8px;
+        }
+
+        .pca-charts-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .pca-chart-panel {
+            background: #0a0a0a;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .pca-chart-panel h4 {
+            font-size: 12px;
+            color: #808080;
+            margin-bottom: 15px;
+        }
+
+        .pca-chart-container {
+            height: 250px;
+        }
+
+        .pca-loadings-table {
+            overflow-x: auto;
+        }
+
+        .pca-loadings-table table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .pca-loadings-table th,
+        .pca-loadings-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .pca-loadings-table th {
+            color: #808080;
+            font-weight: 500;
         }
 
         /* Anomaly detection area */
@@ -612,39 +724,67 @@
             color: #4A90E2;
         }
 
-        .anomaly-chart-container {
-            height: 250px;
+        /* Anomaly charts - horizontal layout */
+        .anomaly-charts-row {
+            display: flex;
+            gap: 15px;
             margin-bottom: 20px;
         }
 
-        .anomaly-table-container {
+        .anomaly-chart-panel {
             flex: 1;
+            background: #0a0a0a;
+            border-radius: 8px;
+            padding: 15px;
+            min-width: 0;
+        }
+
+        .anomaly-chart-panel h4 {
+            font-size: 11px;
+            color: #808080;
+            margin-bottom: 10px;
+        }
+
+        .anomaly-chart-wrapper {
+            height: 200px;
+        }
+
+        .anomaly-table-container {
+            background: #0a0a0a;
+            border-radius: 8px;
+            overflow: hidden;
         }
 
         .anomaly-table-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            padding: 12px 15px;
+            border-bottom: 1px solid #2a2a2a;
         }
 
         .anomaly-table-header h4 {
-            font-size: 14px;
-            color: #e0e0e0;
+            font-size: 12px;
+            color: #808080;
         }
 
         .anomaly-table-controls {
             display: flex;
             gap: 15px;
             align-items: center;
-            font-size: 12px;
+            font-size: 11px;
+        }
+
+        .anomaly-table-controls label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
         }
 
         .anomaly-table-wrapper {
             max-height: 300px;
             overflow-y: auto;
-            border: 1px solid #2a2a2a;
-            border-radius: 4px;
         }
 
         #anomaly-table {
@@ -653,45 +793,36 @@
             font-size: 12px;
         }
 
-        #anomaly-table th, #anomaly-table td {
-            padding: 10px 15px;
+        #anomaly-table th,
+        #anomaly-table td {
+            padding: 10px 12px;
             text-align: left;
             border-bottom: 1px solid #2a2a2a;
         }
 
         #anomaly-table th {
-            background: #0a0a0a;
-            color: #808080;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 10px;
             position: sticky;
             top: 0;
+            background: #151515;
+            color: #808080;
+            font-weight: 500;
         }
 
         #anomaly-table tr:hover {
             background: #252525;
         }
 
-        #anomaly-table .anomaly-row {
-            background: #2a1a1a;
+        #anomaly-table tr.anomaly-row {
+            background: rgba(255, 77, 79, 0.1);
         }
 
-        #anomaly-table .anomaly-row:hover {
-            background: #3a2a2a;
+        .node-id-cell {
+            font-family: monospace;
+            color: #4A90E2;
         }
 
-        .anomaly-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 10px;
-            background: #ff4d4f33;
-            color: #ff4d4f;
-        }
-
-        /* PCA Analysis area */
-        .pca-area {
+        /* Composite metrics area */
+        .composite-area {
             flex: 1;
             display: none;
             flex-direction: column;
@@ -699,11 +830,11 @@
             overflow: hidden;
         }
 
-        .pca-area.active {
+        .composite-area.active {
             display: flex;
         }
 
-        .pca-results-card {
+        .composite-results-card {
             background: #1a1a1a;
             border: 1px solid #2a2a2a;
             border-radius: 8px;
@@ -713,89 +844,107 @@
             overflow: hidden;
         }
 
-        .pca-body {
+        .composite-body {
             flex: 1;
             padding: 20px;
             overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
         }
 
-        .pca-empty-state {
+        .composite-empty-state {
             text-align: center;
             padding: 60px 20px;
             color: #808080;
         }
 
-        .pca-empty-state h3 {
+        .composite-empty-state h3 {
             color: #e0e0e0;
             margin-bottom: 10px;
         }
 
-        .pca-summary {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            padding: 15px;
+        .composite-preview {
+            display: none;
+        }
+
+        .composite-formula-display {
             background: #0a0a0a;
-            border-radius: 8px;
-        }
-
-        .pca-charts-row {
-            display: flex;
-            gap: 20px;
-            min-height: 300px;
-        }
-
-        .pca-chart-panel {
-            flex: 1;
-            background: #0a0a0a;
-            border: 1px solid #2a2a2a;
-            border-radius: 8px;
             padding: 15px;
-            display: flex;
-            flex-direction: column;
+            border-radius: 8px;
+            margin-bottom: 15px;
         }
 
-        .pca-chart-panel h4 {
-            font-size: 12px;
-            color: #4A90E2;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
-
-        .pca-chart-container {
-            flex: 1;
-            min-height: 250px;
-            position: relative;
-        }
-
-        .pca-loadings-table {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .pca-loadings-table table {
-            width: 100%;
-            border-collapse: collapse;
+        .composite-formula-display .formula-label {
             font-size: 11px;
-        }
-
-        .pca-loadings-table th, .pca-loadings-table td {
-            padding: 8px 10px;
-            text-align: left;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .pca-loadings-table th {
-            background: #1a1a1a;
             color: #808080;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 10px;
-            position: sticky;
-            top: 0;
+            margin-right: 10px;
+        }
+
+        .composite-formula-display code {
+            font-family: monospace;
+            color: #52c41a;
+            font-size: 13px;
+        }
+
+        .composite-stats-display {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .stat-pill {
+            background: #252525;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .composite-correlation-display {
+            background: #0a0a0a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .correlation-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 12px;
+        }
+
+        .corr-strong {
+            color: #52c41a;
+            font-weight: bold;
+        }
+
+        .corr-moderate {
+            color: #faad14;
+        }
+
+        .corr-weak {
+            color: #808080;
+        }
+
+        .composite-charts-row {
+            display: flex;
+            gap: 15px;
+        }
+
+        .composite-chart-panel {
+            flex: 1;
+            background: #0a0a0a;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .composite-chart-panel h4 {
+            font-size: 11px;
+            color: #808080;
+            margin-bottom: 10px;
+        }
+
+        .composite-chart-wrapper {
+            height: 250px;
         }
 
         .loading-bar {
@@ -866,6 +1015,7 @@
                 <button class="view-tab" data-view="scatter">Scatter</button>
                 <button class="view-tab" data-view="pca">PCA</button>
                 <button class="view-tab" data-view="anomaly">Anomaly</button>
+                <button class="view-tab" data-view="composite">Composite</button>
             </div>
             
             <!-- Histogram metrics list -->
@@ -898,15 +1048,12 @@
                         <option value="logarithmic">Logarithmic</option>
                     </select>
                 </div>
-                
-                <h4 style="margin-top: 20px;">Color Configuration</h4>
                 <div class="config-row">
                     <label>Color By (optional)</label>
                     <select id="scatter-color">
                         <option value="">None (uniform color)</option>
                     </select>
                 </div>
-
                 <button class="btn btn-primary" id="render-scatter-btn" style="width:100%; margin-top:20px;">
                     Render Scatter Plot
                 </button>
@@ -1001,6 +1148,72 @@
                     Running analysis...
                 </div>
             </div>
+
+            <!-- Composite metrics config -->
+            <div class="composite-config" id="composite-config">
+                <h4>Create Composite Metric</h4>
+                
+                <div class="config-row">
+                    <label>First Metric</label>
+                    <select id="dist-composite-metric-1">
+                        <option value="">Select metric...</option>
+                    </select>
+                </div>
+                
+                <div class="config-row">
+                    <label>Operation</label>
+                    <select id="dist-composite-operation">
+                        <option value="multiply">Multiply (M1 × M2)</option>
+                        <option value="add">Add (M1 + M2)</option>
+                        <option value="subtract">Subtract (M1 - M2)</option>
+                        <option value="divide">Divide (M1 / M2)</option>
+                        <option value="average">Average ((M1 + M2) / 2)</option>
+                        <option value="maximum">Maximum (max(M1, M2))</option>
+                        <option value="minimum">Minimum (min(M1, M2))</option>
+                        <option value="weighted_sum">Weighted Sum</option>
+                        <option value="norm_multiply">Normalized Multiply</option>
+                    </select>
+                </div>
+                
+                <div class="config-row">
+                    <label>Second Metric</label>
+                    <select id="dist-composite-metric-2">
+                        <option value="">Select metric...</option>
+                    </select>
+                </div>
+                
+                <div id="weights-row" class="config-row" style="display: none;">
+                    <label>Weights</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="number" class="param-input" id="dist-weight-1" value="0.5" step="0.1" min="0" max="1" style="width: 50%;">
+                        <input type="number" class="param-input" id="dist-weight-2" value="0.5" step="0.1" min="0" max="1" style="width: 50%;">
+                    </div>
+                </div>
+                
+                <div class="config-row">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="dist-composite-normalize">
+                        Normalize result (0-1)
+                    </label>
+                </div>
+                
+                <div class="config-row">
+                    <label>Metric Name</label>
+                    <input type="text" class="param-input" id="dist-composite-name" placeholder="composite_metric">
+                </div>
+                
+                <button class="btn" id="preview-composite-btn" style="width:100%; margin-top:15px;">
+                    Preview
+                </button>
+                
+                <button class="btn btn-primary" id="create-dist-composite-btn" style="width:100%; margin-top:10px;" disabled>
+                    Create Metric
+                </button>
+                
+                <div id="composite-progress" style="display: none; margin-top: 10px; font-size: 11px; color: #808080;">
+                    Computing preview...
+                </div>
+            </div>
         </div>
 
         <div class="main-content">
@@ -1008,6 +1221,8 @@
                 <div class="toolbar-info">
                     <span id="chart-count">0</span> <span id="chart-label">metrics selected</span>
                 </div>
+                <button class="btn btn-small" id="clear-selection-btn">Clear Selection</button>
+                <button class="btn btn-small" id="clear-highlights-btn">Clear Highlights</button>
                 <button class="btn" id="clear-all-btn">Clear All</button>
                 <button class="btn btn-primary" id="refresh-btn">Refresh Data</button>
             </div>
@@ -1070,13 +1285,11 @@
                     </div>
                     
                     <div class="pca-body">
-                        <!-- Empty state shown initially -->
                         <div class="pca-empty-state" id="pca-empty-state">
                             <h3>Run PCA Analysis</h3>
                             <p>Select metrics from the sidebar and click "Run PCA Analysis" to perform dimensionality reduction and visualize your data.</p>
                         </div>
 
-                        <!-- Summary stats (hidden until results) -->
                         <div class="pca-summary" id="pca-summary" style="display: none;">
                             <div class="summary-stat">
                                 <span class="stat-label">Components</span>
@@ -1096,17 +1309,13 @@
                             </div>
                         </div>
 
-                        <!-- Charts row -->
                         <div class="pca-charts-row" id="pca-charts-row" style="display: none;">
-                            <!-- Scatter plot of first 2 components -->
                             <div class="pca-chart-panel" style="flex: 2;">
-                                <h4>Principal Components Plot</h4>
+                                <h4>PC1 vs PC2 (colored by reconstruction error)</h4>
                                 <div class="pca-chart-container">
                                     <canvas id="pca-scatter-chart"></canvas>
                                 </div>
                             </div>
-                            
-                            <!-- Explained variance (scree plot) -->
                             <div class="pca-chart-panel" style="flex: 1;">
                                 <h4>Explained Variance</h4>
                                 <div class="pca-chart-container">
@@ -1115,11 +1324,9 @@
                             </div>
                         </div>
 
-                        <!-- Loadings table -->
                         <div class="pca-chart-panel" id="pca-loadings-panel" style="display: none;">
                             <h4>Feature Loadings (Component Contributions)</h4>
                             <div class="pca-loadings-table" id="pca-loadings-table">
-                                <!-- Populated dynamically -->
                             </div>
                         </div>
                     </div>
@@ -1134,18 +1341,17 @@
                         <div class="anomaly-actions">
                             <button class="btn btn-small" id="apply-anomaly-btn" disabled>Apply to Graph</button>
                             <button class="btn btn-small" id="highlight-anomalies-btn" disabled>Highlight Anomalies</button>
+                            <button class="btn btn-small" id="clear-anomaly-highlight-btn" disabled>Clear Highlights</button>
                             <button class="btn btn-small" id="export-anomalies-btn" disabled>Export CSV</button>
                         </div>
                     </div>
                     
                     <div class="anomaly-body">
-                        <!-- Empty state shown initially -->
                         <div class="anomaly-empty-state" id="anomaly-empty-state">
                             <h3>Run Anomaly Detection</h3>
                             <p>Select an algorithm and metrics from the sidebar, then click "Run Detection" to find anomalous nodes in your graph.</p>
                         </div>
 
-                        <!-- Summary stats (hidden until results) -->
                         <div class="anomaly-summary" id="anomaly-summary" style="display: none;">
                             <div class="summary-stat">
                                 <span class="stat-label">Algorithm</span>
@@ -1165,9 +1371,26 @@
                             </div>
                         </div>
                         
-                        <!-- Score distribution chart -->
-                        <div class="anomaly-chart-container" id="anomaly-chart-container" style="display: none;">
-                            <canvas id="anomaly-histogram"></canvas>
+                        <!-- Enhanced anomaly charts - horizontal row -->
+                        <div class="anomaly-charts-row" id="anomaly-charts-row" style="display: none;">
+                            <div class="anomaly-chart-panel">
+                                <h4>Score Distribution</h4>
+                                <div class="anomaly-chart-wrapper">
+                                    <canvas id="anomaly-histogram"></canvas>
+                                </div>
+                            </div>
+                            <div class="anomaly-chart-panel">
+                                <h4>Classification</h4>
+                                <div class="anomaly-chart-wrapper">
+                                    <canvas id="anomaly-threshold-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="anomaly-chart-panel" id="anomaly-per-metric-panel">
+                                <h4>Per-Metric Statistics</h4>
+                                <div class="anomaly-chart-wrapper">
+                                    <canvas id="anomaly-per-metric-chart"></canvas>
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Anomalies table -->
@@ -1192,9 +1415,53 @@
                                         </tr>
                                     </thead>
                                     <tbody id="anomaly-table-body">
-                                        <!-- Populated dynamically -->
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Composite metrics view -->
+            <div class="composite-area" id="composite-area">
+                <div class="composite-results-card">
+                    <div class="chart-header">
+                        <span class="chart-title">Composite Metric Preview</span>
+                        <div class="anomaly-actions">
+                            <button class="btn btn-small" id="export-composite-btn" disabled>Export Preview</button>
+                        </div>
+                    </div>
+                    
+                    <div class="composite-body">
+                        <div class="composite-empty-state" id="composite-empty-state">
+                            <h3>Create Composite Metric</h3>
+                            <p>Select two metrics and an operation from the sidebar, then click "Preview" to see the result before creating.</p>
+                        </div>
+
+                        <div class="composite-preview" id="composite-preview">
+                            <div class="composite-formula-display" id="composite-formula-display">
+                            </div>
+                            
+                            <div class="composite-stats-display" id="composite-stats-display">
+                            </div>
+                            
+                            <div class="composite-correlation-display" id="composite-correlation-display">
+                            </div>
+                            
+                            <div class="composite-charts-row">
+                                <div class="composite-chart-panel">
+                                    <h4>Distribution</h4>
+                                    <div class="composite-chart-wrapper">
+                                        <canvas id="composite-histogram"></canvas>
+                                    </div>
+                                </div>
+                                <div class="composite-chart-panel">
+                                    <h4>Source Metrics (colored by composite)</h4>
+                                    <div class="composite-chart-wrapper">
+                                        <canvas id="composite-scatter"></canvas>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

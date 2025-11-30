@@ -25,11 +25,31 @@ const DistributionsComm = {
             } else if (event.data.type === 'ANOMALY_APPLIED') {
                 // Refresh graph data after anomaly scores applied
                 this.handleAnomalyApplied(event.data.data);
+            } else if (event.data.type === 'PCA_APPLIED') {
+                // Handle PCA scores applied
+                this.handlePCAApplied(event.data.data);
+            } else if (event.data.type === 'COMPOSITE_CREATED') {
+                // Handle composite metric created
+                this.handleCompositeCreated(event.data.data);
+            } else if (event.data.type === 'CLEAR_SELECTION') {
+                // Clear all selections in main graph
+                this.clearSelection();
+            } else if (event.data.type === 'CLEAR_HIGHLIGHTS') {
+                // Clear all highlight classes
+                this.clearHighlights();
+            } else if (event.data.type === 'SELECT_NODES') {
+                // Select specific nodes
+                const nodeIds = event.data.nodeIds || (event.data.data && event.data.data.nodeIds);
+                if (nodeIds) {
+                    this.selectNodes(nodeIds);
+                }
             }
         });
         
-        // Also expose highlightAnomalies globally for direct calls from popup
+        // Also expose functions globally for direct calls from popup
         window.highlightAnomalies = (nodeIds) => this.highlightAnomalies(nodeIds);
+        window.clearGraphSelection = () => this.clearSelection();
+        window.clearGraphHighlights = () => this.clearHighlights();
     },
 
     /**
@@ -170,8 +190,9 @@ const DistributionsComm = {
         
         console.log(`[DistributionsComm] Highlighting ${nodeIds.length} anomalies`);
         
-        // Clear current selection
+        // Clear current selection and highlights
         State.cy.elements().unselect();
+        State.cy.elements().removeClass('anomaly');
         
         // Convert nodeIds to strings for comparison
         const nodeIdSet = new Set(nodeIds.map(String));
@@ -188,7 +209,8 @@ const DistributionsComm = {
             return;
         }
         
-        // Select all anomalies
+        // Add anomaly class and select
+        anomalyNodes.addClass('anomaly');
         anomalyNodes.select();
         
         // Fit view to show all anomalies
@@ -207,6 +229,81 @@ const DistributionsComm = {
         });
         
         updateStatus(`Highlighted ${anomalyNodes.length} anomalies`, 'success');
+    },
+
+    /**
+     * Select specific nodes by IDs
+     */
+    selectNodes(nodeIds) {
+        if (!State.cy || !nodeIds || nodeIds.length === 0) return;
+        
+        console.log(`[DistributionsComm] Selecting ${nodeIds.length} nodes`);
+        
+        // Clear current selection
+        State.cy.elements().unselect();
+        
+        // Convert nodeIds to strings
+        const nodeIdSet = new Set(nodeIds.map(String));
+        
+        // Find and select nodes
+        const nodesToSelect = State.cy.nodes().filter(node => {
+            const id = String(node.id());
+            const dataId = String(node.data('id') || '');
+            return nodeIdSet.has(id) || nodeIdSet.has(dataId);
+        });
+        
+        if (!nodesToSelect.empty()) {
+            nodesToSelect.select();
+            
+            // Fit view if more than one node
+            if (nodesToSelect.length > 1) {
+                State.cy.animate({
+                    fit: {
+                        eles: nodesToSelect,
+                        padding: 50
+                    },
+                    duration: 500,
+                    easing: 'ease-out-cubic'
+                });
+            }
+            
+            updateStatus(`Selected ${nodesToSelect.length} nodes`, 'success');
+        }
+    },
+
+    /**
+     * Clear all selections in the graph
+     */
+    clearSelection() {
+        if (!State.cy) return;
+        
+        State.cy.elements().unselect();
+        updateStatus('Selection cleared', 'info');
+        
+        // Notify distributions window of the change
+        this.sendSelectionUpdate();
+        
+        console.log('[DistributionsComm] Selection cleared');
+    },
+
+    /**
+     * Clear all highlight classes from elements
+     */
+    clearHighlights() {
+        if (!State.cy) return;
+        
+        // Remove all highlight-related classes
+        State.cy.elements().removeClass('highlighted');
+        State.cy.elements().removeClass('anomaly');
+        State.cy.elements().removeClass('searched');
+        State.cy.elements().removeClass('new-node');
+        
+        // Reset neighbor highlight state
+        State.neighborHighlightState = 0;
+        
+        updateStatus('Highlights cleared', 'info');
+        
+        console.log('[DistributionsComm] Highlights cleared');
     },
 
     /**
@@ -234,6 +331,76 @@ const DistributionsComm = {
         this.sendData();
         
         updateStatus(`Applied ${data.metric_name} to graph`, 'success');
+    },
+
+    /**
+     * Handle PCA scores being applied to graph
+     */
+    handlePCAApplied(data) {
+        if (!data || !data.node_updates) return;
+        
+        console.log(`[DistributionsComm] Applying PCA scores to ${data.node_updates.length} nodes`);
+        
+        // Update node data
+        data.node_updates.forEach(update => {
+            const node = State.cy.getElementById(update.id);
+            if (node && !node.empty()) {
+                Object.keys(update).forEach(key => {
+                    if (key !== 'id') {
+                        node.data(key, update[key]);
+                    }
+                });
+            }
+        });
+        
+        // Refresh distributions data
+        this.sendData();
+        
+        updateStatus(`Applied PCA scores (${data.n_components} components) to graph`, 'success');
+    },
+
+    /**
+     * Handle composite metric being created
+     */
+    handleCompositeCreated(data) {
+        if (!data || !data.node_updates) return;
+        
+        // Get the metric name from either field
+        const metricName = data.name || data.metric_name;
+        console.log(`[DistributionsComm] Composite created: ${metricName}`);
+        
+        // Update node data in Cytoscape
+        let updatedCount = 0;
+        data.node_updates.forEach(update => {
+            const node = State.cy?.getElementById(update.id);
+            if (node && !node.empty()) {
+                Object.keys(update).forEach(key => {
+                    if (key !== 'id') {
+                        node.data(key, update[key]);
+                        updatedCount++;
+                    }
+                });
+            }
+        });
+        
+        console.log(`[DistributionsComm] Updated ${updatedCount} node attributes`);
+        
+        // Refresh distributions data so popup has the new metric
+        this.sendData();
+        
+        // Update metric dropdowns in main window (filter, style, etc.)
+        if (typeof Metrics !== 'undefined' && Metrics.populateDropdowns && State.cy) {
+            const nodes = State.cy.nodes().map(n => ({ data: n.data() }));
+            Metrics.populateDropdowns(nodes, null);
+            console.log('[DistributionsComm] Refreshed metric dropdowns');
+        }
+        
+        // Refresh composite metrics panel if available
+        if (typeof CompositeMetrics !== 'undefined' && CompositeMetrics.loadSaved) {
+            CompositeMetrics.loadSaved();
+        }
+        
+        updateStatus(`Created composite: ${metricName}`, 'success');
     },
 
     /**

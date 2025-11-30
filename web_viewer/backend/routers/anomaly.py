@@ -15,6 +15,7 @@ from ..models.requests import (
     ProfileMetricsRequest,
     MetricConfigRequest,
     MetricTransformRequest,
+    PCARequest,
 )
 from ..models.responses import (
     AlgorithmInfoResponse,
@@ -23,6 +24,8 @@ from ..models.responses import (
     MetricProfileResponse,
     ThresholdInfoResponse,
     GroupAnomalyStatsResponse,
+    AnomalyVisualizationData,
+    PCAResponse,
 )
 from ..services.network_service import NetworkService
 from engines import (
@@ -58,30 +61,6 @@ def get_network_service() -> NetworkService:
     return network_service
 
 
-# =============================================================================
-# PCA Request/Response Models
-# =============================================================================
-
-class PCARequest(BaseModel):
-    """Request for PCA analysis."""
-    metrics: List[str]
-    n_components: str = "auto"  # "auto", "2", "3", "5", "10", or variance ratio like "0.95"
-    standardize: bool = True
-
-
-class PCAResponse(BaseModel):
-    """Response from PCA analysis."""
-    n_components: int
-    n_samples: int
-    features: List[str]
-    explained_variance_ratio: List[float]
-    total_variance_explained: float
-    loadings: Dict[str, List[float]]  # PC1 -> [loading for each feature]
-    transformed_data: Dict[str, List[float]]  # PC1 -> [value for each sample]
-    node_ids: List[str]
-    reconstruction_errors: Optional[List[float]] = None
-
-
 def _safe_float(value: Any, default: float = 0.0) -> float:
     """Safely convert a value to a JSON-compatible float."""
     if value is None:
@@ -93,6 +72,102 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return f
     except (ValueError, TypeError):
         return default
+
+
+def _build_visualization_data(
+    result: Any,
+    df: Any,
+    metrics: List[str],
+    algorithm: str,
+    parameters: Dict[str, Any]
+) -> AnomalyVisualizationData:
+    """
+    Build additional visualization data for anomaly detection results.
+    
+    Args:
+        result: AnomalyResult from detection
+        df: Original DataFrame
+        metrics: List of metrics used
+        algorithm: Algorithm name
+        parameters: Algorithm parameters
+    
+    Returns:
+        AnomalyVisualizationData with enhanced visualization info
+    """
+    # Basic threshold info
+    threshold_value = _safe_float(result.threshold_info.value, 0.5)
+    scores = np.array(list(result.scores.values()))
+    
+    scores_above = int(np.sum(scores >= threshold_value))
+    scores_below = int(np.sum(scores < threshold_value))
+    
+    # Build histogram data
+    n_bins = 30
+    hist_counts, bin_edges = np.histogram(scores, bins=n_bins, range=(0, 1))
+    
+    # Count anomalies in each bin
+    anomaly_scores = np.array([
+        result.scores[node_id] 
+        for node_id, is_anomaly in result.binary_labels.items() 
+        if is_anomaly
+    ])
+    anomaly_counts, _ = np.histogram(anomaly_scores, bins=bin_edges)
+    
+    # Per-metric statistics for multivariate
+    per_metric_stats = None
+    per_metric_contributions = None
+    
+    if len(metrics) > 1:
+        per_metric_stats = {}
+        for metric in metrics:
+            if metric in df.columns:
+                values = df[metric].values
+                values = np.nan_to_num(values, nan=0.0)
+                per_metric_stats[metric] = {
+                    'mean': _safe_float(np.mean(values)),
+                    'std': _safe_float(np.std(values)),
+                    'min': _safe_float(np.min(values)),
+                    'max': _safe_float(np.max(values)),
+                    'median': _safe_float(np.median(values)),
+                }
+    
+    # Algorithm-specific details
+    algorithm_details = {
+        'algorithm': algorithm,
+        'parameters': parameters,
+    }
+    
+    if algorithm == 'isolation_forest':
+        algorithm_details['type'] = 'ensemble'
+        algorithm_details['n_estimators'] = parameters.get('n_estimators', 100)
+        algorithm_details['contamination'] = parameters.get('contamination', 'auto')
+    elif algorithm == 'lof':
+        algorithm_details['type'] = 'density'
+        algorithm_details['n_neighbors'] = parameters.get('n_neighbors', 20)
+    elif algorithm == 'dbscan':
+        algorithm_details['type'] = 'clustering'
+        algorithm_details['eps'] = parameters.get('eps', 0.5)
+        algorithm_details['min_samples'] = parameters.get('min_samples', 5)
+    elif algorithm == 'mahalanobis':
+        algorithm_details['type'] = 'distance'
+    elif algorithm in ('zscore', 'iqr'):
+        algorithm_details['type'] = 'statistical'
+        if algorithm == 'zscore':
+            algorithm_details['threshold'] = parameters.get('threshold', 3.0)
+        else:
+            algorithm_details['k'] = parameters.get('k', 1.5)
+    
+    return AnomalyVisualizationData(
+        threshold_value=threshold_value,
+        scores_above_threshold=scores_above,
+        scores_below_threshold=scores_below,
+        score_bins=[_safe_float(b) for b in bin_edges.tolist()],
+        score_counts=[int(c) for c in hist_counts.tolist()],
+        anomaly_counts=[int(c) for c in anomaly_counts.tolist()],
+        per_metric_stats=per_metric_stats,
+        per_metric_contributions=per_metric_contributions,
+        algorithm_details=algorithm_details,
+    )
 
 
 # =============================================================================
@@ -214,6 +289,7 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
     - Configurable preprocessing
     - Group-aware detection
     - Automatic sampling for large datasets
+    - Filtering to specific node IDs
     """
     service = get_network_service()
     engine = get_engine()
@@ -222,6 +298,21 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
     df = service.get_current_metrics_df()
     if df is None or df.empty:
         raise HTTPException(status_code=400, detail="No graph data loaded")
+    
+    # Filter to specific nodes if requested
+    if request.node_ids:
+        id_col = 'avatar' if 'avatar' in df.columns else 'id' if 'id' in df.columns else None
+        if id_col:
+            df = df[df[id_col].astype(str).isin(request.node_ids)]
+        else:
+            # Try filtering by index
+            df = df[df.index.astype(str).isin(request.node_ids)]
+        
+        if df.empty:
+            raise HTTPException(
+                status_code=400,
+                detail="No matching nodes found for the specified node_ids"
+            )
     
     # Validate metrics exist
     missing = [m for m in request.metrics if m not in df.columns]
@@ -325,6 +416,15 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
             for name, stats in result.preprocessing_stats.items()
         }
     
+    # Build visualization data
+    visualization_data = _build_visualization_data(
+        result=result,
+        df=df,
+        metrics=request.metrics,
+        algorithm=request.algorithm,
+        parameters=request.parameters,
+    )
+    
     return AnomalyDetectionResponse(
         metric_name=request.name,
         algorithm=result.algorithm,
@@ -340,6 +440,7 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
         group_results=group_results,
         preprocessing_stats=preprocessing_stats,
         node_updates=node_updates,
+        visualization_data=visualization_data,
     )
 
 
@@ -351,6 +452,8 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
 async def run_pca_analysis(request: PCARequest):
     """
     Run PCA (Principal Component Analysis) on specified metrics.
+    
+    Supports filtering to specific node IDs via request.node_ids.
     
     Returns:
     - Principal component scores for each node
@@ -367,6 +470,20 @@ async def run_pca_analysis(request: PCARequest):
     df = service.get_current_metrics_df()
     if df is None or df.empty:
         raise HTTPException(status_code=400, detail="No graph data loaded")
+    
+    # Filter to specific nodes if requested
+    if request.node_ids:
+        id_col = 'avatar' if 'avatar' in df.columns else 'id' if 'id' in df.columns else None
+        if id_col:
+            df = df[df[id_col].astype(str).isin(request.node_ids)]
+        else:
+            df = df[df.index.astype(str).isin(request.node_ids)]
+        
+        if df.empty:
+            raise HTTPException(
+                status_code=400,
+                detail="No matching nodes found for the specified node_ids"
+            )
     
     # Validate metrics exist
     missing = [m for m in request.metrics if m not in df.columns]

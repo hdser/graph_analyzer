@@ -27,6 +27,21 @@ let pcaInitialized = false;
 let pcaScatterChart = null;
 let pcaVarianceChart = null;
 
+// Composite metrics state
+let compositeInitialized = false;
+let compositePreviewResult = null;
+let compositeCharts = {
+    histogram: null,
+    scatter: null
+};
+
+// Enhanced anomaly charts
+let anomalyCharts = {
+    histogram: null,
+    threshold: null,
+    perMetric: null
+};
+
 // Communication with parent window
 window.addEventListener('message', (event) => {
     console.log('[Distributions] Received message:', event.data.type);
@@ -125,6 +140,12 @@ function setupEventListeners() {
             panel.classList.add('active');
             btn.textContent = 'Hide Selection';
         }
+        // Resize chart after layout change
+        if (scatterChart) {
+            requestAnimationFrame(() => {
+                scatterChart.resize();
+            });
+        }
     });
 
     // Anomaly detection event listeners
@@ -138,6 +159,23 @@ function setupEventListeners() {
     document.getElementById('run-pca-btn')?.addEventListener('click', runPCAAnalysis);
     document.getElementById('export-pca-btn')?.addEventListener('click', exportPCAResults);
     document.getElementById('apply-pca-btn')?.addEventListener('click', applyPCAToGraph);
+
+    // Clear selection and highlights buttons
+    document.getElementById('clear-selection-btn')?.addEventListener('click', clearGraphSelection);
+    document.getElementById('clear-highlights-btn')?.addEventListener('click', clearGraphHighlights);
+    document.getElementById('clear-anomaly-highlight-btn')?.addEventListener('click', clearGraphHighlights);
+
+    // Composite metrics event listeners
+    document.getElementById('dist-composite-operation')?.addEventListener('change', () => {
+        const op = document.getElementById('dist-composite-operation').value;
+        document.getElementById('weights-row').style.display = op === 'weighted_sum' ? 'block' : 'none';
+        updateCompositeAutoName();
+    });
+    document.getElementById('dist-composite-metric-1')?.addEventListener('change', updateCompositeAutoName);
+    document.getElementById('dist-composite-metric-2')?.addEventListener('change', updateCompositeAutoName);
+    document.getElementById('preview-composite-btn')?.addEventListener('click', previewComposite);
+    document.getElementById('create-dist-composite-btn')?.addEventListener('click', createComposite);
+    document.getElementById('export-composite-btn')?.addEventListener('click', exportCompositePreview);
 }
 
 function switchView(view) {
@@ -153,12 +191,14 @@ function switchView(view) {
     document.getElementById('scatter-config').classList.toggle('active', view === 'scatter');
     document.getElementById('pca-config').classList.toggle('active', view === 'pca');
     document.getElementById('anomaly-config').classList.toggle('active', view === 'anomaly');
+    document.getElementById('composite-config')?.classList.toggle('active', view === 'composite');
 
     // Update main content
     document.getElementById('charts-area').style.display = view === 'histograms' ? 'flex' : 'none';
     document.getElementById('scatter-area').classList.toggle('active', view === 'scatter');
     document.getElementById('pca-area').classList.toggle('active', view === 'pca');
     document.getElementById('anomaly-area').classList.toggle('active', view === 'anomaly');
+    document.getElementById('composite-area')?.classList.toggle('active', view === 'composite');
 
     // Update toolbar
     if (view === 'histograms') {
@@ -172,6 +212,9 @@ function switchView(view) {
     } else if (view === 'anomaly') {
         document.getElementById('chart-label').textContent = 'anomaly detection';
         document.getElementById('chart-count').textContent = lastAnomalyResult ? '1' : '0';
+    } else if (view === 'composite') {
+        document.getElementById('chart-label').textContent = 'composite metrics';
+        document.getElementById('chart-count').textContent = compositePreviewResult ? '1' : '0';
     }
     
     // Initialize tabs if switching to them for the first time
@@ -180,6 +223,9 @@ function switchView(view) {
     }
     if (view === 'pca' && !pcaInitialized) {
         initializePCATab();
+    }
+    if (view === 'composite' && !compositeInitialized) {
+        initializeCompositeTab();
     }
 }
 
@@ -288,6 +334,25 @@ function updateNodeInfo() {
 function getFilteredData() {
     if (!useSelectedOnly) return nodeData;
     return nodeData.filter(n => n._selected);
+}
+
+function getActiveNodeIds() {
+    if (!useSelectedOnly) return null;
+    const selected = nodeData.filter(n => n._selected);
+    if (selected.length === 0) return null;
+    return selected.map(n => String(n.id));
+}
+
+function clearGraphSelection() {
+    if (window.opener) {
+        window.opener.postMessage({ type: 'CLEAR_SELECTION' }, '*');
+    }
+}
+
+function clearGraphHighlights() {
+    if (window.opener) {
+        window.opener.postMessage({ type: 'CLEAR_HIGHLIGHTS' }, '*');
+    }
 }
 
 function updateChartsArea() {
@@ -860,8 +925,17 @@ function togglePointSelection(node, idx) {
     
     // Show the info panel if we have selections
     if (selectedScatterPoints.length > 0) {
-        document.getElementById('scatter-info-panel').classList.add('active');
+        const panel = document.getElementById('scatter-info-panel');
+        const wasHidden = !panel.classList.contains('active');
+        panel.classList.add('active');
         document.getElementById('toggle-info-btn').textContent = 'Hide Selection';
+        
+        // If panel was just shown, trigger chart resize after layout update
+        if (wasHidden && scatterChart) {
+            requestAnimationFrame(() => {
+                scatterChart.resize();
+            });
+        }
     }
 }
 
@@ -1500,7 +1574,7 @@ function updateAlgorithmUI() {
     document.getElementById('algorithm-description').innerHTML = `
         <p>${info.description}</p>
         <p class="complexity">Complexity: ${info.complexity}</p>
-        <p class="multivariate">${info.multivariate ? '✓ Supports multiple metrics' : '○ Single metric recommended'}</p>
+        <p class="multivariate">${info.multivariate ? 'âœ“ Supports multiple metrics' : 'â—‹ Single metric recommended'}</p>
     `;
     
     // Update parameters
@@ -1709,7 +1783,7 @@ function displayAnomalyResults(result) {
     // Hide empty state, show results
     document.getElementById('anomaly-empty-state').style.display = 'none';
     document.getElementById('anomaly-summary').style.display = 'flex';
-    document.getElementById('anomaly-chart-container').style.display = 'block';
+    document.getElementById('anomaly-charts-row').style.display = 'flex';
     document.getElementById('anomaly-table-container').style.display = 'block';
     
     // Update summary stats
@@ -1718,8 +1792,10 @@ function displayAnomalyResults(result) {
     document.getElementById('result-percentage').textContent = `${result.anomaly_percentage.toFixed(1)}%`;
     document.getElementById('result-time').textContent = `${result.computation_time.toFixed(2)}s`;
     
-    // Render histogram of anomaly scores
+    // Render anomaly charts
     renderAnomalyHistogram(result);
+    renderAnomalyThresholdChart(result);
+    renderPerMetricChart(result);
     
     // Get metrics used for table columns
     const metricsUsed = result.metrics_used || [];
@@ -1750,6 +1826,12 @@ function displayAnomalyResults(result) {
     
     // Render table with all nodes
     renderAnomalyTable(false);
+    
+    // Enable action buttons
+    document.getElementById('apply-anomaly-btn').disabled = false;
+    document.getElementById('highlight-anomalies-btn').disabled = false;
+    document.getElementById('clear-anomaly-highlight-btn').disabled = false;
+    document.getElementById('export-anomalies-btn').disabled = false;
 }
 
 function renderAnomalyTable(anomaliesOnly = false) {
@@ -1909,6 +1991,156 @@ function renderAnomalyHistogram(result) {
             }
         }
     });
+    
+    // Store reference in anomalyCharts object
+    anomalyCharts.histogram = anomalyHistogramChart;
+}
+
+function renderAnomalyThresholdChart(result) {
+    const canvas = document.getElementById('anomaly-threshold-chart');
+    if (!canvas) return;
+    
+    // Destroy existing chart
+    if (anomalyCharts.threshold) {
+        anomalyCharts.threshold.destroy();
+    }
+    
+    const anomalies = result.n_anomalies || 0;
+    const normal = (result.n_total || 0) - anomalies;
+    const percentage = result.anomaly_percentage || 0;
+    
+    anomalyCharts.threshold = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+            labels: ['Anomalies', 'Normal'],
+            datasets: [{
+                data: [anomalies, normal],
+                backgroundColor: ['rgba(255, 77, 79, 0.8)', 'rgba(74, 144, 226, 0.7)'],
+                borderColor: ['rgba(255, 77, 79, 1)', 'rgba(74, 144, 226, 1)'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: '#e0e0e0', padding: 10 }
+                },
+                title: {
+                    display: true,
+                    text: `Classification (${percentage.toFixed(1)}% anomalous)`,
+                    color: '#e0e0e0',
+                    font: { size: 13 }
+                }
+            }
+        }
+    });
+}
+
+function renderPerMetricChart(result) {
+    const canvas = document.getElementById('anomaly-per-metric-chart');
+    const panel = document.getElementById('anomaly-per-metric-panel');
+    if (!canvas) return;
+    
+    // Destroy existing chart
+    if (anomalyCharts.perMetric) {
+        anomalyCharts.perMetric.destroy();
+        anomalyCharts.perMetric = null;
+    }
+    
+    // Get visualization data if available
+    const vizData = result.visualization_data || {};
+    const perMetricStats = vizData.per_metric_stats || {};
+    const metricsUsed = result.metrics_used || [];
+    
+    // Only show if multiple metrics
+    if (metricsUsed.length < 2) {
+        if (panel) panel.style.display = 'none';
+        return;
+    }
+    
+    if (panel) panel.style.display = 'block';
+    
+    // Calculate stats from data if not in visualization_data
+    let labels = [];
+    let means = [];
+    let stds = [];
+    
+    if (Object.keys(perMetricStats).length > 0) {
+        labels = Object.keys(perMetricStats);
+        means = labels.map(m => perMetricStats[m].mean || 0);
+        stds = labels.map(m => perMetricStats[m].std || 0);
+    } else {
+        // Calculate from top_anomalies data
+        labels = metricsUsed;
+        const allNodes = result.top_anomalies || [];
+        
+        metricsUsed.forEach(metric => {
+            const values = allNodes.map(n => n.metric_values?.[metric] || n[metric]).filter(v => v !== undefined && !isNaN(v));
+            if (values.length > 0) {
+                const mean = values.reduce((a, b) => a + b, 0) / values.length;
+                const std = Math.sqrt(values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / values.length);
+                means.push(mean);
+                stds.push(std);
+            } else {
+                means.push(0);
+                stds.push(0);
+            }
+        });
+    }
+    
+    anomalyCharts.perMetric = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: labels.map(l => l.length > 12 ? l.substring(0, 10) + '...' : l),
+            datasets: [
+                {
+                    label: 'Mean',
+                    data: means,
+                    backgroundColor: 'rgba(82, 196, 26, 0.7)',
+                    borderColor: 'rgba(82, 196, 26, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Std Dev',
+                    data: stds,
+                    backgroundColor: 'rgba(250, 173, 20, 0.7)',
+                    borderColor: 'rgba(250, 173, 20, 1)',
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#e0e0e0' }
+                },
+                title: {
+                    display: true,
+                    text: 'Metric Statistics',
+                    color: '#e0e0e0',
+                    font: { size: 13 }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#808080', maxRotation: 45 },
+                    grid: { color: '#2a2a2a' }
+                },
+                y: {
+                    ticks: { color: '#808080' },
+                    grid: { color: '#2a2a2a' },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
 }
 
 function locateNode(nodeId) {
@@ -2038,4 +2270,482 @@ function showAnomalySuccess(message) {
             progress.textContent = 'Running analysis...';
         }, 2000);
     }
+}
+// =============================================================================
+// COMPOSITE METRICS
+// =============================================================================
+
+function initializeCompositeTab() {
+    if (compositeInitialized) return;
+    
+    console.log('[Composite] Initializing composite metrics tab...');
+    populateCompositeMetricSelects();
+    compositeInitialized = true;
+}
+
+function populateCompositeMetricSelects() {
+    const select1 = document.getElementById('dist-composite-metric-1');
+    const select2 = document.getElementById('dist-composite-metric-2');
+    
+    if (!select1 || !select2) return;
+    
+    const options = allMetrics.map(m => `<option value="${m}">${m.replace(/_/g, ' ')}</option>`).join('');
+    
+    select1.innerHTML = '<option value="">Select metric...</option>' + options;
+    select2.innerHTML = '<option value="">Select metric...</option>' + options;
+}
+
+function updateCompositeAutoName() {
+    const metric1 = document.getElementById('dist-composite-metric-1')?.value || '';
+    const metric2 = document.getElementById('dist-composite-metric-2')?.value || '';
+    const operation = document.getElementById('dist-composite-operation')?.value || 'multiply';
+    
+    const opSymbols = {
+        'multiply': 'x',
+        'add': 'plus',
+        'subtract': 'minus',
+        'divide': 'div',
+        'maximum': 'max',
+        'minimum': 'min',
+        'average': 'avg',
+        'weighted_sum': 'wsum',
+        'norm_multiply': 'normx'
+    };
+    
+    if (metric1 && metric2) {
+        const m1Short = metric1.substring(0, 8);
+        const m2Short = metric2.substring(0, 8);
+        const nameInput = document.getElementById('dist-composite-name');
+        if (nameInput && !nameInput.dataset.userModified) {
+            nameInput.value = `${m1Short}_${opSymbols[operation] || 'x'}_${m2Short}`;
+        }
+    }
+}
+
+async function previewComposite() {
+    const metric1 = document.getElementById('dist-composite-metric-1').value;
+    const metric2 = document.getElementById('dist-composite-metric-2').value;
+    const operation = document.getElementById('dist-composite-operation').value;
+    const normalize = document.getElementById('dist-composite-normalize')?.checked || false;
+    
+    if (!metric1 || !metric2) {
+        showCompositeError('Select two metrics');
+        return;
+    }
+    
+    const activeNodeIds = getActiveNodeIds();
+    
+    let weights = null;
+    if (operation === 'weighted_sum') {
+        weights = [
+            parseFloat(document.getElementById('dist-weight-1')?.value) || 0.5,
+            parseFloat(document.getElementById('dist-weight-2')?.value) || 0.5
+        ];
+    }
+    
+    try {
+        document.getElementById('preview-composite-btn').disabled = true;
+        document.getElementById('preview-composite-btn').textContent = 'Previewing...';
+        document.getElementById('composite-progress').style.display = 'block';
+        
+        const response = await fetch('/api/metrics/composite/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                metrics: [metric1, metric2],
+                operation,
+                weights,
+                normalize,
+                node_ids: activeNodeIds
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Preview failed');
+        }
+        
+        compositePreviewResult = await response.json();
+        renderCompositePreview(compositePreviewResult, metric1, metric2);
+        
+        document.getElementById('create-dist-composite-btn').disabled = false;
+        document.getElementById('export-composite-btn').disabled = false;
+        document.getElementById('chart-count').textContent = '1';
+        
+    } catch (error) {
+        showCompositeError(error.message);
+    } finally {
+        document.getElementById('preview-composite-btn').disabled = false;
+        document.getElementById('preview-composite-btn').textContent = 'Preview';
+        document.getElementById('composite-progress').style.display = 'none';
+    }
+}
+
+function showCompositeError(message) {
+    const progress = document.getElementById('composite-progress');
+    if (progress) {
+        progress.style.display = 'block';
+        progress.style.color = '#ff4d4f';
+        progress.textContent = `Error: ${message}`;
+        setTimeout(() => {
+            progress.style.display = 'none';
+            progress.style.color = '#808080';
+            progress.textContent = 'Computing preview...';
+        }, 3000);
+    }
+}
+
+function showCompositeSuccess(message) {
+    const progress = document.getElementById('composite-progress');
+    if (progress) {
+        progress.style.display = 'block';
+        progress.style.color = '#52c41a';
+        progress.textContent = message;
+        setTimeout(() => {
+            progress.style.display = 'none';
+            progress.style.color = '#808080';
+            progress.textContent = 'Computing preview...';
+        }, 2000);
+    }
+}
+
+function renderCompositePreview(result, metric1, metric2) {
+    document.getElementById('composite-empty-state').style.display = 'none';
+    document.getElementById('composite-preview').style.display = 'block';
+    
+    // Display formula
+    const formulaDisplay = document.getElementById('composite-formula-display');
+    if (formulaDisplay) {
+        formulaDisplay.innerHTML = `
+            <span class="formula-label">Formula:</span>
+            <code>${result.formula}</code>
+        `;
+    }
+    
+    // Display statistics
+    const stats = result.statistics;
+    const statsDisplay = document.getElementById('composite-stats-display');
+    if (statsDisplay) {
+        statsDisplay.innerHTML = `
+            <div class="stat-pill">Min: ${formatNumber(stats.min)}</div>
+            <div class="stat-pill">Max: ${formatNumber(stats.max)}</div>
+            <div class="stat-pill">Mean: ${formatNumber(stats.mean)}</div>
+            <div class="stat-pill">Std: ${formatNumber(stats.std)}</div>
+            <div class="stat-pill">Median: ${formatNumber(stats.median)}</div>
+        `;
+    }
+    
+    // Display correlations
+    const corr = result.correlations;
+    const corrDisplay = document.getElementById('composite-correlation-display');
+    if (corrDisplay) {
+        corrDisplay.innerHTML = `
+            <div class="correlation-row">
+                <span>Input Correlation (${metric1} ↔ ${metric2}):</span>
+                <span class="${getCorrelationClass(corr.input_correlation)}">${formatNumber(corr.input_correlation)}</span>
+            </div>
+            <div class="correlation-row">
+                <span>${metric1} ↔ Composite:</span>
+                <span class="${getCorrelationClass(corr.m1_composite)}">${formatNumber(corr.m1_composite)}</span>
+            </div>
+            <div class="correlation-row">
+                <span>${metric2} ↔ Composite:</span>
+                <span class="${getCorrelationClass(corr.m2_composite)}">${formatNumber(corr.m2_composite)}</span>
+            </div>
+        `;
+    }
+    
+    // Destroy existing charts
+    if (compositeCharts.histogram) compositeCharts.histogram.destroy();
+    if (compositeCharts.scatter) compositeCharts.scatter.destroy();
+    
+    renderCompositeHistogram(result);
+    renderCompositeScatter(result, metric1, metric2);
+}
+
+function getCorrelationClass(corr) {
+    const abs = Math.abs(corr);
+    if (abs > 0.7) return 'corr-strong';
+    if (abs > 0.4) return 'corr-moderate';
+    return 'corr-weak';
+}
+
+function renderCompositeHistogram(result) {
+    const ctx = document.getElementById('composite-histogram');
+    if (!ctx) return;
+    
+    const values = result.values.map(v => v.composite);
+    const histogram = calculateHistogram(values, 30);
+    
+    compositeCharts.histogram = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: histogram.labels,
+            datasets: [{
+                label: 'Frequency',
+                data: histogram.counts,
+                backgroundColor: 'rgba(82, 196, 26, 0.7)',
+                borderColor: 'rgba(82, 196, 26, 1)',
+                borderWidth: 1,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: {
+                    display: true,
+                    text: 'Composite Metric Distribution',
+                    color: '#e0e0e0',
+                    font: { size: 13 }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Composite Value',
+                        color: '#808080'
+                    },
+                    ticks: { color: '#808080', maxTicksLimit: 10 },
+                    grid: { color: '#2a2a2a' }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Count',
+                        color: '#808080'
+                    },
+                    ticks: { color: '#808080' },
+                    grid: { color: '#2a2a2a' },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function renderCompositeScatter(result, metric1, metric2) {
+    const ctx = document.getElementById('composite-scatter');
+    if (!ctx) return;
+    
+    const data = result.values.map(v => ({
+        x: v.metric1,
+        y: v.metric2,
+        composite: v.composite
+    }));
+    
+    // Color by composite value
+    const compositeValues = data.map(d => d.composite);
+    const minC = Math.min(...compositeValues);
+    const maxC = Math.max(...compositeValues);
+    
+    const colors = data.map(d => {
+        const norm = maxC > minC ? (d.composite - minC) / (maxC - minC) : 0.5;
+        return getViridisColor(norm, 0.7);
+    });
+    
+    compositeCharts.scatter = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+            datasets: [{
+                label: 'Nodes',
+                data: data,
+                backgroundColor: colors,
+                borderColor: colors.map(c => c.replace('0.7', '1')),
+                borderWidth: 0.5,
+                pointRadius: 3,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: {
+                    display: true,
+                    text: `${metric1} vs ${metric2} (colored by composite)`,
+                    color: '#e0e0e0',
+                    font: { size: 13 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => {
+                            const d = context.raw;
+                            return [
+                                `${metric1}: ${formatNumber(d.x)}`,
+                                `${metric2}: ${formatNumber(d.y)}`,
+                                `Composite: ${formatNumber(d.composite)}`
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: metric1.replace(/_/g, ' '),
+                        color: '#808080'
+                    },
+                    ticks: { color: '#808080' },
+                    grid: { color: '#2a2a2a' }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: metric2.replace(/_/g, ' '),
+                        color: '#808080'
+                    },
+                    ticks: { color: '#808080' },
+                    grid: { color: '#2a2a2a' }
+                }
+            }
+        }
+    });
+}
+
+async function createComposite() {
+    if (!compositePreviewResult) {
+        showCompositeError('Preview first before creating');
+        return;
+    }
+    
+    const name = document.getElementById('dist-composite-name')?.value;
+    if (!name) {
+        showCompositeError('Please enter a name for the composite metric');
+        return;
+    }
+    
+    const metric1 = document.getElementById('dist-composite-metric-1').value;
+    const metric2 = document.getElementById('dist-composite-metric-2').value;
+    const operation = document.getElementById('dist-composite-operation').value;
+    const normalize = document.getElementById('dist-composite-normalize')?.checked || false;
+    
+    let weights = null;
+    if (operation === 'weighted_sum') {
+        weights = [
+            parseFloat(document.getElementById('dist-weight-1')?.value) || 0.5,
+            parseFloat(document.getElementById('dist-weight-2')?.value) || 0.5
+        ];
+    }
+    
+    try {
+        document.getElementById('create-dist-composite-btn').disabled = true;
+        document.getElementById('create-dist-composite-btn').textContent = 'Creating...';
+        
+        const response = await fetch('/api/metrics/composite/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                metrics: [metric1, metric2],
+                operation,
+                weights,
+                normalize
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to create composite');
+        }
+        
+        const result = await response.json();
+        
+        console.log('[Composite] Create result:', result);
+        
+        // Update local nodeData with the new composite values
+        // node_updates contains [{id: ..., metricName: value}, ...]
+        let updatedCount = 0;
+        if (result.node_updates && result.node_updates.length > 0) {
+            const valueMap = new Map();
+            result.node_updates.forEach(update => {
+                const nodeId = String(update.id);
+                const value = update[name];  // The composite value is keyed by the metric name
+                if (value !== undefined) {
+                    valueMap.set(nodeId, value);
+                }
+            });
+            
+            console.log('[Composite] Value map size:', valueMap.size);
+            
+            nodeData.forEach(node => {
+                const compositeVal = valueMap.get(String(node.id));
+                if (compositeVal !== undefined) {
+                    node[name] = compositeVal;
+                    if (node.allData) {
+                        node.allData[name] = compositeVal;
+                    }
+                    updatedCount++;
+                }
+            });
+            
+            console.log('[Composite] Updated', updatedCount, 'nodes with new metric:', name);
+        } else {
+            console.warn('[Composite] No node_updates in result');
+        }
+        
+        // Notify parent window
+        if (window.opener) {
+            window.opener.postMessage({
+                type: 'COMPOSITE_CREATED',
+                data: {
+                    name: result.metric_name,
+                    formula: result.formula,
+                    node_updates: result.node_updates
+                }
+            }, '*');
+        }
+        
+        showCompositeSuccess(`Created composite metric: ${result.metric_name}`);
+        
+        // Add to allMetrics and refresh ALL metric selects/lists
+        if (!allMetrics.includes(name)) {
+            allMetrics.push(name);
+            allMetrics.sort();
+            
+            // Refresh all metric lists and selects
+            updateMetricsList();  // Histogram metrics
+            populateScatterSelects();  // Scatter plot selects
+            populateCompositeMetricSelects();  // Composite selects
+            if (anomalyInitialized) populateAnomalyMetrics();  // Anomaly metrics
+            if (pcaInitialized) populatePCAMetrics();  // PCA metrics
+            
+            console.log('[Composite] Added new metric:', name, 'Total metrics:', allMetrics.length);
+        }
+        
+    } catch (error) {
+        showCompositeError(error.message);
+    } finally {
+        document.getElementById('create-dist-composite-btn').disabled = false;
+        document.getElementById('create-dist-composite-btn').textContent = 'Create Metric';
+    }
+}
+
+function exportCompositePreview() {
+    if (!compositePreviewResult) return;
+    
+    const headers = ['node_id', 'metric1', 'metric2', 'composite'];
+    const rows = compositePreviewResult.values.map(v => 
+        [v.id, v.metric1.toFixed(6), v.metric2.toFixed(6), v.composite.toFixed(6)].join(',')
+    );
+    
+    const csv = [headers.join(','), ...rows].join('\n');
+    
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `composite_preview_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showCompositeSuccess('Preview exported to CSV');
 }

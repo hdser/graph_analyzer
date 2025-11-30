@@ -121,6 +121,43 @@ class GroupAnomalyStatsResponse(BaseModel):
     top_anomalies: List[Dict[str, Any]]
 
 
+class AnomalyVisualizationData(BaseModel):
+    """Additional visualization data for anomaly detection results."""
+    threshold_value: float = Field(
+        description="The threshold value used for anomaly classification"
+    )
+    scores_above_threshold: int = Field(
+        description="Number of scores above threshold (anomalies)"
+    )
+    scores_below_threshold: int = Field(
+        description="Number of scores below threshold (normal)"
+    )
+    score_bins: Optional[List[float]] = Field(
+        default=None,
+        description="Histogram bin edges for score distribution"
+    )
+    score_counts: Optional[List[int]] = Field(
+        default=None,
+        description="Histogram counts for each bin"
+    )
+    anomaly_counts: Optional[List[int]] = Field(
+        default=None,
+        description="Anomaly counts per histogram bin"
+    )
+    per_metric_stats: Optional[Dict[str, Dict[str, float]]] = Field(
+        default=None,
+        description="Statistics for each input metric"
+    )
+    per_metric_contributions: Optional[Dict[str, List[float]]] = Field(
+        default=None,
+        description="Contribution of each metric to anomaly scores"
+    )
+    algorithm_details: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Algorithm-specific visualization data"
+    )
+
+
 class AnomalyDetectionResponse(BaseModel):
     """Response for anomaly detection operation."""
     metric_name: str = Field(
@@ -172,6 +209,42 @@ class AnomalyDetectionResponse(BaseModel):
         default=None,
         description="Node attribute updates for frontend application"
     )
+    visualization_data: Optional[AnomalyVisualizationData] = Field(
+        default=None,
+        description="Additional data for enhanced visualizations"
+    )
+
+
+class PCAResponse(BaseModel):
+    """Response from PCA analysis."""
+    n_components: int = Field(
+        description="Number of principal components"
+    )
+    n_samples: int = Field(
+        description="Number of samples analyzed"
+    )
+    features: List[str] = Field(
+        description="List of input feature names"
+    )
+    explained_variance_ratio: List[float] = Field(
+        description="Variance explained by each component"
+    )
+    total_variance_explained: float = Field(
+        description="Total variance explained by all components"
+    )
+    loadings: Dict[str, List[float]] = Field(
+        description="PC loadings: PC1 -> [loading for each feature]"
+    )
+    transformed_data: Dict[str, List[float]] = Field(
+        description="Transformed data: PC1 -> [value for each sample]"
+    )
+    node_ids: List[str] = Field(
+        description="Node IDs in order corresponding to transformed data"
+    )
+    reconstruction_errors: Optional[List[float]] = Field(
+        default=None,
+        description="Reconstruction error for each sample"
+    )
 
 
 class CompositeMetricResult(BaseModel):
@@ -197,6 +270,26 @@ class CompositeMetricResult(BaseModel):
     composite_id: Optional[str] = Field(
         default=None,
         description="ID of saved composite"
+    )
+
+
+class CompositePreviewResponse(BaseModel):
+    """Response for composite metric preview."""
+    formula: str = Field(
+        description="Formula string"
+    )
+    statistics: Dict[str, float] = Field(
+        description="Statistics: min, max, mean, std, median"
+    )
+    values: List[Dict[str, Any]] = Field(
+        description="List of {id, metric1, metric2, composite} for each node"
+    )
+    correlations: Dict[str, float] = Field(
+        description="Correlations: input_correlation, m1_composite, m2_composite"
+    )
+    histogram: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Histogram data: bins, counts"
     )
 
 

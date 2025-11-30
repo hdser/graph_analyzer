@@ -108,6 +108,30 @@ class AnomalyDetectionRequest(BaseModel):
         default=True,
         description="Whether to apply scores as node attributes"
     )
+    node_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Filter analysis to specific node IDs (None = all nodes)"
+    )
+
+
+class PCARequest(BaseModel):
+    """Request for PCA analysis."""
+    metrics: List[str] = Field(
+        ...,
+        description="List of metric names for PCA"
+    )
+    n_components: str = Field(
+        default="auto",
+        description="Number of components: 'auto', '2', '3', '5', '10', or variance ratio like '0.95'"
+    )
+    standardize: bool = Field(
+        default=True,
+        description="Whether to standardize features before PCA"
+    )
+    node_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Filter analysis to specific node IDs (None = all nodes)"
+    )
 
 
 class ProfileMetricsRequest(BaseModel):
@@ -144,6 +168,31 @@ class CompositeMetricConfig(BaseModel):
     version: Optional[str] = Field(
         default=None,
         description="Graph version identifier"
+    )
+
+
+class CompositePreviewRequest(BaseModel):
+    """Request for composite metric preview (without saving)."""
+    metrics: List[str] = Field(
+        min_length=2,
+        max_length=2,
+        description="Two source metrics to combine"
+    )
+    operation: str = Field(
+        default="multiply",
+        description="Operation to apply"
+    )
+    weights: Optional[List[float]] = Field(
+        default=None,
+        description="Weights for weighted_sum operation"
+    )
+    normalize: bool = Field(
+        default=False,
+        description="Normalize inputs to [0,1] before operation"
+    )
+    node_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Filter to specific node IDs (None = all nodes)"
     )
 
 
