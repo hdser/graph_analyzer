@@ -4,52 +4,70 @@
  */
 
 const DistributionsComm = {
+    // Track active flash intervals so we can cancel them
+    _activeFlashIntervals: [],
+
     /**
      * Setup message listener for popup requests
      */
     setup() {
+        const self = this; // Capture reference to DistributionsComm
+        
         window.addEventListener('message', (event) => {
             if (event.data.type === 'REQUEST_DISTRIBUTION_DATA') {
-                this.sendData();
+                self.sendData();
             } else if (event.data.type === 'LOCATE_NODE') {
                 // Handle both nodeId formats
                 const nodeId = event.data.nodeId || (event.data.data && event.data.data.nodeId);
                 if (nodeId) {
-                    this.locateNode(nodeId);
+                    self.locateNode(nodeId);
                 }
             } else if (event.data.type === 'HIGHLIGHT_ANOMALIES') {
                 const nodeIds = event.data.nodeIds || (event.data.data && event.data.data.nodeIds);
                 if (nodeIds) {
-                    this.highlightAnomalies(nodeIds);
+                    self.highlightAnomalies(nodeIds);
                 }
             } else if (event.data.type === 'ANOMALY_APPLIED') {
                 // Refresh graph data after anomaly scores applied
-                this.handleAnomalyApplied(event.data.data);
+                self.handleAnomalyApplied(event.data.data);
             } else if (event.data.type === 'PCA_APPLIED') {
                 // Handle PCA scores applied
-                this.handlePCAApplied(event.data.data);
+                self.handlePCAApplied(event.data.data);
             } else if (event.data.type === 'COMPOSITE_CREATED') {
                 // Handle composite metric created
-                this.handleCompositeCreated(event.data.data);
+                self.handleCompositeCreated(event.data.data);
             } else if (event.data.type === 'CLEAR_SELECTION') {
                 // Clear all selections in main graph
-                this.clearSelection();
+                console.log('[DistributionsComm] Received CLEAR_SELECTION message');
+                self.clearSelection();
             } else if (event.data.type === 'CLEAR_HIGHLIGHTS') {
                 // Clear all highlight classes
-                this.clearHighlights();
+                console.log('[DistributionsComm] Received CLEAR_HIGHLIGHTS message');
+                self.clearHighlights();
             } else if (event.data.type === 'SELECT_NODES') {
                 // Select specific nodes
                 const nodeIds = event.data.nodeIds || (event.data.data && event.data.data.nodeIds);
                 if (nodeIds) {
-                    this.selectNodes(nodeIds);
+                    self.selectNodes(nodeIds);
                 }
             }
         });
         
-        // Also expose functions globally for direct calls from popup
-        window.highlightAnomalies = (nodeIds) => this.highlightAnomalies(nodeIds);
-        window.clearGraphSelection = () => this.clearSelection();
-        window.clearGraphHighlights = () => this.clearHighlights();
+        // Expose functions globally for direct calls from popup
+        // Use regular functions bound to self to ensure correct 'this' context
+        window.highlightAnomalies = function(nodeIds) { 
+            self.highlightAnomalies(nodeIds); 
+        };
+        window.clearGraphSelection = function() { 
+            console.log('[DistributionsComm] clearGraphSelection called directly');
+            self.clearSelection(); 
+        };
+        window.clearGraphHighlights = function() { 
+            console.log('[DistributionsComm] clearGraphHighlights called directly');
+            self.clearHighlights(); 
+        };
+        
+        console.log('[DistributionsComm] Setup complete, global functions exposed');
     },
 
     /**
@@ -171,7 +189,7 @@ const DistributionsComm = {
             easing: 'ease-out-cubic'
         });
         
-        // Flash the node for visibility
+        // Flash the node for visibility (single node, so we can use flash)
         this._flashNode(node);
         
         // Update info panel
@@ -190,9 +208,13 @@ const DistributionsComm = {
         
         console.log(`[DistributionsComm] Highlighting ${nodeIds.length} anomalies`);
         
+        // Clear any existing flash intervals first
+        this._clearAllFlashIntervals();
+        
         // Clear current selection and highlights
         State.cy.elements().unselect();
         State.cy.elements().removeClass('anomaly');
+        State.cy.nodes().removeStyle();
         
         // Convert nodeIds to strings for comparison
         const nodeIdSet = new Set(nodeIds.map(String));
@@ -223,10 +245,13 @@ const DistributionsComm = {
             easing: 'ease-out-cubic'
         });
         
-        // Flash each node briefly
-        anomalyNodes.forEach(node => {
-            this._flashNode(node);
-        });
+        // Don't flash nodes for large sets - it causes the style persistence issue
+        // Only flash if there are few anomalies
+        if (anomalyNodes.length <= 10) {
+            anomalyNodes.forEach(node => {
+                this._flashNode(node);
+            });
+        }
         
         updateStatus(`Highlighted ${anomalyNodes.length} anomalies`, 'success');
     },
@@ -287,23 +312,72 @@ const DistributionsComm = {
     },
 
     /**
+     * Clear all active flash intervals
+     */
+    _clearAllFlashIntervals() {
+        console.log(`[DistributionsComm] Clearing ${this._activeFlashIntervals.length} flash intervals`);
+        this._activeFlashIntervals.forEach(intervalId => {
+            clearInterval(intervalId);
+        });
+        this._activeFlashIntervals = [];
+    },
+
+    /**
      * Clear all highlight classes from elements
      */
     clearHighlights() {
-        if (!State.cy) return;
+        console.log('[DistributionsComm] clearHighlights() called');
         
-        // Remove all highlight-related classes
-        State.cy.elements().removeClass('highlighted');
-        State.cy.elements().removeClass('anomaly');
-        State.cy.elements().removeClass('searched');
-        State.cy.elements().removeClass('new-node');
+        if (!State.cy) {
+            console.warn('[DistributionsComm] No Cytoscape instance available');
+            return;
+        }
+        
+        const cy = State.cy;
+        
+        // FIRST: Clear all active flash intervals to stop any ongoing animations
+        this._clearAllFlashIntervals();
+        
+        // Get count of elements with highlight classes before clearing
+        const anomalyCount = cy.elements('.anomaly').length;
+        const highlightedCount = cy.elements('.highlighted').length;
+        const searchedCount = cy.elements('.searched').length;
+        console.log(`[DistributionsComm] Elements before clear: anomaly=${anomalyCount}, highlighted=${highlightedCount}, searched=${searchedCount}`);
+        
+        // Batch all operations for better performance
+        cy.batch(() => {
+            // Remove all highlight-related classes
+            cy.elements().removeClass('highlighted');
+            cy.elements().removeClass('anomaly');
+            cy.elements().removeClass('searched');
+            cy.elements().removeClass('new-node');
+            
+            // Remove any directly-set styles (from _flashNode, etc.)
+            cy.nodes().removeStyle();
+            cy.edges().removeStyle();
+        });
+        
+        // Force style recalculation
+        cy.style().update();
+        
+        // Force re-render by triggering a minimal viewport change
+        // This invalidates the textureOnViewport cache
+        const currentZoom = cy.zoom();
+        cy.zoom(currentZoom * 1.0001);
+        requestAnimationFrame(() => {
+            cy.zoom(currentZoom);
+        });
         
         // Reset neighbor highlight state
         State.neighborHighlightState = 0;
         
+        // Verify classes were removed
+        const anomalyCountAfter = cy.elements('.anomaly').length;
+        console.log(`[DistributionsComm] Elements after clear: anomaly=${anomalyCountAfter}`);
+        
         updateStatus('Highlights cleared', 'info');
         
-        console.log('[DistributionsComm] Highlights cleared');
+        console.log('[DistributionsComm] Highlights cleared successfully');
     },
 
     /**
@@ -407,30 +481,40 @@ const DistributionsComm = {
      * Flash a node for visibility
      */
     _flashNode(node) {
-        const originalStyle = {
-            'border-width': node.style('border-width'),
-            'border-color': node.style('border-color')
+        // Capture the style BEFORE any highlight classes are applied
+        // We want the base style, not the highlighted style
+        const baseStyle = {
+            'border-width': '1px',
+            'border-color': '#333333'
         };
         
         // Flash animation
         let flashCount = 0;
+        const self = this;
         const flashInterval = setInterval(() => {
             if (flashCount >= 6) {
                 clearInterval(flashInterval);
-                node.style({
-                    'border-width': originalStyle['border-width'],
-                    'border-color': originalStyle['border-color']
-                });
+                // Remove from active intervals
+                const idx = self._activeFlashIntervals.indexOf(flashInterval);
+                if (idx > -1) {
+                    self._activeFlashIntervals.splice(idx, 1);
+                }
+                // Don't set any style at the end - let the stylesheet handle it
+                // Just remove any directly-set styles
+                node.removeStyle();
                 return;
             }
             
             const isHighlight = flashCount % 2 === 0;
             node.style({
-                'border-width': isHighlight ? '4px' : originalStyle['border-width'],
-                'border-color': isHighlight ? '#ff4d4f' : originalStyle['border-color']
+                'border-width': isHighlight ? '4px' : baseStyle['border-width'],
+                'border-color': isHighlight ? '#ff4d4f' : baseStyle['border-color']
             });
             
             flashCount++;
         }, 200);
+        
+        // Track this interval so we can cancel it if needed
+        this._activeFlashIntervals.push(flashInterval);
     }
 };

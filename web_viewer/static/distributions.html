@@ -485,7 +485,8 @@
 
         .scatter-card .chart-container {
             flex: 1;
-            min-height: 500px;
+            min-height: 0;
+            height: 100%;
             position: relative;
             overflow: hidden;
         }
@@ -1341,7 +1342,6 @@
                         <div class="anomaly-actions">
                             <button class="btn btn-small" id="apply-anomaly-btn" disabled>Apply to Graph</button>
                             <button class="btn btn-small" id="highlight-anomalies-btn" disabled>Highlight Anomalies</button>
-                            <button class="btn btn-small" id="clear-anomaly-highlight-btn" disabled>Clear Highlights</button>
                             <button class="btn btn-small" id="export-anomalies-btn" disabled>Export CSV</button>
                         </div>
                     </div>

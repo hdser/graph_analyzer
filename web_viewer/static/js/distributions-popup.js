@@ -344,14 +344,88 @@ function getActiveNodeIds() {
 }
 
 function clearGraphSelection() {
-    if (window.opener) {
-        window.opener.postMessage({ type: 'CLEAR_SELECTION' }, '*');
+    if (!window.opener) {
+        console.warn('[Distributions] No opener window for clearGraphSelection');
+        return;
+    }
+    
+    let success = false;
+    
+    // Method 1: Try direct global function
+    try {
+        if (typeof window.opener.clearGraphSelection === 'function') {
+            window.opener.clearGraphSelection();
+            console.log('[Distributions] clearGraphSelection via direct function');
+            success = true;
+        }
+    } catch (e) {
+        console.warn('[Distributions] Direct function call failed:', e);
+    }
+    
+    // Method 2: Try via DistributionsComm object
+    if (!success) {
+        try {
+            if (window.opener.DistributionsComm && typeof window.opener.DistributionsComm.clearSelection === 'function') {
+                window.opener.DistributionsComm.clearSelection();
+                console.log('[Distributions] clearGraphSelection via DistributionsComm');
+                success = true;
+            }
+        } catch (e) {
+            console.warn('[Distributions] DistributionsComm call failed:', e);
+        }
+    }
+    
+    // Method 3: Fall back to postMessage (always works cross-origin)
+    if (!success) {
+        try {
+            window.opener.postMessage({ type: 'CLEAR_SELECTION' }, '*');
+            console.log('[Distributions] clearGraphSelection via postMessage');
+        } catch (e) {
+            console.error('[Distributions] All clearGraphSelection methods failed:', e);
+        }
     }
 }
 
 function clearGraphHighlights() {
-    if (window.opener) {
-        window.opener.postMessage({ type: 'CLEAR_HIGHLIGHTS' }, '*');
+    if (!window.opener) {
+        console.warn('[Distributions] No opener window for clearGraphHighlights');
+        return;
+    }
+    
+    let success = false;
+    
+    // Method 1: Try direct global function
+    try {
+        if (typeof window.opener.clearGraphHighlights === 'function') {
+            window.opener.clearGraphHighlights();
+            console.log('[Distributions] clearGraphHighlights via direct function');
+            success = true;
+        }
+    } catch (e) {
+        console.warn('[Distributions] Direct function call failed:', e);
+    }
+    
+    // Method 2: Try via DistributionsComm object
+    if (!success) {
+        try {
+            if (window.opener.DistributionsComm && typeof window.opener.DistributionsComm.clearHighlights === 'function') {
+                window.opener.DistributionsComm.clearHighlights();
+                console.log('[Distributions] clearGraphHighlights via DistributionsComm');
+                success = true;
+            }
+        } catch (e) {
+            console.warn('[Distributions] DistributionsComm call failed:', e);
+        }
+    }
+    
+    // Method 3: Fall back to postMessage (always works cross-origin)
+    if (!success) {
+        try {
+            window.opener.postMessage({ type: 'CLEAR_HIGHLIGHTS' }, '*');
+            console.log('[Distributions] clearGraphHighlights via postMessage');
+        } catch (e) {
+            console.error('[Distributions] All clearGraphHighlights methods failed:', e);
+        }
     }
 }
 
