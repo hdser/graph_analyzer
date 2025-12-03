@@ -2,12 +2,13 @@
 Cache Service
 
 Handles caching for layouts, data, and metrics.
+All DataFrame caches use Parquet format for type preservation and efficiency.
 """
 
 import json
 import hashlib
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 
 import pandas as pd
 
@@ -20,8 +21,9 @@ class CacheService:
     
     Cache structure:
     - cache/layouts/{graph_id}_{nodes}n_{edges}e.json
-    - cache/data/{graph_id}_edges.csv
-    - cache/data/node_metrics_{version}.csv
+    - cache/data/{graph_id}_edges.parquet
+    - cache/data/node_metrics_{version}.parquet
+    - cache/data/node_properties_{version}.parquet
     """
     
     def __init__(self):
@@ -34,7 +36,7 @@ class CacheService:
         self.data_dir.mkdir(parents=True, exist_ok=True)
     
     # =========================================================================
-    # Layout Cache
+    # Layout Cache (JSON - for position dictionaries)
     # =========================================================================
     
     def get_layout_cache_key(self, graph_id: str, node_count: int, edge_count: int) -> str:
@@ -175,7 +177,7 @@ class CacheService:
             print(f"[CACHE] Deleted: {cache_file.name}")
     
     # =========================================================================
-    # Data Cache
+    # Data Cache (Parquet - for edge DataFrames)
     # =========================================================================
     
     def save_data_cache(
@@ -193,8 +195,8 @@ class CacheService:
         Returns:
             Cache file path
         """
-        cache_file = self.data_dir / f"{graph_id}_edges.csv"
-        edges_df.to_csv(cache_file, index=False)
+        cache_file = self.data_dir / f"{graph_id}_edges.parquet"
+        edges_df.to_parquet(cache_file, index=False)
         print(f"[CACHE] Saved data: {cache_file.name} ({len(edges_df)} edges)")
         return str(cache_file)
     
@@ -208,11 +210,11 @@ class CacheService:
         Returns:
             DataFrame with edge data or None
         """
-        cache_file = self.data_dir / f"{graph_id}_edges.csv"
+        cache_file = self.data_dir / f"{graph_id}_edges.parquet"
         
         if cache_file.exists():
             try:
-                df = pd.read_csv(cache_file)
+                df = pd.read_parquet(cache_file)
                 print(f"[CACHE] Loaded data: {cache_file.name} ({len(df)} edges)")
                 return df
             except Exception as e:
@@ -221,7 +223,7 @@ class CacheService:
         return None
     
     # =========================================================================
-    # Metrics Cache
+    # Metrics Cache (Parquet)
     # =========================================================================
     
     def save_metrics_cache(
@@ -239,8 +241,8 @@ class CacheService:
         Returns:
             Cache file path
         """
-        cache_file = self.data_dir / f"node_metrics_{version}.csv"
-        metrics_df.to_csv(cache_file, index=False)
+        cache_file = self.data_dir / f"node_metrics_{version}.parquet"
+        metrics_df.to_parquet(cache_file, index=False)
         print(f"[CACHE] Saved metrics: {cache_file.name} ({len(metrics_df)} nodes)")
         return str(cache_file)
     
@@ -254,11 +256,11 @@ class CacheService:
         Returns:
             DataFrame with metrics or None
         """
-        cache_file = self.data_dir / f"node_metrics_{version}.csv"
+        cache_file = self.data_dir / f"node_metrics_{version}.parquet"
         
         if cache_file.exists():
             try:
-                df = pd.read_csv(cache_file)
+                df = pd.read_parquet(cache_file)
                 print(f"[CACHE] Loaded metrics: {cache_file.name} ({len(df)} nodes)")
                 return df
             except Exception as e:
@@ -272,7 +274,7 @@ class CacheService:
         return hashlib.md5(content).hexdigest()[:12]
     
     # =========================================================================
-    # Properties Cache
+    # Properties Cache (Parquet)
     # =========================================================================
     
     def save_properties_cache(
@@ -281,7 +283,7 @@ class CacheService:
         version: str = "default"
     ) -> str:
         """
-        Save node properties to cache (using pickle for complex types).
+        Save node properties to cache.
         
         Args:
             properties_df: DataFrame with node properties
@@ -290,8 +292,8 @@ class CacheService:
         Returns:
             Cache file path
         """
-        cache_file = self.data_dir / f"node_properties_{version}.pkl"
-        properties_df.to_pickle(cache_file)
+        cache_file = self.data_dir / f"node_properties_{version}.parquet"
+        properties_df.to_parquet(cache_file, index=False)
         print(f"[CACHE] Saved properties: {cache_file.name} ({len(properties_df)} nodes)")
         return str(cache_file)
     
@@ -305,11 +307,11 @@ class CacheService:
         Returns:
             DataFrame with properties or None
         """
-        cache_file = self.data_dir / f"node_properties_{version}.pkl"
+        cache_file = self.data_dir / f"node_properties_{version}.parquet"
         
         if cache_file.exists():
             try:
-                df = pd.read_pickle(cache_file)
+                df = pd.read_parquet(cache_file)
                 print(f"[CACHE] Loaded properties: {cache_file.name} ({len(df)} nodes)")
                 return df
             except Exception as e:

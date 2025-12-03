@@ -26,3 +26,5 @@ sse-starlette>=1.6.0
 # Optional: Cytoscape Desktop Integration
 py4cytoscape>=1.7.0
 requests>=2.31.0
+
+pyarrow>=14.0.0
