@@ -1,8 +1,12 @@
 """
 Cache Service
 
-Handles caching for layouts, data, and metrics.
-All DataFrame caches use Parquet format for type preservation and efficiency.
+Handles caching for layouts, data, metrics, and properties.
+All caches use Parquet format for consistency, type preservation, and efficiency.
+
+Layout cache structure:
+- cache/layouts/{graph_id}.parquet        - Current working layout (updated incrementally)
+- cache/layouts/{graph_id}_base.parquet   - Base layout (from Cytoscape Desktop, protected)
 """
 
 import json
@@ -17,10 +21,11 @@ from ..config import settings
 
 class CacheService:
     """
-    Service for managing layout, data, and metrics caches.
+    Service for managing layout, data, metrics, and properties caches.
     
     Cache structure:
-    - cache/layouts/{graph_id}_{nodes}n_{edges}e.json
+    - cache/layouts/{graph_id}.parquet (current layout)
+    - cache/layouts/{graph_id}_base.parquet (base layout, protected)
     - cache/data/{graph_id}_edges.parquet
     - cache/data/node_metrics_{version}.parquet
     - cache/data/node_properties_{version}.parquet
@@ -36,64 +41,70 @@ class CacheService:
         self.data_dir.mkdir(parents=True, exist_ok=True)
     
     # =========================================================================
-    # Layout Cache (JSON - for position dictionaries)
+    # Layout Cache (Parquet)
     # =========================================================================
     
-    def get_layout_cache_key(self, graph_id: str, node_count: int, edge_count: int) -> str:
-        """Generate a cache key for a layout."""
-        return f"{graph_id}_{node_count}n_{edge_count}e"
+    def _positions_to_df(self, positions: Dict[str, Dict[str, float]]) -> pd.DataFrame:
+        """Convert positions dict to DataFrame."""
+        rows = [
+            {'node_id': node_id, 'x': pos['x'], 'y': pos['y']}
+            for node_id, pos in positions.items()
+        ]
+        return pd.DataFrame(rows)
     
-    def get_cached_layout(
-        self, 
-        graph_id: str, 
-        node_count: int, 
-        edge_count: int,
-        tolerance: float = 0.1
-    ) -> Optional[Dict[str, Dict[str, float]]]:
+    def _df_to_positions(self, df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
+        """Convert DataFrame to positions dict."""
+        return {
+            str(row['node_id']): {'x': float(row['x']), 'y': float(row['y'])}
+            for _, row in df.iterrows()
+        }
+    
+    def get_cached_layout(self, graph_id: str) -> Optional[Dict[str, Dict[str, float]]]:
         """
-        Get cached layout if available.
+        Get cached layout for a graph.
+        
+        Tries to load in order:
+        1. Current layout ({graph_id}.parquet)
+        2. Base layout ({graph_id}_base.parquet)
+        3. Legacy JSON files (for backward compatibility)
         
         Args:
             graph_id: Graph identifier
-            node_count: Current node count
-            edge_count: Current edge count
-            tolerance: Allowed size difference ratio (default 10%)
             
         Returns:
             Layout dictionary {node_id: {x, y}} or None if not cached
         """
-        # Try exact match first
-        cache_key = self.get_layout_cache_key(graph_id, node_count, edge_count)
-        cache_file = self.layouts_dir / f"{cache_key}.json"
-        
-        if cache_file.exists():
+        # Try current layout first
+        current_file = self.layouts_dir / f"{graph_id}.parquet"
+        if current_file.exists():
             try:
-                with open(cache_file, 'r') as f:
-                    data = json.load(f)
-                print(f"[CACHE] Exact layout match: {cache_file.name}")
-                return data.get('positions', data)
+                df = pd.read_parquet(current_file)
+                positions = self._df_to_positions(df)
+                print(f"[CACHE] Loaded layout: {current_file.name} ({len(positions)} nodes)")
+                return positions
             except Exception as e:
                 print(f"[CACHE] Error loading layout: {e}")
         
-        # Try similar size match
-        for cache_file in self.layouts_dir.glob(f"{graph_id}_*.json"):
+        # Try base layout
+        base_file = self.layouts_dir / f"{graph_id}_base.parquet"
+        if base_file.exists():
             try:
-                # Parse node/edge counts from filename
-                parts = cache_file.stem.split('_')
-                if len(parts) >= 3:
-                    cached_nodes = int(parts[-2].replace('n', ''))
-                    cached_edges = int(parts[-1].replace('e', ''))
-                    
-                    # Check if within tolerance
-                    node_ratio = abs(cached_nodes - node_count) / max(node_count, 1)
-                    edge_ratio = abs(cached_edges - edge_count) / max(edge_count, 1)
-                    
-                    if node_ratio <= tolerance and edge_ratio <= tolerance:
-                        with open(cache_file, 'r') as f:
-                            data = json.load(f)
-                        print(f"[CACHE] Similar layout match: {cache_file.name} "
-                              f"(nodes: {cached_nodes} vs {node_count}, edges: {cached_edges} vs {edge_count})")
-                        return data.get('positions', data)
+                df = pd.read_parquet(base_file)
+                positions = self._df_to_positions(df)
+                print(f"[CACHE] Loaded base layout: {base_file.name} ({len(positions)} nodes)")
+                return positions
+            except Exception as e:
+                print(f"[CACHE] Error loading base layout: {e}")
+        
+        # Try legacy JSON files (backward compatibility)
+        for json_file in self.layouts_dir.glob(f"{graph_id}*.json"):
+            try:
+                with open(json_file, 'r') as f:
+                    data = json.load(f)
+                positions = data.get('positions', data)
+                if positions and isinstance(positions, dict):
+                    print(f"[CACHE] Loaded legacy layout: {json_file.name} ({len(positions)} nodes)")
+                    return positions
             except Exception:
                 continue
         
@@ -102,79 +113,112 @@ class CacheService:
     def save_layout_cache(
         self, 
         graph_id: str, 
-        node_count: int, 
-        edge_count: int,
-        positions: Dict[str, Dict[str, float]],
-        metadata: Optional[Dict[str, Any]] = None
+        positions: Dict[str, Dict[str, float]]
     ) -> str:
         """
-        Save layout to cache.
+        Save layout to current cache (overwrites existing).
         
         Args:
             graph_id: Graph identifier
-            node_count: Number of nodes
-            edge_count: Number of edges
             positions: Layout positions {node_id: {x, y}}
-            metadata: Optional metadata to store
             
         Returns:
             Cache file path
         """
-        cache_key = self.get_layout_cache_key(graph_id, node_count, edge_count)
-        cache_file = self.layouts_dir / f"{cache_key}.json"
-        
-        data = {
-            'positions': positions,
-            'metadata': metadata or {},
-            'node_count': node_count,
-            'edge_count': edge_count,
-            'graph_id': graph_id
-        }
-        
-        with open(cache_file, 'w') as f:
-            json.dump(data, f)
-        
-        print(f"[CACHE] Saved layout: {cache_file.name}")
+        cache_file = self.layouts_dir / f"{graph_id}.parquet"
+        df = self._positions_to_df(positions)
+        df.to_parquet(cache_file, index=False)
+        print(f"[CACHE] Saved layout: {cache_file.name} ({len(positions)} nodes)")
         return str(cache_file)
+    
+    def save_base_layout(
+        self, 
+        graph_id: str, 
+        positions: Dict[str, Dict[str, float]]
+    ) -> str:
+        """
+        Save layout as base (protected, from Cytoscape Desktop).
+        
+        Args:
+            graph_id: Graph identifier
+            positions: Layout positions {node_id: {x, y}}
+            
+        Returns:
+            Cache file path
+        """
+        cache_file = self.layouts_dir / f"{graph_id}_base.parquet"
+        df = self._positions_to_df(positions)
+        df.to_parquet(cache_file, index=False)
+        print(f"[CACHE] Saved base layout: {cache_file.name} ({len(positions)} nodes)")
+        return str(cache_file)
+    
+    def has_base_layout(self, graph_id: str) -> bool:
+        """Check if a base layout exists for the graph."""
+        return (self.layouts_dir / f"{graph_id}_base.parquet").exists()
     
     def list_cached_layouts(self) -> List[Dict[str, Any]]:
         """List all cached layouts with metadata."""
         layouts = []
-        for cache_file in self.layouts_dir.glob("*.json"):
+        
+        # List parquet layouts
+        for cache_file in self.layouts_dir.glob("*.parquet"):
             try:
-                parts = cache_file.stem.split('_')
-                if len(parts) >= 3:
-                    graph_id = '_'.join(parts[:-2])
-                    nodes = int(parts[-2].replace('n', ''))
-                    edges = int(parts[-1].replace('e', ''))
-                    
-                    layouts.append({
-                        'filename': cache_file.name,
-                        'graph_id': graph_id,
-                        'node_count': nodes,
-                        'edge_count': edges,
-                        'size_mb': cache_file.stat().st_size / (1024 * 1024)
-                    })
+                graph_id = cache_file.stem
+                is_base = graph_id.endswith('_base')
+                if is_base:
+                    graph_id = graph_id[:-5]  # Remove '_base' suffix
+                
+                df = pd.read_parquet(cache_file)
+                layouts.append({
+                    'filename': cache_file.name,
+                    'graph_id': graph_id,
+                    'node_count': len(df),
+                    'is_base': is_base,
+                    'size_mb': cache_file.stat().st_size / (1024 * 1024)
+                })
             except Exception:
                 continue
         
-        return sorted(layouts, key=lambda x: x.get('graph_id', ''))
+        return sorted(layouts, key=lambda x: (x.get('graph_id', ''), x.get('is_base', False)))
     
-    def clear_layout_cache(self, graph_id: Optional[str] = None):
+    def clear_layout_cache(self, graph_id: Optional[str] = None, include_base: bool = False):
         """
         Clear layout cache.
         
         Args:
             graph_id: Clear only for this graph (None = clear all)
+            include_base: If True, also delete base layouts (default: False)
         """
         if graph_id:
-            pattern = f"{graph_id}_*.json"
+            # Delete current layout
+            current_file = self.layouts_dir / f"{graph_id}.parquet"
+            if current_file.exists():
+                current_file.unlink()
+                print(f"[CACHE] Deleted: {current_file.name}")
+            
+            # Delete base layout only if requested
+            if include_base:
+                base_file = self.layouts_dir / f"{graph_id}_base.parquet"
+                if base_file.exists():
+                    base_file.unlink()
+                    print(f"[CACHE] Deleted: {base_file.name}")
+            
+            # Delete legacy JSON files
+            for json_file in self.layouts_dir.glob(f"{graph_id}*.json"):
+                json_file.unlink()
+                print(f"[CACHE] Deleted legacy: {json_file.name}")
         else:
-            pattern = "*.json"
-        
-        for cache_file in self.layouts_dir.glob(pattern):
-            cache_file.unlink()
-            print(f"[CACHE] Deleted: {cache_file.name}")
+            # Clear all
+            for cache_file in self.layouts_dir.glob("*.parquet"):
+                if not include_base and cache_file.stem.endswith('_base'):
+                    continue
+                cache_file.unlink()
+                print(f"[CACHE] Deleted: {cache_file.name}")
+            
+            # Delete all legacy JSON files
+            for json_file in self.layouts_dir.glob("*.json"):
+                json_file.unlink()
+                print(f"[CACHE] Deleted legacy: {json_file.name}")
     
     # =========================================================================
     # Data Cache (Parquet - for edge DataFrames)

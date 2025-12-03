@@ -619,9 +619,7 @@ class NetworkService:
             # Get layout
             cached_layout = None
             if config.use_cached_layout:
-                cached_layout = self.cache_service.get_cached_layout(
-                    layer_id, G.number_of_nodes(), G.number_of_edges()
-                )
+                cached_layout = self.cache_service.get_cached_layout(layer_id)
                 if cached_layout:
                     layout_cached = True
             
@@ -635,13 +633,7 @@ class NetworkService:
             
             # Save layout to cache
             if algorithm != "cached":
-                self.cache_service.save_layout_cache(
-                    layer_id,
-                    G.number_of_nodes(),
-                    G.number_of_edges(),
-                    positions,
-                    {'algorithm': algorithm}
-                )
+                self.cache_service.save_layout_cache(layer_id, positions)
         
         # Phase 3: Atomic state swap
         self.edge_layers = edge_layers

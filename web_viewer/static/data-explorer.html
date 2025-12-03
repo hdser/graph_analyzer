@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Explorer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 15px 20px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            color: #4A90E2;
+            white-space: nowrap;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .header-controls input[type="text"] {
+            flex: 1;
+            max-width: 400px;
+            padding: 10px 14px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 13px;
+        }
+
+        .header-controls input[type="text"]:focus {
+            outline: none;
+            border-color: #4A90E2;
+        }
+
+        .header-controls select {
+            padding: 10px 14px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 13px;
+            min-width: 180px;
+        }
+
+        .btn {
+            padding: 10px 18px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 13px;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #3a3a3a;
+            border-color: #4A90E2;
+        }
+
+        .btn-primary {
+            background: #4A90E2;
+            border-color: #4A90E2;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #357ABD;
+        }
+
+        /* Info bar */
+        .info-bar {
+            display: flex;
+            gap: 30px;
+            padding: 10px 20px;
+            background: #151515;
+            border-bottom: 1px solid #2a2a2a;
+            font-size: 13px;
+            color: #808080;
+        }
+
+        .info-bar .stat {
+            display: flex;
+            gap: 6px;
+        }
+
+        .info-bar .stat-value {
+            color: #e0e0e0;
+            font-weight: 500;
+        }
+
+        /* Table container */
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            min-height: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 12px 14px;
+            text-align: left;
+            border-bottom: 1px solid #2a2a2a;
+            white-space: nowrap;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: #1a1a1a;
+            color: #808080;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            cursor: pointer;
+            user-select: none;
+            z-index: 10;
+        }
+
+        th:hover {
+            color: #4A90E2;
+        }
+
+        th.sorted-asc::after {
+            content: " ▲";
+            color: #4A90E2;
+        }
+
+        th.sorted-desc::after {
+            content: " ▼";
+            color: #4A90E2;
+        }
+
+        tbody tr {
+            background: #0f0f0f;
+        }
+
+        tbody tr:hover {
+            background: #1a1a1a;
+        }
+
+        tbody tr.selected {
+            background: #1a3a5c;
+        }
+
+        td.node-id {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            color: #4A90E2;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        td.number {
+            text-align: right;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        }
+
+        td.null {
+            color: #505050;
+            font-style: italic;
+        }
+
+        .btn-locate {
+            padding: 5px 12px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-radius: 3px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+
+        .btn-locate:hover {
+            background: #4A90E2;
+            border-color: #4A90E2;
+            color: #fff;
+        }
+
+        /* Sticky Actions column */
+        th:first-child,
+        td:first-child {
+            position: sticky;
+            left: 0;
+            background: #1a1a1a;
+            z-index: 5;
+        }
+
+        th:first-child {
+            background: #1a1a1a;
+            z-index: 15;
+        }
+
+        tbody tr:hover td:first-child {
+            background: #1a1a1a;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            padding: 15px 20px;
+            background: #1a1a1a;
+            border-top: 1px solid #333;
+        }
+
+        .pagination button {
+            padding: 8px 18px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #3a3a3a;
+            border-color: #4A90E2;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .pagination .page-info {
+            color: #808080;
+            font-size: 13px;
+        }
+
+        /* Loading state */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: #808080;
+        }
+
+        .loading::after {
+            content: "Loading...";
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            background: #333;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 13px;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        .toast.success {
+            background: #2e7d32;
+        }
+
+        .toast.error {
+            background: #c62828;
+        }
+
+        .toast.warning {
+            background: #f57c00;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Data Explorer</h1>
+        <div class="header-controls">
+            <input type="text" id="search-input" placeholder="Search nodes...">
+            <select id="column-filter">
+                <option value="">All Columns</option>
+            </select>
+            <button class="btn" id="refresh-btn">Refresh</button>
+            <button class="btn" id="export-btn">Export CSV</button>
+        </div>
+    </div>
+
+    <div class="info-bar">
+        <div class="stat">
+            <span>Total:</span>
+            <span class="stat-value" id="total-count">0 nodes</span>
+        </div>
+        <div class="stat">
+            <span>Showing:</span>
+            <span class="stat-value" id="showing-range">0-0</span>
+        </div>
+        <div class="stat">
+            <span>Filtered:</span>
+            <span class="stat-value" id="filtered-count">0</span>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr id="table-header"></tr>
+            </thead>
+            <tbody id="table-body">
+                <tr><td colspan="20" class="loading"></td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="pagination">
+        <button id="prev-btn" disabled>← Previous</button>
+        <span class="page-info" id="page-info">Page 1 of 1</span>
+        <button id="next-btn">Next →</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        /**
+         * Data Explorer - Standalone Popup Window
+         */
+        const DataExplorer = {
+            // State
+            data: [],
+            columns: [],
+            filteredData: [],
+            currentPage: 0,
+            pageSize: 100,
+            sortColumn: null,
+            sortDirection: 'asc',
+            searchTerm: '',
+            columnFilter: '',
+
+            /**
+             * Initialize
+             */
+            init() {
+                // Search
+                document.getElementById('search-input').addEventListener('input', (e) => {
+                    this.searchTerm = e.target.value.toLowerCase();
+                    this.applyFilters();
+                });
+
+                // Column filter
+                document.getElementById('column-filter').addEventListener('change', (e) => {
+                    this.columnFilter = e.target.value;
+                    this.renderTable();
+                });
+
+                // Pagination
+                document.getElementById('prev-btn').addEventListener('click', () => this.prevPage());
+                document.getElementById('next-btn').addEventListener('click', () => this.nextPage());
+
+                // Refresh
+                document.getElementById('refresh-btn').addEventListener('click', () => this.loadData());
+
+                // Export
+                document.getElementById('export-btn').addEventListener('click', () => this.exportCSV());
+
+                // Load data
+                this.loadData();
+
+                // Request data from parent if available
+                if (window.opener) {
+                    window.opener.postMessage({ type: 'REQUEST_NODE_DATA' }, '*');
+                }
+            },
+
+            /**
+             * Load data from API
+             */
+            async loadData() {
+                try {
+                    document.getElementById('table-body').innerHTML = 
+                        '<tr><td colspan="20" class="loading"></td></tr>';
+
+                    const response = await fetch('/api/nodes/data?limit=100000');
+                    if (!response.ok) throw new Error('Failed to load data');
+
+                    const result = await response.json();
+                    this.data = result.nodes || [];
+                    this.columns = result.columns || [];
+                    this.filteredData = [...this.data];
+                    this.currentPage = 0;
+                    this.sortColumn = null;
+                    this.sortDirection = 'asc';
+
+                    // Update stats
+                    document.getElementById('total-count').textContent = `${this.data.length} nodes`;
+
+                    // Populate column filter
+                    this.populateColumnFilter();
+
+                    // Render
+                    this.renderTable();
+
+                } catch (error) {
+                    console.error('[DataExplorer] Error loading data:', error);
+                    this.showToast('Failed to load node data', 'error');
+                    document.getElementById('table-body').innerHTML = 
+                        '<tr><td colspan="20" style="text-align:center;padding:40px;color:#808080;">Failed to load data</td></tr>';
+                }
+            },
+
+            /**
+             * Populate column filter dropdown
+             */
+            populateColumnFilter() {
+                const select = document.getElementById('column-filter');
+                select.innerHTML = '<option value="">All Columns</option>';
+
+                this.columns.forEach(col => {
+                    const option = document.createElement('option');
+                    option.value = col.name;
+                    option.textContent = col.name;
+                    select.appendChild(option);
+                });
+            },
+
+            /**
+             * Apply search filter
+             */
+            applyFilters() {
+                if (!this.searchTerm) {
+                    this.filteredData = [...this.data];
+                } else {
+                    this.filteredData = this.data.filter(node => {
+                        return Object.values(node).some(val => {
+                            if (val === null || val === undefined) return false;
+                            return String(val).toLowerCase().includes(this.searchTerm);
+                        });
+                    });
+                }
+
+                this.currentPage = 0;
+                this.applySorting();
+                this.renderTable();
+            },
+
+            /**
+             * Apply current sorting
+             */
+            applySorting() {
+                if (!this.sortColumn) return;
+
+                const col = this.columns.find(c => c.name === this.sortColumn);
+                const isNumeric = col?.type === 'number';
+
+                this.filteredData.sort((a, b) => {
+                    let valA = a[this.sortColumn];
+                    let valB = b[this.sortColumn];
+
+                    if (valA === null || valA === undefined) return 1;
+                    if (valB === null || valB === undefined) return -1;
+
+                    if (isNumeric) {
+                        valA = parseFloat(valA) || 0;
+                        valB = parseFloat(valB) || 0;
+                    } else {
+                        valA = String(valA).toLowerCase();
+                        valB = String(valB).toLowerCase();
+                    }
+
+                    let cmp = valA < valB ? -1 : valA > valB ? 1 : 0;
+                    return this.sortDirection === 'desc' ? -cmp : cmp;
+                });
+            },
+
+            /**
+             * Sort by column
+             */
+            sortBy(columnName) {
+                if (this.sortColumn === columnName) {
+                    this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this.sortColumn = columnName;
+                    this.sortDirection = 'asc';
+                }
+
+                this.applySorting();
+                this.renderTable();
+            },
+
+            /**
+             * Render table
+             */
+            renderTable() {
+                // Determine visible columns
+                let visibleColumns = this.columns;
+                if (this.columnFilter) {
+                    visibleColumns = this.columns.filter(c =>
+                        c.name === 'avatar' || c.name === this.columnFilter
+                    );
+                }
+
+                // Render header
+                const header = document.getElementById('table-header');
+                header.innerHTML = '<th>Actions</th>' + visibleColumns.map(col => {
+                    let sortClass = '';
+                    if (this.sortColumn === col.name) {
+                        sortClass = this.sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc';
+                    }
+                    return `<th class="${sortClass}" onclick="DataExplorer.sortBy('${col.name}')">${col.name}</th>`;
+                }).join('');
+
+                // Get page data
+                const start = this.currentPage * this.pageSize;
+                const end = Math.min(start + this.pageSize, this.filteredData.length);
+                const pageData = this.filteredData.slice(start, end);
+
+                // Update info
+                document.getElementById('showing-range').textContent = 
+                    this.filteredData.length > 0 ? `${start + 1}-${end}` : '0-0';
+                document.getElementById('filtered-count').textContent = this.filteredData.length;
+
+                // Render body
+                const tbody = document.getElementById('table-body');
+                
+                if (pageData.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:40px;color:#808080;">No nodes found</td></tr>';
+                    this.updatePagination();
+                    return;
+                }
+
+                tbody.innerHTML = pageData.map(node => {
+                    const cells = visibleColumns.map(col => {
+                        const val = node[col.name];
+                        const isId = col.name === 'avatar' || col.name === 'id';
+
+                        if (val === null || val === undefined) {
+                            return '<td class="null">-</td>';
+                        }
+
+                        if (isId) {
+                            const displayId = String(val).length > 24
+                                ? String(val).substring(0, 22) + '...'
+                                : String(val);
+                            return `<td class="node-id" title="${val}">${displayId}</td>`;
+                        }
+
+                        if (col.type === 'number' && typeof val === 'number') {
+                            const formatted = Number.isInteger(val) ? val.toLocaleString() : val.toFixed(4);
+                            return `<td class="number">${formatted}</td>`;
+                        }
+
+                        return `<td>${this.escapeHtml(String(val))}</td>`;
+                    }).join('');
+
+                    const nodeId = node.avatar || node.id || '';
+                    const escapedId = this.escapeHtml(nodeId).replace(/'/g, "\\'");
+                    return `<tr data-node-id="${nodeId}"><td><button class="btn-locate" onclick="DataExplorer.locateNode('${escapedId}')">Locate</button></td>${cells}</tr>`;
+                }).join('');
+
+                this.updatePagination();
+            },
+
+            /**
+             * Update pagination
+             */
+            updatePagination() {
+                const totalPages = Math.ceil(this.filteredData.length / this.pageSize) || 1;
+
+                document.getElementById('page-info').textContent = 
+                    `Page ${this.currentPage + 1} of ${totalPages}`;
+
+                document.getElementById('prev-btn').disabled = this.currentPage === 0;
+                document.getElementById('next-btn').disabled = 
+                    this.currentPage >= totalPages - 1;
+            },
+
+            prevPage() {
+                if (this.currentPage > 0) {
+                    this.currentPage--;
+                    this.renderTable();
+                }
+            },
+
+            nextPage() {
+                const totalPages = Math.ceil(this.filteredData.length / this.pageSize);
+                if (this.currentPage < totalPages - 1) {
+                    this.currentPage++;
+                    this.renderTable();
+                }
+            },
+
+            /**
+             * Locate node in main window
+             */
+            locateNode(nodeId) {
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({
+                        type: 'LOCATE_NODE',
+                        nodeId: nodeId
+                    }, '*');
+                    this.showToast(`Locating: ${nodeId.substring(0, 12)}...`, 'success');
+                } else {
+                    this.showToast('Main window not available', 'error');
+                }
+            },
+
+            /**
+             * Export to CSV
+             */
+            exportCSV() {
+                if (this.filteredData.length === 0) {
+                    this.showToast('No data to export', 'warning');
+                    return;
+                }
+
+                const headers = this.columns.map(c => c.name);
+                const csvRows = [headers.join(',')];
+
+                this.filteredData.forEach(node => {
+                    const row = headers.map(h => {
+                        const val = node[h];
+                        if (val === null || val === undefined) return '';
+                        const str = String(val);
+                        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                            return '"' + str.replace(/"/g, '""') + '"';
+                        }
+                        return str;
+                    });
+                    csvRows.push(row.join(','));
+                });
+
+                const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `node_data_${new Date().toISOString().slice(0, 10)}.csv`;
+                link.click();
+
+                this.showToast(`Exported ${this.filteredData.length} nodes`, 'success');
+            },
+
+            /**
+             * Show toast notification
+             */
+            showToast(message, type = 'info') {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.className = `toast show ${type}`;
+                setTimeout(() => {
+                    toast.className = 'toast';
+                }, 3000);
+            },
+
+            /**
+             * Escape HTML
+             */
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        };
+
+        // Initialize when loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            DataExplorer.init();
+        });
+    </script>
+</body>
+</html>

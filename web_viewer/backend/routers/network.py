@@ -212,3 +212,64 @@ async def get_state():
         "anomaly_available": HAS_ANOMALY,
         "auto_reload_available": HAS_SSE
     }
+
+
+@router.get("/nodes/data")
+async def get_all_node_data(
+    limit: int = Query(10000, ge=1, le=100000),
+    offset: int = Query(0, ge=0)
+):
+    """
+    Get all node data (metrics + properties) for data exploration.
+    
+    Returns paginated list of all nodes with their attributes.
+    """
+    import pandas as pd
+    
+    df = network_service.get_all_node_data_df()
+    if df is None or df.empty:
+        return {
+            "nodes": [],
+            "columns": [],
+            "total": 0,
+            "offset": offset,
+            "limit": limit
+        }
+    
+    total = len(df)
+    
+    # Get column info (types)
+    columns = []
+    for col in df.columns:
+        dtype = str(df[col].dtype)
+        col_type = "string"
+        if "int" in dtype or "float" in dtype:
+            col_type = "number"
+        elif "bool" in dtype:
+            col_type = "boolean"
+        columns.append({"name": col, "type": col_type})
+    
+    # Paginate
+    df_page = df.iloc[offset:offset + limit]
+    
+    # Convert to records, handling special types
+    nodes = []
+    for _, row in df_page.iterrows():
+        node = {}
+        for col in df.columns:
+            val = row[col]
+            if pd.isna(val):
+                node[col] = None
+            elif isinstance(val, (list, dict)):
+                node[col] = str(val)  # Convert complex types to string
+            else:
+                node[col] = val
+        nodes.append(node)
+    
+    return {
+        "nodes": nodes,
+        "columns": columns,
+        "total": total,
+        "offset": offset,
+        "limit": limit
+    }

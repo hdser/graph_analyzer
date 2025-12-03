@@ -101,6 +101,15 @@ async def distributions():
     return {"error": "distributions.html not found"}
 
 
+@app.get("/data-explorer")
+async def data_explorer():
+    """Serve the data explorer page."""
+    explorer_path = STATIC_DIR / "data-explorer.html"
+    if explorer_path.exists():
+        return FileResponse(explorer_path)
+    return {"error": "data-explorer.html not found"}
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
