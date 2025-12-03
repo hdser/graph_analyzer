@@ -117,10 +117,10 @@ async function loadAvailableConfig() {
             console.log('[CONFIG] Production mode - hiding admin UI sections');
             
             // Hide entire sections using their IDs
+            // Note: metrics-section stays visible - users can still run metrics
             const sectionsToHide = [
                 'data-source-section',   // Data Source (Load) section
                 'auto-reload-section',   // Auto Reload section  
-                'metrics-section'        // Metrics Analysis section
             ];
             
             sectionsToHide.forEach(id => {
