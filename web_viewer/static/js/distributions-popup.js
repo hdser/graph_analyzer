@@ -470,7 +470,7 @@ function createHistogramChart(metric) {
     card.id = cardId;
     
     const stats = calculateStats(values);
-    const histogram = calculateHistogram(values, 30);
+    const histogram = calculateHistogram(values, 100);
     
     card.innerHTML = `
         <div class="chart-header">
@@ -700,7 +700,7 @@ function calculateStats(values) {
     };
 }
 
-function calculateHistogram(values, numBins = 30) {
+function calculateHistogram(values, numBins = 100) {
     const min = Math.min(...values);
     const max = Math.max(...values);
     
@@ -1812,7 +1812,7 @@ function updateAlgorithmUI() {
     document.getElementById('algorithm-description').innerHTML = `
         <p>${info.description}</p>
         <p class="complexity">Complexity: ${info.complexity}</p>
-         <p class="multivariate">${info.multivariate ? 'âœ“ Supports multiple metrics' : 'â—‹ Single metric recommended'}</p>
+         <p class="multivariate">${info.multivariate ? '✓ Supports multiple metrics' : '○ Single metric recommended'}</p>
     `;
     
     // Update parameters
@@ -2852,7 +2852,7 @@ function renderCompositeHistogram(result) {
     if (!ctx) return;
     
     const values = result.values.map(v => v.composite);
-    const histogram = calculateHistogram(values, 30);
+    const histogram = calculateHistogram(values, 100);
     
     compositeCharts.histogram = new Chart(ctx, {
         type: 'bar',
