@@ -214,6 +214,12 @@ class NetworkService:
                     print(f"[PROPERTIES] Warning: No 'avatar' column in {sql_file}")
                     continue
                 
+                # Filter out NULL/None avatars before normalization
+                null_count = df['avatar'].isna().sum()
+                if null_count > 0:
+                    print(f"[PROPERTIES] Filtering out {null_count} rows with NULL avatar")
+                    df = df[df['avatar'].notna()]
+                
                 # Normalize avatar column to lowercase
                 df['avatar'] = df['avatar'].astype(str).str.lower()
                 
@@ -543,15 +549,30 @@ class NetworkService:
                     if col != 'avatar' and col not in property_names:
                         property_names.append(col)
         
-        # Compute metrics
-        metrics_dfs = self.compute_metrics_for_shared_avatars(
-            edge_layers, 
-            config.metrics_mode
-        )
+        # Load or compute metrics
+        metrics_dfs = {}
+        metrics_source = "computed"
         
-        # Save metrics to cache
-        for version, df in metrics_dfs.items():
-            self.cache_service.save_metrics_cache(df, version)
+        if config.skip_sql:
+            # Try loading cached metrics for each layer
+            for sql_file in config.sql_files:
+                version = self._extract_version(Path(sql_file).stem)
+                cached_metrics = self.cache_service.load_metrics_cache(version)
+                if cached_metrics is not None:
+                    metrics_dfs[version] = cached_metrics
+                    metrics_source = "cache"
+        
+        # If no cached metrics found, compute them
+        if not metrics_dfs:
+            metrics_dfs = self.compute_metrics_for_shared_avatars(
+                edge_layers, 
+                config.metrics_mode
+            )
+            metrics_source = "computed"
+            
+            # Save metrics to cache
+            for version, df in metrics_dfs.items():
+                self.cache_service.save_metrics_cache(df, version)
         
         # Phase 2: Build graphs and layouts
         graphs = {}
@@ -652,7 +673,8 @@ class NetworkService:
             layout_cached=layout_cached,
             data_source=data_source,
             node_properties_loaded=property_names,
-            node_properties_source=properties_source
+            node_properties_source=properties_source,
+            metrics_source=metrics_source
         )
     
     def update_metrics(self, config: MetricsConfig) -> Dict[str, Any]:

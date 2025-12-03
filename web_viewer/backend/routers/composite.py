@@ -79,9 +79,8 @@ async def preview_composite_metric(request: CompositePreviewRequest):
         )
     
     try:
-        # Get metrics DataFrame
-        version = list(network_service.metrics_dfs.keys())[0] if network_service.metrics_dfs else None
-        df = network_service.get_metrics_dataframe(version)
+        # Get ALL node data (metrics + properties) from graph nodes
+        df = network_service.get_all_node_data_df()
         
         if df is None or df.empty:
             raise HTTPException(
@@ -232,12 +231,12 @@ def create_composite_metric(config: CompositeMetricConfig):
         )
     
     try:
-        # Get metrics DataFrame
+        # Get ALL node data (metrics + properties) from graph nodes
         version = config.version
         if not version:
             version = list(network_service.metrics_dfs.keys())[0] if network_service.metrics_dfs else None
         
-        df = network_service.get_metrics_dataframe(version)
+        df = network_service.get_all_node_data_df()
         if df is None or df.empty:
             raise HTTPException(
                 status_code=400, 
@@ -342,11 +341,11 @@ def apply_composite_metric(composite_id: str, version: Optional[str] = None):
                 detail=f"Composite {composite_id} not found"
             )
         
-        # Get metrics DataFrame
+        # Get ALL node data (metrics + properties) from graph nodes
         if not version:
             version = composite.get('version', 'default')
         
-        df = network_service.get_metrics_dataframe(version)
+        df = network_service.get_all_node_data_df()
         if df is None or df.empty:
             raise HTTPException(
                 status_code=400, 

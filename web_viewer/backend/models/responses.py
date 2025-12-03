@@ -52,6 +52,10 @@ class NetworkState(BaseModel):
         default=None,
         description="Source of node properties: sql, cache, or None if not loaded"
     )
+    metrics_source: str = Field(
+        default="computed",
+        description="Source of metrics: computed or cache"
+    )
 
 
 class AlgorithmParameterResponse(BaseModel):
@@ -261,7 +265,7 @@ class CompositeMetricResult(BaseModel):
         description="Name of the composite metric"
     )
     formula: str = Field(
-        description="Formula string (e.g., 'metric1 × metric2')"
+        description="Formula string (e.g., 'metric1 Ã— metric2')"
     )
     node_updates: List[Dict[str, Any]] = Field(
         default_factory=list,
