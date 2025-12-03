@@ -112,6 +112,35 @@ async function loadAvailableConfig() {
                 ).join('');
         }
 
+        // Hide data source UI elements in production mode
+        if (config.hide_data_source_ui) {
+            console.log('[CONFIG] Production mode - hiding admin UI sections');
+            
+            // Hide entire sections using their IDs
+            const sectionsToHide = [
+                'data-source-section',   // Data Source (Load) section
+                'auto-reload-section',   // Auto Reload section  
+                'metrics-section'        // Metrics Analysis section
+            ];
+            
+            sectionsToHide.forEach(id => {
+                const section = document.getElementById(id);
+                if (section) {
+                    section.style.display = 'none';
+                    console.log(`[CONFIG] Hidden section: ${id}`);
+                } else {
+                    console.warn(`[CONFIG] Section not found: ${id}`);
+                }
+            });
+            
+            // Show loading indicator and start polling for data
+            DOMCache.loading.style.display = 'flex';
+            updateStatus('Loading network data in background...', 'info');
+            
+            // Poll for data ready state
+            pollForDataReady();
+        }
+
         // Populate color gradients
         const gradientSelect = document.getElementById('node-color-gradient');
         gradientSelect.innerHTML = Object.keys(COLOR_GRADIENTS)
@@ -122,6 +151,153 @@ async function loadAvailableConfig() {
         console.error('Error loading config:', error);
         updateStatus('Config error: ' + error.message, 'error');
     }
+}
+
+/**
+ * Wait for background data load to complete using SSE.
+ * Used in production mode when HIDE_DATA_SOURCE_UI is true.
+ * SSE is much more efficient than polling - single connection, server pushes updates.
+ */
+async function pollForDataReady() {
+    console.log('[STARTUP] Connecting to startup events...');
+    
+    // First check if data is already ready
+    try {
+        const statusResponse = await fetch('/api/startup-status');
+        const status = await statusResponse.json();
+        
+        if (status.status === 'ready') {
+            console.log('[STARTUP] Data already ready, displaying graph...');
+            await displayLoadedGraph(status);
+            return;
+        }
+    } catch (err) {
+        console.error('[STARTUP] Error checking initial status:', err);
+    }
+    
+    // Connect to SSE for updates
+    const eventSource = new EventSource('/api/startup-events');
+    
+    eventSource.onopen = () => {
+        console.log('[STARTUP] SSE connected, waiting for data load...');
+    };
+    
+    eventSource.addEventListener('status', async (event) => {
+        const status = JSON.parse(event.data);
+        console.log('[STARTUP] Status update:', status.status, status.message);
+        
+        if (status.status === 'loading') {
+            updateStatus(`Loading: ${status.message}`, 'info');
+        } else if (status.status === 'ready') {
+            console.log('[STARTUP] ✓ Data ready!');
+            eventSource.close();
+            await displayLoadedGraph(status);
+        } else if (status.status === 'error') {
+            console.error('[STARTUP] ✗ Load failed:', status.message);
+            eventSource.close();
+            updateStatus(`Load failed: ${status.message}`, 'error');
+            DOMCache.loading.style.display = 'none';
+        }
+    });
+    
+    eventSource.addEventListener('ping', () => {
+        // Keepalive, ignore
+    });
+    
+    eventSource.onerror = (err) => {
+        console.error('[STARTUP] SSE error:', err);
+        eventSource.close();
+        
+        // Fallback to simple polling if SSE fails
+        console.log('[STARTUP] Falling back to polling...');
+        fallbackPoll();
+    };
+}
+
+/**
+ * Display the loaded graph after startup completes.
+ */
+async function displayLoadedGraph(status) {
+    updateStatus('Data loaded, displaying graph...', 'info');
+    
+    try {
+        // Get the full network state
+        const stateResponse = await fetch('/api/state');
+        const state = await stateResponse.json();
+        
+        if (state.loaded_graphs && state.loaded_graphs.length > 0) {
+            State.currentState = state;
+            
+            // Populate graph selector
+            const graphSelect = document.getElementById('graph-select');
+            const graphSelector = document.getElementById('graph-selector');
+            
+            graphSelect.innerHTML = '<option value="">Select graph...</option>' +
+                state.loaded_graphs.map(g => `<option value="${g}">${g}</option>`).join('');
+            
+            if (graphSelector) {
+                graphSelector.style.display = 'block';
+            }
+            
+            // Auto-select and display first graph
+            const firstGraph = state.loaded_graphs[0];
+            graphSelect.value = firstGraph;
+            console.log('[STARTUP] Displaying graph:', firstGraph);
+            await GraphLoader.displayGraph(firstGraph);
+            
+            updateStatus(`Loaded ${status.node_count || state.node_count} nodes`, 'success');
+        }
+    } catch (err) {
+        console.error('[STARTUP] Error displaying graph:', err);
+        updateStatus('Error loading graph data', 'error');
+    }
+    
+    DOMCache.loading.style.display = 'none';
+}
+
+/**
+ * Fallback polling if SSE is not available.
+ * Polls every 5 seconds (much less frequent than before).
+ */
+async function fallbackPoll() {
+    const maxAttempts = 60;  // 5 minutes max
+    let attempts = 0;
+    
+    const poll = async () => {
+        attempts++;
+        
+        try {
+            const response = await fetch('/api/startup-status');
+            const status = await response.json();
+            
+            console.log(`[POLL #${attempts}] status=${status.status}`);
+            
+            if (status.status === 'ready') {
+                await displayLoadedGraph(status);
+                return;
+            } else if (status.status === 'error') {
+                updateStatus(`Load failed: ${status.message}`, 'error');
+                DOMCache.loading.style.display = 'none';
+                return;
+            }
+            
+            updateStatus(`Loading... (${attempts * 5}s)`, 'info');
+            
+            if (attempts < maxAttempts) {
+                setTimeout(poll, 5000);  // Poll every 5 seconds
+            } else {
+                updateStatus('Load timeout - please refresh', 'error');
+                DOMCache.loading.style.display = 'none';
+            }
+        } catch (err) {
+            console.error('[POLL] Error:', err);
+            if (attempts < maxAttempts) {
+                setTimeout(poll, 5000);
+            }
+        }
+    };
+    
+    setTimeout(poll, 2000);
 }
 
 // =============================================================================

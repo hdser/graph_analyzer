@@ -4,10 +4,11 @@ Graph Analyzer Web Viewer - Main Application
 FastAPI application with modular router architecture.
 """
 
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +46,11 @@ async def lifespan(app: FastAPI):
                 from .services.network_service import network_service
                 
                 print("[STARTUP] Starting background data load...")
+                startup_status["status"] = "loading"
+                startup_status["message"] = "Loading SQL files..."
+                
+                # Notify waiting clients
+                await notify_startup_subscribers()
                 
                 config = LoadConfig(
                     sql_files=settings.DEFAULT_SQL_FILES,
@@ -56,12 +62,26 @@ async def lifespan(app: FastAPI):
                 
                 # Run the blocking load in a thread to not block the event loop
                 result = await asyncio.to_thread(network_service.load_network, config)
+                
+                # Update status to ready
+                startup_status["status"] = "ready"
+                startup_status["message"] = f"Loaded {result.node_count} nodes, {result.edge_count} edges"
+                startup_status["node_count"] = result.node_count
+                startup_status["edge_count"] = result.edge_count
+                startup_status["loaded_graphs"] = result.loaded_graphs
+                
                 print(f"[STARTUP] Background load complete: {result.node_count} nodes, {result.edge_count} edges")
                 
+                # Notify waiting clients
+                await notify_startup_subscribers()
+                
             except Exception as e:
+                startup_status["status"] = "error"
+                startup_status["message"] = str(e)
                 print(f"[STARTUP] Background auto-load failed: {e}")
                 import traceback
                 traceback.print_exc()
+                await notify_startup_subscribers()
         
         # Schedule the background task
         asyncio.create_task(background_auto_load())
@@ -69,6 +89,26 @@ async def lifespan(app: FastAPI):
     yield
     
     print("[SHUTDOWN] Graph Analyzer shutting down...")
+
+
+# Startup status tracking for SSE
+startup_status = {
+    "status": "idle",  # idle, loading, ready, error
+    "message": "",
+    "node_count": 0,
+    "edge_count": 0,
+    "loaded_graphs": []
+}
+startup_subscribers = []
+
+
+async def notify_startup_subscribers():
+    """Notify all SSE subscribers of startup status change."""
+    for queue in startup_subscribers:
+        try:
+            await queue.put(startup_status.copy())
+        except:
+            pass
 
 
 app = FastAPI(
@@ -147,6 +187,71 @@ async def health_check():
         "graphs_loaded": graphs_loaded,
         "node_count": node_count
     }
+
+
+@app.get("/api/startup-status")
+async def get_startup_status():
+    """Get current startup loading status (for initial check)."""
+    return startup_status
+
+
+@app.get("/api/startup-events")
+async def startup_events(request: Request):
+    """
+    SSE endpoint for startup loading status.
+    Connect once and receive events when loading completes.
+    """
+    import asyncio
+    from .config import HAS_SSE
+    
+    if not HAS_SSE:
+        # Fallback: just return current status
+        return startup_status
+    
+    from sse_starlette.sse import EventSourceResponse
+    
+    async def event_generator():
+        queue = asyncio.Queue()
+        startup_subscribers.append(queue)
+        
+        try:
+            # Send current status immediately
+            yield {
+                "event": "status",
+                "data": json.dumps(startup_status)
+            }
+            
+            # If already ready, close connection
+            if startup_status["status"] == "ready":
+                return
+            
+            # Wait for status updates
+            while True:
+                try:
+                    # Wait for update with timeout
+                    status = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield {
+                        "event": "status", 
+                        "data": json.dumps(status)
+                    }
+                    
+                    # If ready or error, close connection
+                    if status["status"] in ("ready", "error"):
+                        return
+                        
+                except asyncio.TimeoutError:
+                    # Send keepalive
+                    yield {"event": "ping", "data": ""}
+                    
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+                    
+        finally:
+            if queue in startup_subscribers:
+                startup_subscribers.remove(queue)
+    
+    return EventSourceResponse(event_generator())
 
 
 if __name__ == "__main__":
