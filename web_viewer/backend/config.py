@@ -7,7 +7,7 @@ All settings are loaded from environment variables with sensible defaults.
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List
 
 from dotenv import load_dotenv
 
@@ -21,6 +21,7 @@ class Settings:
     # Base paths
     BASE_DIR: Path = Path(__file__).parent.parent
     SQL_DIR: Path = BASE_DIR.parent / "sql"
+    NODE_PROPERTIES_DIR: Path = SQL_DIR / "properties"
     CACHE_DIR: Path = BASE_DIR / "cache"
     LAYOUTS_DIR: Path = CACHE_DIR / "layouts"
     DATA_CACHE_DIR: Path = CACHE_DIR / "data"
@@ -54,10 +55,27 @@ class Settings:
     MAX_EDGES_FOR_CYTOSCAPE_DESKTOP: int = int(os.getenv("MAX_EDGES_FOR_CYTOSCAPE_DESKTOP", "5000000"))
     EDGE_CHUNK_SIZE: int = int(os.getenv("EDGE_CHUNK_SIZE", "50000"))
     
-    # Auto-reload settings
+    # Auto-reload interval (seconds)
     AUTO_RELOAD_MIN_INTERVAL: int = 60
     AUTO_RELOAD_MAX_INTERVAL: int = 3600
-    AUTO_RELOAD_DEFAULT_INTERVAL: int = 300
+    AUTO_RELOAD_DEFAULT_INTERVAL: int = int(os.getenv("AUTO_RELOAD_DEFAULT_INTERVAL", "300"))
+    
+    # ==========================================================================
+    # UI MODE
+    # ==========================================================================
+    # HIDE_DATA_SOURCE_UI=true  -> Production: auto-load + auto-reload from env
+    # HIDE_DATA_SOURCE_UI=false -> Admin: manual control, all menus visible
+    # ==========================================================================
+    
+    HIDE_DATA_SOURCE_UI: bool = os.getenv("HIDE_DATA_SOURCE_UI", "false").lower() == "true"
+    
+    # Files to load (used when HIDE_DATA_SOURCE_UI=true)
+    DEFAULT_SQL_FILES: List[str] = [
+        f.strip() for f in os.getenv("DEFAULT_SQL_FILES", "").split(",") if f.strip()
+    ]
+    DEFAULT_PROPERTIES_FILES: List[str] = [
+        f.strip() for f in os.getenv("DEFAULT_PROPERTIES_FILES", "").split(",") if f.strip()
+    ]
     
     @property
     def database_url(self) -> str:
@@ -69,6 +87,7 @@ class Settings:
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self.LAYOUTS_DIR.mkdir(parents=True, exist_ok=True)
         self.DATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.NODE_PROPERTIES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Global settings instance
@@ -105,10 +124,18 @@ def print_startup_banner():
     print("=" * 60)
     print(f"  Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     print(f"  SQL Dir:  {settings.SQL_DIR}")
+    print(f"  Properties Dir: {settings.NODE_PROPERTIES_DIR}")
     print(f"  Cache:    {settings.CACHE_DIR}")
-    print(f"  Static:   {settings.STATIC_DIR}")
     print("-" * 60)
-    print(f"  SSE Support:        {'✓' if HAS_SSE else '✗'}")
-    print(f"  Anomaly Detection:  {'✓' if HAS_ANOMALY else '✗'}")
-    print(f"  Cytoscape Desktop:  {'✓' if HAS_CYTOSCAPE_DESKTOP else '✗'}")
+    print(f"  SSE Support:        {'Y' if HAS_SSE else 'N'}")
+    print(f"  Anomaly Detection:  {'Y' if HAS_ANOMALY else 'N'}")
+    print(f"  Cytoscape Desktop:  {'Y' if HAS_CYTOSCAPE_DESKTOP else 'N'}")
+    print("-" * 60)
+    if settings.HIDE_DATA_SOURCE_UI:
+        print("  Mode: Production (auto-load + auto-reload)")
+        print(f"    SQL Files:      {', '.join(settings.DEFAULT_SQL_FILES) or 'None'}")
+        print(f"    Properties:     {', '.join(settings.DEFAULT_PROPERTIES_FILES) or 'None'}")
+        print(f"    Reload Interval: {settings.AUTO_RELOAD_DEFAULT_INTERVAL}s")
+    else:
+        print("  Mode: Admin (manual control)")
     print("=" * 60 + "\n")

@@ -7,6 +7,7 @@ API endpoints for network/graph management:
 - State queries
 - Cache management
 - Neighbor queries
+- Node updates for auto-reload
 """
 
 from typing import Optional, List
@@ -16,7 +17,7 @@ from pydantic import BaseModel
 
 from ..models.requests import LoadConfig
 from ..services.network_service import network_service
-from ..config import HAS_ANOMALY, HAS_SSE
+from ..config import settings, HAS_ANOMALY, HAS_SSE
 
 from engines.graph_metrics import METRIC_CATEGORIES, METRIC_PRESETS
 
@@ -39,6 +40,7 @@ async def get_config():
     """Get application configuration including available SQL files and features."""
     config = {
         "sql_files": network_service.available_sql_files,
+        "node_properties_files": network_service.available_node_properties_files,
         "metric_modes": {
             "presets": {k: list(v) for k, v in METRIC_PRESETS.items()},
             "categories": {k: v for k, v in METRIC_CATEGORIES.items()}
@@ -46,7 +48,13 @@ async def get_config():
         "cytoscape_desktop_available": network_service.cytoscape_available,
         "cached_layouts": network_service.list_cached_layouts(),
         "anomaly_available": HAS_ANOMALY,
-        "auto_reload_available": HAS_SSE
+        "auto_reload_available": HAS_SSE,
+        # UI mode
+        "hide_data_source_ui": settings.HIDE_DATA_SOURCE_UI,
+        "default_sql_files": settings.DEFAULT_SQL_FILES,
+        "default_properties_files": settings.DEFAULT_PROPERTIES_FILES,
+        "default_metrics_mode": settings.DEFAULT_METRICS_MODE,
+        "auto_reload_interval": settings.AUTO_RELOAD_DEFAULT_INTERVAL,
     }
     
     # Add anomaly algorithms if available
@@ -111,6 +119,30 @@ def get_graph_edges(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/graphs/{graph_id}/node-updates")
+def get_node_updates(
+    graph_id: str,
+    node_ids: Optional[str] = Query(None, description="Comma-separated node IDs")
+):
+    """
+    Get updated node data for incremental frontend refresh.
+    
+    Used by auto-reload to update the frontend display without full reload.
+    Returns current node attributes including metrics and properties.
+    """
+    try:
+        parsed_node_ids = None
+        if node_ids:
+            parsed_node_ids = [n.strip() for n in node_ids.split(",") if n.strip()]
+        
+        updates = network_service.get_node_updates(graph_id, parsed_node_ids)
+        return {"updates": updates, "count": len(updates)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/network/graphs/{graph_id}/neighbors")
 def get_neighbors(graph_id: str, request: NeighborRequest):
     """
@@ -118,14 +150,6 @@ def get_neighbors(graph_id: str, request: NeighborRequest):
     
     This allows finding neighbors even when edges aren't loaded on the frontend.
     Uses the NetworkX graph stored in memory.
-    
-    Args:
-        graph_id: The graph to query
-        request.node_ids: List of node IDs to find neighbors for
-        request.direction: "in", "out", or "both"
-    
-    Returns:
-        Dict with incoming/outgoing neighbor lists and counts
     """
     try:
         return network_service.get_neighbors(
@@ -153,17 +177,38 @@ async def clear_cached_layouts(graph_id: Optional[str] = None):
 
 
 @router.get("/state")
-async def get_current_state():
-    """Get current application state."""
-    if not network_service.graphs:
-        return {"loaded": False}
+async def get_state():
+    """
+    Get current application state.
     
-    total_nodes = sum(len(df) for df in network_service.metrics_dfs.values())
+    Returns information about loaded graphs, node/edge counts,
+    and computed metrics.
+    """
+    if not network_service.graphs:
+        return {
+            "loaded": False,
+            "loaded_graphs": [],
+            "node_count": 0,
+            "edge_count": 0,
+            "metrics_computed": []
+        }
+    
+    total_nodes = sum(G.number_of_nodes() for G in network_service.graphs.values())
+    total_edges = sum(G.number_of_edges() for G in network_service.graphs.values())
+    
+    metrics_computed = []
+    if network_service.metrics_dfs:
+        for df in network_service.metrics_dfs.values():
+            metrics_computed = [c for c in df.columns if c != 'avatar']
+            break
+    
     return {
         "loaded": True,
-        "graphs": list(network_service.graphs.keys()),
-        "cytoscape_available": network_service.cytoscape_available,
+        "loaded_graphs": list(network_service.graphs.keys()),
         "node_count": total_nodes,
+        "edge_count": total_edges,
+        "metrics_computed": metrics_computed,
+        "cytoscape_available": network_service.cytoscape_available,
         "anomaly_available": HAS_ANOMALY,
         "auto_reload_available": HAS_SSE
     }

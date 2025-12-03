@@ -16,6 +16,11 @@ const GraphLoader = {
             return;
         }
         
+        // Get selected properties files
+        const propertiesFiles = Array.from(
+            document.querySelectorAll('input[name="properties-file"]:checked')
+        ).map(cb => cb.value);
+        
         const skipSql = document.getElementById('skip-sql')?.checked || false;
         const useCachedLayout = document.getElementById('use-cached-layout')?.checked !== false;
         
@@ -29,6 +34,7 @@ const GraphLoader = {
         try {
             const result = await API.loadNetwork({
                 sql_files: selectedFiles,
+                node_properties_files: propertiesFiles,
                 skip_sql: skipSql,
                 use_cached_layout: useCachedLayout
             });
@@ -63,7 +69,12 @@ const GraphLoader = {
                 await this.displayGraph(result.loaded_graphs[0]);
             }
             
-            updateStatus(`Loaded ${result.node_count} nodes, ${result.edge_count} edges`, 'success');
+            // Build status message
+            let statusMsg = `Loaded ${result.node_count} nodes, ${result.edge_count} edges`;
+            if (result.node_properties_loaded && result.node_properties_loaded.length > 0) {
+                statusMsg += ` (+${result.node_properties_loaded.length} properties)`;
+            }
+            updateStatus(statusMsg, 'success');
             
         } catch (error) {
             console.error('Load error:', error);

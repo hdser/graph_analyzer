@@ -14,6 +14,10 @@ class LoadConfig(BaseModel):
         default_factory=list,
         description="List of SQL file names to execute"
     )
+    node_properties_files: List[str] = Field(
+        default_factory=list,
+        description="List of SQL files for fixed node properties (from properties directory)"
+    )
     use_cached_layout: bool = Field(
         default=True,
         description="Whether to use cached layout if available"
@@ -211,6 +215,10 @@ class AutoReloadConfig(BaseModel):
     sql_files: Optional[List[str]] = Field(
         default=None,
         description="SQL files to reload (None = use current)"
+    )
+    node_properties_files: Optional[List[str]] = Field(
+        default=None,
+        description="Node properties files to reload (None = use current)"
     )
     compute_metrics: bool = Field(
         default=True,

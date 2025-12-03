@@ -44,6 +44,14 @@ class NetworkState(BaseModel):
         default="sql",
         description="Data source: sql or cache"
     )
+    node_properties_loaded: List[str] = Field(
+        default_factory=list,
+        description="List of fixed node property names loaded"
+    )
+    node_properties_source: Optional[str] = Field(
+        default=None,
+        description="Source of node properties: sql, cache, or None if not loaded"
+    )
 
 
 class AlgorithmParameterResponse(BaseModel):

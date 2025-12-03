@@ -173,14 +173,24 @@ const Icons = {
         </svg>`,
         
         // Arrows
-        arrowRight: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 8h12"/>
-            <path d="M10 4l4 4-4 4"/>
+        arrowUp: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 14V2"/>
+            <path d="M3 7l5-5 5 5"/>
+        </svg>`,
+        
+        arrowDown: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 2v12"/>
+            <path d="M3 9l5 5 5-5"/>
         </svg>`,
         
         arrowLeft: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 8H2"/>
-            <path d="M6 4l-4 4 4 4"/>
+            <path d="M7 3L2 8l5 5"/>
+        </svg>`,
+        
+        arrowRight: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 8h12"/>
+            <path d="M9 3l5 5-5 5"/>
         </svg>`,
         
         // Math operators
@@ -271,9 +281,6 @@ const Icons = {
 
     /**
      * Get SVG string for an icon
-     * @param {string} name - Icon name
-     * @param {object} options - Optional: {size: 16, class: 'my-class'}
-     * @returns {string} SVG string or empty string if not found
      */
     get(name, options = {}) {
         const svg = this._icons[name];
@@ -284,13 +291,11 @@ const Icons = {
         
         let result = svg;
         
-        // Apply size if different from default
         if (options.size && options.size !== 16) {
             result = result.replace(/width="16"/g, `width="${options.size}"`);
             result = result.replace(/height="16"/g, `height="${options.size}"`);
         }
         
-        // Add class if specified
         if (options.class) {
             result = result.replace('<svg ', `<svg class="${options.class}" `);
         }
@@ -300,9 +305,6 @@ const Icons = {
 
     /**
      * Create SVG DOM element for an icon
-     * @param {string} name - Icon name
-     * @param {object} options - Optional: {size: 16, class: 'my-class'}
-     * @returns {SVGElement|null} SVG element or null if not found
      */
     create(name, options = {}) {
         const svgString = this.get(name, options);
@@ -315,9 +317,6 @@ const Icons = {
 
     /**
      * Auto-inject icons into elements with data-icon attribute
-     * Call this after DOM is loaded
-     * 
-     * Example HTML: <span data-icon="copy"></span>
      */
     inject() {
         document.querySelectorAll('[data-icon]').forEach(el => {
@@ -332,7 +331,6 @@ const Icons = {
 
     /**
      * Get list of all available icon names
-     * @returns {string[]} Array of icon names
      */
     list() {
         return Object.keys(this._icons);
@@ -342,15 +340,15 @@ const Icons = {
      * Math operation symbols (text-based for dropdowns)
      */
     mathSymbols: {
-        multiply: '×',
+        multiply: '*',
         add: '+',
-        subtract: '−',
-        divide: '÷',
+        subtract: '-',
+        divide: '/',
         maximum: 'max',
         minimum: 'min',
         average: 'avg',
-        gte: '≥',
-        lte: '≤',
+        gte: '>=',
+        lte: '<=',
         gt: '>',
         lt: '<',
         eq: '='
@@ -358,8 +356,6 @@ const Icons = {
 
     /**
      * Get math symbol for operation
-     * @param {string} operation - Operation name
-     * @returns {string} Symbol character
      */
     getMathSymbol(operation) {
         return this.mathSymbols[operation] || operation;

@@ -71,6 +71,18 @@ const API = {
     },
 
     /**
+     * Get updated node data for incremental refresh
+     * Used by auto-reload to update frontend without full reload
+     */
+    getNodeUpdates(graphId, nodeIds = null) {
+        let url = `/api/graphs/${graphId}/node-updates`;
+        if (nodeIds && nodeIds.length > 0) {
+            url += `?node_ids=${nodeIds.join(',')}`;
+        }
+        return this.fetch(url);
+    },
+
+    /**
      * Get neighbors of specified nodes
      * @param {string} graphId - Graph ID
      * @param {string[]} nodeIds - List of node IDs

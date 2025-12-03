@@ -59,8 +59,9 @@ const Utils = {
      * Format number with decimals
      */
     formatNumber(value, decimals = 4) {
-        if (value === null || value === undefined || isNaN(value)) return '-';
-        if (typeof value !== 'number') return value;
+        if (value === null || value === undefined) return '-';
+        if (typeof value !== 'number') return value;  // Return strings as-is BEFORE isNaN check
+        if (isNaN(value) || !isFinite(value)) return '-';
         if (Number.isInteger(value)) return value.toLocaleString();
         return value.toFixed(decimals);
     },

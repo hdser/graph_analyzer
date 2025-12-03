@@ -297,6 +297,129 @@ class LayoutService:
         graph_id: str
     ) -> Optional[Dict[str, Dict[str, float]]]:
         """
+        Compute layout using Cytoscape Desktop via CyREST.
+        
+        Uses direct CyREST API calls to bypass vizmap/styles timeout issues
+        that can occur with high-level py4cytoscape functions.
+        
+        Args:
+            G: NetworkX graph
+            graph_id: Graph identifier for naming
+            
+        Returns:
+            Positions dictionary or None if failed
+        """
+        if not self.cytoscape_available:
+            return None
+        
+        print(f"[LAYOUT] Computing via Cytoscape Desktop ({G.number_of_nodes()} nodes)")
+        
+        net_suid = None
+        try:
+            # Build payloads from NetworkX graph
+            nodes_payload = [{"data": {"id": str(node)}} for node in G.nodes()]
+            edges_payload = [
+                {"data": {"source": str(src), "target": str(tgt)}} 
+                for src, tgt in G.edges()
+            ]
+            
+            title = f"web_viewer_{graph_id}_{int(time.time())}"
+            
+            # Create network via direct CyREST (bypassing vizmap/styles timeout issues)
+            print(f"[LAYOUT] Creating network via CyREST (bypassing vizmap/styles)...")
+            res = p4c.cyrest_post("networks", body={
+                "data": {"name": title},
+                "elements": {"nodes": nodes_payload, "edges": edges_payload}
+            })
+            net_suid = res['networkSUID']
+            
+            # Explicitly create a view (required for layout positions)
+            try:
+                p4c.cyrest_post(f"networks/{net_suid}/views")
+                time.sleep(0.2)  # Brief wait for view initialization
+            except Exception as e:
+                print(f"[LAYOUT] View creation note: {e}")
+            
+            # Set layout properties
+            print(f"[LAYOUT] Applying force-directed layout...")
+            p4c.set_layout_properties(
+                'force-directed-cl',
+                {
+                    'numIterations': 400,
+                    'numIterationsEdgeRepulsive': 10,
+                    'defaultSpringCoefficient': 1e-5,
+                    'defaultSpringLength': 30,
+                    'defaultNodeMass': 1.0,
+                    'isDeterministic': True,
+                    'fromScratch': True,
+                    'singlePartition': False
+                }
+            )
+            
+            # Apply the layout
+            p4c.layout_network("force-directed-cl", network=net_suid)
+            
+            # Get positions from view (must use view JSON, not node table)
+            print(f"[LAYOUT] Getting positions from view...")
+            views = p4c.get_network_views(net_suid)
+            if not views:
+                raise RuntimeError("No view found after layout")
+            
+            view_suid = views[0]
+            view_json = p4c.cyrest_get(f"networks/{net_suid}/views/{view_suid}")
+            
+            positions = {}
+            
+            if view_json and isinstance(view_json, dict):
+                elements = view_json.get('elements', {})
+                nodes = elements.get('nodes', [])
+                
+                for node in nodes:
+                    if isinstance(node, dict):
+                        node_data = node.get('data', {})
+                        node_position = node.get('position', {})
+                        # Try multiple possible name fields
+                        node_id = (
+                            node_data.get('name') or 
+                            node_data.get('shared_name') or 
+                            node_data.get('id')
+                        )
+                        
+                        if node_id and 'x' in node_position and 'y' in node_position:
+                            positions[node_id] = {
+                                'x': float(node_position['x']), 
+                                'y': float(node_position['y'])
+                            }
+            
+            # Clean up - delete the network from Cytoscape
+            try:
+                p4c.delete_network(net_suid)
+            except Exception:
+                pass
+            
+            print(f"[LAYOUT] Cytoscape Desktop complete: {len(positions)} positions")
+            
+            if len(positions) == 0:
+                raise RuntimeError("No positions retrieved from Cytoscape")
+            
+            return positions
+            
+        except Exception as e:
+            print(f"[LAYOUT] Cytoscape Desktop error: {e}")
+            # Clean up on error
+            try:
+                if net_suid is not None:
+                    p4c.delete_network(net_suid)
+            except Exception:
+                pass
+            return None
+       
+    def compute_layout_via_cytoscape_desktop2(
+        self, 
+        G: nx.Graph, 
+        graph_id: str
+    ) -> Optional[Dict[str, Dict[str, float]]]:
+        """
         Compute layout using Cytoscape Desktop.
         
         Args:

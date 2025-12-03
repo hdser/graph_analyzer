@@ -2,16 +2,9 @@
 Graph Analyzer Web Viewer - Main Application
 
 FastAPI application with modular router architecture.
-
-Features:
-- Network loading from SQL with caching
-- Graph visualization with Cytoscape.js
-- Multiple layout algorithms (Cytoscape Desktop, layout service, local spring)
-- Anomaly detection with 6 algorithms
-- Composite metrics creation
-- Auto-reload with SSE notifications
 """
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -29,19 +22,46 @@ from .routers import (
 )
 
 
-# Print startup banner
 print_startup_banner()
 
 
-# Create FastAPI application
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown."""
+    # Startup: auto-load if HIDE_DATA_SOURCE_UI is enabled
+    if settings.HIDE_DATA_SOURCE_UI and settings.DEFAULT_SQL_FILES:
+        print("[STARTUP] Production mode - auto-loading...")
+        try:
+            from .models.requests import LoadConfig
+            from .services.network_service import network_service
+            
+            config = LoadConfig(
+                sql_files=settings.DEFAULT_SQL_FILES,
+                node_properties_files=settings.DEFAULT_PROPERTIES_FILES,
+                use_cached_layout=True,
+                skip_sql=False,
+                metrics_mode=settings.DEFAULT_METRICS_MODE
+            )
+            result = network_service.load_network(config)
+            print(f"[STARTUP] Loaded {result.node_count} nodes, {result.edge_count} edges")
+        except Exception as e:
+            print(f"[STARTUP] Auto-load failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    yield
+    
+    print("[SHUTDOWN] Graph Analyzer shutting down...")
+
+
 app = FastAPI(
     title="Graph Analyzer Web Viewer",
     description="Web-based graph visualization and analysis dashboard",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan
 )
 
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,13 +71,11 @@ app.add_middleware(
 )
 
 
-# Mount static files
 STATIC_DIR = settings.STATIC_DIR
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-# Include routers
 app.include_router(network_router)
 app.include_router(metrics_router)
 app.include_router(anomaly_router)
@@ -65,7 +83,6 @@ app.include_router(composite_router)
 app.include_router(auto_reload_router)
 
 
-# Root endpoint - serve index.html
 @app.get("/")
 async def root():
     """Serve the main application page."""
@@ -75,7 +92,6 @@ async def root():
     return {"message": "Graph Analyzer API", "docs": "/docs"}
 
 
-# Distributions popup
 @app.get("/distributions")
 async def distributions():
     """Serve the distributions analysis page."""
@@ -85,11 +101,21 @@ async def distributions():
     return {"error": "distributions.html not found"}
 
 
-# Health check endpoint
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "2.0.0"}
+    from .services.network_service import network_service
+    
+    graphs_loaded = len(network_service.graphs) > 0
+    node_count = sum(G.number_of_nodes() for G in network_service.graphs.values()) if graphs_loaded else 0
+    
+    return {
+        "status": "healthy",
+        "version": "2.0.0",
+        "mode": "production" if settings.HIDE_DATA_SOURCE_UI else "admin",
+        "graphs_loaded": graphs_loaded,
+        "node_count": node_count
+    }
 
 
 if __name__ == "__main__":

@@ -119,7 +119,7 @@ avatars_metadata AS (
 )
 
 SELECT 
- 	t1.avatar
+ 	t4.avatar
 	,t4.block_number
 	,t4.timestamp
 	,t4.version
@@ -135,5 +135,5 @@ LEFT JOIN token_supply t2
    	ON t2.avatar = t1.avatar
 LEFT JOIN total_balances t3
 	ON t3.avatar = t1.avatar
-INNER JOIN avatars_metadata t4
+RIGHT JOIN avatars_metadata t4
 	ON t4.avatar = t1.avatar

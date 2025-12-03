@@ -31,6 +31,7 @@ class AutoReloadManager:
         self._enabled = False
         self._interval_seconds = settings.AUTO_RELOAD_DEFAULT_INTERVAL
         self._sql_files: List[str] = []
+        self._node_properties_files: List[str] = []
         self._compute_metrics = True
         self._metrics_mode = "essential"
         
@@ -92,6 +93,8 @@ class AutoReloadManager:
         )
         if config.sql_files:
             self._sql_files = config.sql_files
+        if config.node_properties_files:
+            self._node_properties_files = config.node_properties_files
         self._compute_metrics = config.compute_metrics
         self._metrics_mode = config.metrics_mode
         
@@ -99,7 +102,7 @@ class AutoReloadManager:
             self._stop_event.clear()
             self._task = asyncio.create_task(self._reload_loop())
             self._next_reload_time = datetime.now() + timedelta(seconds=self._interval_seconds)
-            print(f"[AUTO-RELOAD] Started with interval {self._interval_seconds}s")
+            print(f"[AUTO-RELOAD] Started with interval {self._interval_seconds}s, compute_metrics={self._compute_metrics}")
             
             # Broadcast status
             await self._broadcast_event("status_update", self.get_status().model_dump())
@@ -213,12 +216,15 @@ class AutoReloadManager:
                 old_nodes.update(G.nodes())
             
             # Perform reload
+            # NOTE: When compute_metrics is False, use "basic" mode (fast topology only)
+            # "minimal" does not exist - valid modes are: basic, essential, standard, comprehensive, full
             from backend.models.requests import LoadConfig
             config = LoadConfig(
                 sql_files=self._sql_files,
+                node_properties_files=self._node_properties_files,
                 use_cached_layout=True,
                 skip_sql=False,
-                metrics_mode=self._metrics_mode if self._compute_metrics else "minimal"
+                metrics_mode=self._metrics_mode if self._compute_metrics else "basic"
             )
             
             result = self._network_service.load_network(config)

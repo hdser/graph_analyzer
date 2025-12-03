@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Setup event listeners
     setupEventListeners();
     setupDropdownLogic();
+    setupCollapsibleSections();
     
     // Initialize features
     initializeDefaultStyle();
@@ -62,6 +63,35 @@ async function loadAvailableConfig() {
         list.appendChild(fragment);
         list.dispatchEvent(new Event('change'));
 
+        // Build Node Properties files list (if available)
+        const propertiesContainer = document.getElementById('properties-dropdown-container');
+        const propertiesList = document.getElementById('properties-files-list');
+        
+        if (config.node_properties_files && config.node_properties_files.length > 0) {
+            const propertiesFragment = document.createDocumentFragment();
+            
+            config.node_properties_files.forEach(file => {
+                const div = document.createElement('div');
+                div.className = 'dropdown-item';
+                const displayName = file.name || file.filename.replace('.sql', '');
+                div.innerHTML = `<label><input type="checkbox" name="properties-file" value="${file.filename}">
+                    ${displayName}</label>`;
+                propertiesFragment.appendChild(div);
+            });
+            
+            propertiesList.innerHTML = '';
+            propertiesList.appendChild(propertiesFragment);
+            propertiesList.dispatchEvent(new Event('change'));
+            
+            // Show the properties dropdown container
+            propertiesContainer.style.display = '';
+            
+            console.log(`Loaded ${config.node_properties_files.length} properties files`);
+        } else {
+            // Hide if no files available
+            propertiesContainer.style.display = 'none';
+        }
+
         // Populate metrics target graph dropdown
         const metricsGraphSelect = document.getElementById('metrics-graph');
         metricsGraphSelect.innerHTML = '<option value="">Auto (first selected)</option>' + 
@@ -92,6 +122,34 @@ async function loadAvailableConfig() {
         console.error('Error loading config:', error);
         updateStatus('Config error: ' + error.message, 'error');
     }
+}
+
+// =============================================================================
+// COLLAPSIBLE SECTIONS
+// =============================================================================
+
+function setupCollapsibleSections() {
+    document.querySelectorAll('.section.collapsible .collapsible-header').forEach(header => {
+        header.addEventListener('click', () => {
+            header.classList.toggle('collapsed');
+            
+            // Find the content element (next sibling with class style-subsection)
+            const content = header.nextElementSibling;
+            if (content) {
+                if (header.classList.contains('collapsed')) {
+                    content.style.display = 'none';
+                } else {
+                    content.style.display = '';
+                }
+            }
+            
+            // Rotate chevron icon
+            const icon = header.querySelector('.collapse-icon');
+            if (icon) {
+                icon.style.transform = header.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
+            }
+        });
+    });
 }
 
 // =============================================================================
@@ -174,9 +232,32 @@ function setupEventListeners() {
 // =============================================================================
 
 function setupDropdownLogic() {
-    const dropdown = document.getElementById('sql-files-dropdown');
-    const header = document.getElementById('sql-dropdown-header');
-    const list = document.getElementById('sql-files-list');
+    // SQL files dropdown
+    setupSingleDropdown(
+        'sql-files-dropdown',
+        'sql-dropdown-header', 
+        'sql-files-list',
+        'Select files...'
+    );
+    
+    // Properties files dropdown
+    setupSingleDropdown(
+        'properties-files-dropdown',
+        'properties-dropdown-header',
+        'properties-files-list',
+        'Select properties...'
+    );
+}
+
+/**
+ * Setup a single dropdown with header, list, and toggle behavior
+ */
+function setupSingleDropdown(dropdownId, headerId, listId, placeholder) {
+    const dropdown = document.getElementById(dropdownId);
+    const header = document.getElementById(headerId);
+    const list = document.getElementById(listId);
+    
+    if (!dropdown || !header || !list) return;
 
     header.addEventListener('click', () => {
         list.style.display = list.style.display === 'block' ? 'none' : 'block';
@@ -191,7 +272,7 @@ function setupDropdownLogic() {
     list.addEventListener('change', () => {
         const checked = list.querySelectorAll('input[type="checkbox"]:checked');
         if (checked.length === 0) {
-            header.textContent = 'Select files...';
+            header.textContent = placeholder;
         } else if (checked.length === 1) {
             header.textContent = checked[0].parentNode.textContent.trim();
         } else {

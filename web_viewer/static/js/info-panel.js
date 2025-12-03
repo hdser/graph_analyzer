@@ -17,7 +17,7 @@ const InfoPanel = {
         State.currentNodeData = data;
         State.currentEdgeData = null;
         
-        DOMCache.nodeInfo.style.display = 'block';
+        DOMCache.nodeInfo.style.display = 'flex';
         DOMCache.edgeInfo.style.display = 'none';
         DOMCache.multiInfo.style.display = 'none';
         DOMCache.infoPanel.style.display = 'flex';

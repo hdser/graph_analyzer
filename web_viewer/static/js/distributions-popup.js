@@ -1648,7 +1648,7 @@ function updateAlgorithmUI() {
     document.getElementById('algorithm-description').innerHTML = `
         <p>${info.description}</p>
         <p class="complexity">Complexity: ${info.complexity}</p>
-        <p class="multivariate">${info.multivariate ? 'âœ“ Supports multiple metrics' : 'â—‹ Single metric recommended'}</p>
+         <p class="multivariate">${info.multivariate ? '✓ Supports multiple metrics' : '○ Single metric recommended'}</p>
     `;
     
     // Update parameters

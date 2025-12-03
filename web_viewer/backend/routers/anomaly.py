@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 import numpy as np
+import pandas as pd
 
 from ..models.requests import (
     AnomalyDetectionRequest,
@@ -72,6 +73,50 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return f
     except (ValueError, TypeError):
         return default
+
+
+def _filter_numeric_columns(df: Any, metrics: List[str]) -> tuple:
+    """
+    Filter metrics to only include numeric columns.
+    
+    Returns:
+        Tuple of (valid_metrics, skipped_metrics)
+    """
+    valid = []
+    skipped = []
+    
+    for metric in metrics:
+        if metric not in df.columns:
+            skipped.append((metric, "not found"))
+            continue
+            
+        col = df[metric]
+        
+        # Check if column contains arrays or objects
+        sample = col.dropna().head(10)
+        if len(sample) == 0:
+            skipped.append((metric, "all null"))
+            continue
+        
+        first_val = sample.iloc[0]
+        
+        # Skip arrays, lists, dicts
+        if isinstance(first_val, (list, dict, np.ndarray)):
+            skipped.append((metric, "array/object type"))
+            continue
+        
+        # Check if numeric
+        if not np.issubdtype(col.dtype, np.number):
+            # Try to convert
+            try:
+                pd.to_numeric(col, errors='raise')
+                valid.append(metric)
+            except (ValueError, TypeError):
+                skipped.append((metric, f"non-numeric ({col.dtype})"))
+        else:
+            valid.append(metric)
+    
+    return valid, skipped
 
 
 def _build_visualization_data(
@@ -294,8 +339,8 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
     service = get_network_service()
     engine = get_engine()
     
-    # Get current graph data
-    df = service.get_current_metrics_df()
+    # Get ALL node data (metrics + properties) from graph nodes
+    df = service.get_all_node_data_df()
     if df is None or df.empty:
         raise HTTPException(status_code=400, detail="No graph data loaded")
     
@@ -321,6 +366,21 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
             status_code=400,
             detail=f"Metrics not found: {missing}. Available: {list(df.columns)}"
         )
+    
+    # Filter to only numeric columns (skip arrays, objects, strings)
+    valid_metrics, skipped = _filter_numeric_columns(df, request.metrics)
+    
+    if not valid_metrics:
+        skipped_info = ", ".join([f"{m} ({reason})" for m, reason in skipped])
+        raise HTTPException(
+            status_code=400,
+            detail=f"No valid numeric metrics for anomaly detection. Skipped: {skipped_info}"
+        )
+    
+    # Log skipped metrics
+    if skipped:
+        skipped_names = [m for m, _ in skipped]
+        print(f"[ANOMALY] Skipped non-numeric metrics: {skipped_names}")
     
     # Build MetricConfig from request
     config = None
@@ -359,10 +419,10 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
         )
     
     try:
-        # Run detection
+        # Run detection with validated numeric metrics
         result = engine.detect_anomalies(
             df=df,
-            metrics=request.metrics,
+            metrics=valid_metrics,
             algorithm=request.algorithm,
             parameters=request.parameters,
             config=config,
@@ -420,7 +480,7 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
     visualization_data = _build_visualization_data(
         result=result,
         df=df,
-        metrics=request.metrics,
+        metrics=valid_metrics,
         algorithm=request.algorithm,
         parameters=request.parameters,
     )
@@ -466,10 +526,15 @@ async def run_pca_analysis(request: PCARequest):
     
     service = get_network_service()
     
-    # Get current graph data
-    df = service.get_current_metrics_df()
+    # Get ALL node data (metrics + properties) - not just computed metrics
+    df = service.get_all_node_data_df()
+    print(f"[PCA] Request: metrics={request.metrics}, node_ids={len(request.node_ids) if request.node_ids else 'all'}")
+    
     if df is None or df.empty:
+        print("[PCA] Error: No graph data loaded")
         raise HTTPException(status_code=400, detail="No graph data loaded")
+    
+    print(f"[PCA] DataFrame shape: {df.shape}, columns: {list(df.columns)[:15]}...")
     
     # Filter to specific nodes if requested
     if request.node_ids:
@@ -493,15 +558,30 @@ async def run_pca_analysis(request: PCARequest):
             detail=f"Metrics not found: {missing}. Available: {list(df.columns)}"
         )
     
-    if len(request.metrics) < 2:
+    # Filter to only numeric columns (skip arrays, objects, strings)
+    valid_metrics, skipped = _filter_numeric_columns(df, request.metrics)
+    
+    if not valid_metrics:
+        skipped_info = ", ".join([f"{m} ({reason})" for m, reason in skipped])
         raise HTTPException(
             status_code=400,
-            detail="At least 2 metrics are required for PCA analysis"
+            detail=f"No valid numeric metrics for PCA. Skipped: {skipped_info}"
+        )
+    
+    # Log skipped metrics
+    if skipped:
+        skipped_names = [m for m, _ in skipped]
+        print(f"[PCA] Skipped non-numeric metrics: {skipped_names}")
+    
+    if len(valid_metrics) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At least 2 numeric metrics are required for PCA analysis. Found only: {valid_metrics}"
         )
     
     try:
-        # Extract data matrix
-        X = df[request.metrics].values.astype(np.float64)
+        # Extract data matrix using only valid numeric metrics
+        X = df[valid_metrics].values.astype(np.float64)
         
         # Get node IDs
         if 'avatar' in df.columns:
@@ -565,7 +645,7 @@ async def run_pca_analysis(request: PCARequest):
         return PCAResponse(
             n_components=actual_n_components,
             n_samples=n_samples,
-            features=request.metrics,
+            features=valid_metrics,
             explained_variance_ratio=[_safe_float(v) for v in pca.explained_variance_ratio_],
             total_variance_explained=_safe_float(total_variance),
             loadings=loadings,

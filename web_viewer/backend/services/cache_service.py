@@ -270,3 +270,49 @@ class CacheService:
         """Generate hash of metrics dataframe for change detection."""
         content = metrics_df.to_json().encode()
         return hashlib.md5(content).hexdigest()[:12]
+    
+    # =========================================================================
+    # Properties Cache
+    # =========================================================================
+    
+    def save_properties_cache(
+        self, 
+        properties_df: pd.DataFrame,
+        version: str = "default"
+    ) -> str:
+        """
+        Save node properties to cache (using pickle for complex types).
+        
+        Args:
+            properties_df: DataFrame with node properties
+            version: Version identifier (v1, v2, etc.)
+            
+        Returns:
+            Cache file path
+        """
+        cache_file = self.data_dir / f"node_properties_{version}.pkl"
+        properties_df.to_pickle(cache_file)
+        print(f"[CACHE] Saved properties: {cache_file.name} ({len(properties_df)} nodes)")
+        return str(cache_file)
+    
+    def load_properties_cache(self, version: str = "default") -> Optional[pd.DataFrame]:
+        """
+        Load properties from cache.
+        
+        Args:
+            version: Version identifier
+            
+        Returns:
+            DataFrame with properties or None
+        """
+        cache_file = self.data_dir / f"node_properties_{version}.pkl"
+        
+        if cache_file.exists():
+            try:
+                df = pd.read_pickle(cache_file)
+                print(f"[CACHE] Loaded properties: {cache_file.name} ({len(df)} nodes)")
+                return df
+            except Exception as e:
+                print(f"[CACHE] Error loading properties: {e}")
+        
+        return None
