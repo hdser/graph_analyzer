@@ -12,6 +12,7 @@ API endpoints for network/graph management:
 
 from typing import Optional, List
 
+import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -258,12 +259,24 @@ async def get_all_node_data(
         node = {}
         for col in df.columns:
             val = row[col]
-            if pd.isna(val):
-                node[col] = None
-            elif isinstance(val, (list, dict)):
-                node[col] = str(val)  # Convert complex types to string
-            else:
+            # Check for list/array BEFORE checking isna (isna fails on arrays)
+            if isinstance(val, (list, np.ndarray)):
+                # Keep arrays as-is for frontend display
+                node[col] = val if isinstance(val, list) else val.tolist()
+            elif isinstance(val, dict):
                 node[col] = val
+            elif val is None:
+                node[col] = None
+            elif isinstance(val, float) and np.isnan(val):
+                node[col] = None
+            else:
+                try:
+                    if pd.isna(val):
+                        node[col] = None
+                    else:
+                        node[col] = val
+                except (ValueError, TypeError):
+                    node[col] = val
         nodes.append(node)
     
     return {

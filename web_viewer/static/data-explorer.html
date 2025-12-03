@@ -194,6 +194,145 @@
             font-style: italic;
         }
 
+        td.complex {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 11px;
+            color: #b0b0b0;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: help;
+        }
+
+        td.complex:hover {
+            color: #4A90E2;
+        }
+
+        td.complex.clickable {
+            cursor: pointer;
+            color: #4A90E2;
+        }
+
+        td.complex.clickable:hover {
+            color: #7ab5f5;
+            text-decoration: underline;
+        }
+
+        /* Tokens Modal */
+        .tokens-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tokens-modal-overlay.visible {
+            display: flex;
+        }
+
+        .tokens-modal {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            max-width: 700px;
+            max-height: 80vh;
+            width: 90%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tokens-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #333;
+        }
+
+        .tokens-modal-header h3 {
+            color: #4A90E2;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .tokens-modal-close {
+            background: none;
+            border: none;
+            color: #808080;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .tokens-modal-close:hover {
+            color: #fff;
+        }
+
+        .tokens-modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+        }
+
+        .tokens-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .token-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: #0f0f0f;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+        }
+
+        .token-item:hover {
+            background: #1f1f1f;
+        }
+
+        .token-address {
+            color: #e0e0e0;
+            cursor: pointer;
+        }
+
+        .token-address:hover {
+            color: #4A90E2;
+        }
+
+        .token-balance {
+            color: #4A90E2;
+            font-weight: 500;
+        }
+
+        .token-copy-btn {
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-radius: 3px;
+            color: #808080;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+
+        .token-copy-btn:hover {
+            background: #3a3a3a;
+            color: #fff;
+        }
+
         .btn-locate {
             padding: 5px 12px;
             background: #2a2a2a;
@@ -365,6 +504,19 @@
 
     <div class="toast" id="toast"></div>
 
+    <!-- Tokens Modal -->
+    <div class="tokens-modal-overlay" id="tokens-modal" onclick="if(event.target === this) DataExplorer.closeTokensModal()">
+        <div class="tokens-modal">
+            <div class="tokens-modal-header">
+                <h3>Tokens (<span id="modal-token-count">0</span>)</h3>
+                <button class="tokens-modal-close" onclick="DataExplorer.closeTokensModal()">×</button>
+            </div>
+            <div class="tokens-modal-body">
+                <div class="tokens-list" id="tokens-list"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         /**
          * Data Explorer - Standalone Popup Window
@@ -380,6 +532,9 @@
             sortDirection: 'asc',
             searchTerm: '',
             columnFilter: '',
+            
+            // Columns to hide (shown in combined view elsewhere)
+            hiddenColumns: ['tokens_balance'],
 
             /**
              * Initialize
@@ -475,12 +630,15 @@
                 const select = document.getElementById('column-filter');
                 select.innerHTML = '<option value="">All Columns</option>';
 
-                this.columns.forEach(col => {
-                    const option = document.createElement('option');
-                    option.value = col.name;
-                    option.textContent = col.name;
-                    select.appendChild(option);
-                });
+                // Filter out hidden columns from dropdown
+                this.columns
+                    .filter(col => !this.hiddenColumns.includes(col.name))
+                    .forEach(col => {
+                        const option = document.createElement('option');
+                        option.value = col.name;
+                        option.textContent = col.name;
+                        select.appendChild(option);
+                    });
             },
 
             /**
@@ -551,10 +709,13 @@
              * Render table
              */
             renderTable() {
-                // Determine visible columns
-                let visibleColumns = this.columns;
+                // Determine visible columns (filter out hidden columns)
+                let visibleColumns = this.columns.filter(c => 
+                    !this.hiddenColumns.includes(c.name)
+                );
+                
                 if (this.columnFilter) {
-                    visibleColumns = this.columns.filter(c =>
+                    visibleColumns = visibleColumns.filter(c =>
                         c.name === 'avatar' || c.name === this.columnFilter
                     );
                 }
@@ -588,7 +749,7 @@
                     return;
                 }
 
-                tbody.innerHTML = pageData.map(node => {
+                tbody.innerHTML = pageData.map((node, rowIndex) => {
                     const cells = visibleColumns.map(col => {
                         const val = node[col.name];
                         const isId = col.name === 'avatar' || col.name === 'id';
@@ -607,6 +768,20 @@
                         if (col.type === 'number' && typeof val === 'number') {
                             const formatted = Number.isInteger(val) ? val.toLocaleString() : val.toFixed(4);
                             return `<td class="number">${formatted}</td>`;
+                        }
+                        
+                        // Handle tokens column - make clickable
+                        if (col.name === 'tokens' && Array.isArray(val)) {
+                            const formatted = this.formatComplexValue(val, col.name, node);
+                            const dataIndex = start + rowIndex;
+                            return `<td class="complex clickable" onclick="DataExplorer.showTokensModal(${dataIndex})">${formatted}</td>`;
+                        }
+                        
+                        // Handle other complex values (arrays, objects)
+                        if (typeof val === 'object') {
+                            const formatted = this.formatComplexValue(val, col.name, node);
+                            const tooltip = this.getComplexValueTooltip(val, col.name, node);
+                            return `<td class="complex" title="${this.escapeHtml(tooltip)}">${formatted}</td>`;
                         }
 
                         return `<td>${this.escapeHtml(String(val))}</td>`;
@@ -680,7 +855,16 @@
                     const row = headers.map(h => {
                         const val = node[h];
                         if (val === null || val === undefined) return '';
-                        const str = String(val);
+                        
+                        // Handle complex values - serialize to JSON
+                        let str;
+                        if (typeof val === 'object') {
+                            str = JSON.stringify(val);
+                        } else {
+                            str = String(val);
+                        }
+                        
+                        // Escape for CSV
                         if (str.includes(',') || str.includes('"') || str.includes('\n')) {
                             return '"' + str.replace(/"/g, '""') + '"';
                         }
@@ -708,6 +892,198 @@
                 setTimeout(() => {
                     toast.className = 'toast';
                 }, 3000);
+            },
+
+            /**
+             * Abbreviate an address/hash
+             */
+            abbreviateAddress(addr, prefixLen = 6, suffixLen = 4) {
+                if (!addr || typeof addr !== 'string') return String(addr || '');
+                if (addr.length <= prefixLen + suffixLen + 3) return addr;
+                return `${addr.slice(0, prefixLen)}...${addr.slice(-suffixLen)}`;
+            },
+
+            /**
+             * Format a number compactly (K, M, B)
+             */
+            formatCompact(value) {
+                if (value === null || value === undefined || isNaN(value)) return '-';
+                if (Math.abs(value) >= 1e9) return (value / 1e9).toFixed(1) + 'B';
+                if (Math.abs(value) >= 1e6) return (value / 1e6).toFixed(1) + 'M';
+                if (Math.abs(value) >= 1e3) return (value / 1e3).toFixed(1) + 'K';
+                if (Number.isInteger(value)) return value.toString();
+                return value.toFixed(1);
+            },
+
+            /**
+             * Format complex values (arrays, objects) for table cells
+             * Handles parallel token/balance arrays from PostgreSQL
+             */
+            formatComplexValue(value, columnName = '', rowData = null) {
+                if (value === null || value === undefined) return '-';
+                
+                const keyLower = columnName.toLowerCase();
+                
+                // Special case: tokens column with parallel tokens_balance array
+                if (keyLower === 'tokens' && rowData && Array.isArray(rowData.tokens_balance)) {
+                    return this.formatTokensWithBalances(value, rowData.tokens_balance);
+                }
+                
+                // Skip tokens_balance column if tokens is present (shown combined)
+                if (keyLower === 'tokens_balance' && rowData && Array.isArray(rowData.tokens)) {
+                    return '(see tokens)';
+                }
+                
+                // Handle arrays
+                if (Array.isArray(value)) {
+                    if (value.length === 0) return '-';
+                    
+                    // Token addresses array (standalone)
+                    if (keyLower.includes('token') || keyLower.includes('address')) {
+                        if (value.length === 1) {
+                            return this.abbreviateAddress(String(value[0]));
+                        }
+                        return `${value.length} tokens`;
+                    }
+                    
+                    // Numeric array - show count and sum
+                    if (typeof value[0] === 'number') {
+                        const total = value.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+                        return `[${value.length}] Σ${this.formatCompact(total)}`;
+                    }
+                    
+                    // Generic array
+                    if (value.length <= 2) {
+                        return value.map(v => 
+                            typeof v === 'string' && v.length > 12 
+                                ? this.abbreviateAddress(v) 
+                                : String(v)
+                        ).join(', ');
+                    }
+                    return `[${value.length} items]`;
+                }
+                
+                // Handle objects
+                if (typeof value === 'object') {
+                    const keys = Object.keys(value);
+                    if (keys.length === 0) return '-';
+                    return `{${keys.length} fields}`;
+                }
+                
+                return String(value);
+            },
+            
+            /**
+             * Format parallel tokens and balances arrays
+             * Shows abbreviated token addresses, no sums (already have total_balance column)
+             */
+            formatTokensWithBalances(tokens, balances) {
+                if (!tokens || tokens.length === 0) return '-';
+                
+                const count = tokens.length;
+                
+                if (count === 1) {
+                    return `${this.abbreviateAddress(String(tokens[0]))}: ${this.formatCompact(balances[0])}`;
+                }
+                
+                // Show first token + count of others
+                return `${this.abbreviateAddress(String(tokens[0]))}: ${this.formatCompact(balances[0])}, +${count - 1}`;
+            },
+
+            /**
+             * Get tooltip text for complex values
+             */
+            getComplexValueTooltip(value, columnName = '', rowData = null) {
+                if (value === null || value === undefined) return '';
+                
+                const keyLower = columnName.toLowerCase();
+                
+                // For tokens column, just show "Click to view" since modal handles it
+                if (keyLower === 'tokens' && rowData && Array.isArray(rowData.tokens_balance)) {
+                    return 'Click to view all tokens';
+                }
+                
+                if (Array.isArray(value)) {
+                    if (value.length === 0) return '';
+                    if (value.length <= 20) {
+                        return value.map(v => String(v)).join('\n');
+                    }
+                    const first10 = value.slice(0, 10).map(v => String(v));
+                    return first10.join('\n') + `\n... +${value.length - 10} more`;
+                }
+                
+                if (typeof value === 'object') {
+                    return JSON.stringify(value, null, 2);
+                }
+                
+                return String(value);
+            },
+            
+            /**
+             * Show tokens modal for a row
+             */
+            showTokensModal(dataIndex) {
+                const node = this.filteredData[dataIndex];
+                if (!node || !node.tokens) return;
+                
+                const tokens = node.tokens;
+                const balances = node.tokens_balance || [];
+                
+                // Combine and sort by balance
+                const pairs = tokens.map((token, i) => ({
+                    token: String(token),
+                    balance: parseFloat(balances[i]) || 0
+                })).sort((a, b) => b.balance - a.balance);
+                
+                // Update modal count
+                document.getElementById('modal-token-count').textContent = pairs.length;
+                
+                // Build tokens list HTML
+                const listHtml = pairs.map(p => `
+                    <div class="token-item">
+                        <span class="token-address" onclick="DataExplorer.copyToClipboard('${p.token}')" title="Click to copy">${p.token}</span>
+                        <div>
+                            <span class="token-balance">${this.formatCompact(p.balance)}</span>
+                            <button class="token-copy-btn" onclick="DataExplorer.copyToClipboard('${p.token}')">Copy</button>
+                        </div>
+                    </div>
+                `).join('');
+                
+                document.getElementById('tokens-list').innerHTML = listHtml;
+                
+                // Show modal
+                document.getElementById('tokens-modal').classList.add('visible');
+                
+                // Close on escape key
+                document.addEventListener('keydown', this.handleModalKeydown);
+            },
+            
+            /**
+             * Close tokens modal
+             */
+            closeTokensModal() {
+                document.getElementById('tokens-modal').classList.remove('visible');
+                document.removeEventListener('keydown', this.handleModalKeydown);
+            },
+            
+            /**
+             * Handle keydown in modal
+             */
+            handleModalKeydown(e) {
+                if (e.key === 'Escape') {
+                    DataExplorer.closeTokensModal();
+                }
+            },
+            
+            /**
+             * Copy text to clipboard
+             */
+            copyToClipboard(text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    this.showToast('Copied to clipboard', 'success');
+                }).catch(() => {
+                    this.showToast('Failed to copy', 'error');
+                });
             },
 
             /**

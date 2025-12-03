@@ -764,12 +764,27 @@ class NetworkService:
         for node in G.nodes():
             node_data = {'id': str(node)}
             
-            # Add metrics
+            # Add all node attributes (metrics, properties, etc.)
             for key, value in G.nodes[node].items():
                 if isinstance(value, (int, float, np.integer, np.floating)):
                     node_data[key] = float(value) if pd.notna(value) else 0.0
                 elif isinstance(value, str):
                     node_data[key] = value
+                elif isinstance(value, (list, np.ndarray)):
+                    # Handle arrays (tokens, balances, etc.)
+                    if isinstance(value, np.ndarray):
+                        node_data[key] = value.tolist()
+                    else:
+                        node_data[key] = value
+                elif isinstance(value, dict):
+                    # Handle dictionaries
+                    node_data[key] = value
+                elif value is None or (isinstance(value, float) and np.isnan(value)):
+                    # Skip null/NaN values
+                    pass
+                else:
+                    # Convert other types to string
+                    node_data[key] = str(value)
             
             # Add position
             pos = layout.get(str(node), {'x': 0, 'y': 0})
@@ -902,10 +917,11 @@ class NetworkService:
         for node_id in G.nodes():
             row = {'avatar': str(node_id)}
             for key, value in G.nodes[node_id].items():
-                # Skip non-scalar values (arrays, objects)
-                if isinstance(value, (list, dict, np.ndarray)):
-                    continue
-                row[key] = value
+                # Convert numpy arrays to lists
+                if isinstance(value, np.ndarray):
+                    row[key] = value.tolist()
+                else:
+                    row[key] = value
             rows.append(row)
         
         if not rows:

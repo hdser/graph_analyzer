@@ -24,15 +24,67 @@ const InfoPanel = {
         
         DOMCache.nodeId.textContent = data.id || 'N/A';
         
+        // Check if we have parallel token arrays
+        const hasTokenArrays = Array.isArray(data.tokens) && Array.isArray(data.tokens_balance);
+        
+        // Store tokens data for modal
+        if (hasTokenArrays) {
+            this.currentTokensData = {
+                tokens: data.tokens,
+                balances: data.tokens_balance
+            };
+        } else {
+            this.currentTokensData = null;
+        }
+        
         // Build metrics HTML
-        const metricsHtml = Object.entries(data)
-            .filter(([k, v]) => !['id', 'label', 'isNew'].includes(k) && typeof v !== 'object')
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([k, v]) => `<div class="metric-row">
-                <span class="metric-label">${k.replace(/_/g, ' ')}</span>
-                <span class="metric-value">${Utils.formatNumber(v)}</span>
-            </div>`)
-            .join('');
+        const entries = Object.entries(data)
+            .filter(([k]) => !['id', 'label', 'isNew'].includes(k))
+            .sort(([a], [b]) => a.localeCompare(b));
+        
+        let metricsHtml = '';
+        
+        for (const [k, v] of entries) {
+            const label = k.replace(/_/g, ' ');
+            let displayValue;
+            let extraClass = '';
+            let tooltip = '';
+            let onclick = '';
+            
+            // Skip tokens_balance if we're showing combined view
+            if (k === 'tokens_balance' && hasTokenArrays) {
+                continue;
+            }
+            
+            if (v === null || v === undefined) {
+                displayValue = '-';
+            } else if (k === 'tokens' && hasTokenArrays) {
+                // Combined tokens + balances view - clickable
+                const formatted = this.formatTokensWithBalances(data.tokens, data.tokens_balance);
+                displayValue = formatted.summary;
+                tooltip = 'Click to view all tokens';
+                extraClass = 'complex-value clickable';
+                onclick = 'onclick="InfoPanel.showTokensModal()"';
+            } else if (Array.isArray(v)) {
+                // Generic array
+                const formatted = this.formatArray(v, k);
+                displayValue = formatted.summary;
+                tooltip = formatted.tooltip;
+                extraClass = 'complex-value';
+            } else if (typeof v === 'object') {
+                displayValue = JSON.stringify(v);
+                extraClass = 'complex-value';
+            } else {
+                displayValue = Utils.formatNumber(v);
+            }
+            
+            const tooltipAttr = tooltip ? `title="${this.escapeHtml(tooltip)}"` : '';
+            
+            metricsHtml += `<div class="metric-row">
+                <span class="metric-label">${label}</span>
+                <span class="metric-value ${extraClass}" ${tooltipAttr} ${onclick}>${displayValue}</span>
+            </div>`;
+        }
         
         DOMCache.allMetrics.innerHTML = metricsHtml || '<div class="no-metrics">No metrics computed</div>';
         
@@ -53,6 +105,98 @@ const InfoPanel = {
         
         this.updateNavState();
         this.switchTab('metrics');
+    },
+    
+    /**
+     * Format parallel tokens and balances arrays
+     * Shows abbreviated token addresses with balances, no sums (already have total_balance column)
+     */
+    formatTokensWithBalances(tokens, balances) {
+        if (!tokens || tokens.length === 0) {
+            return { summary: '-', tooltip: '' };
+        }
+        
+        // Combine into pairs and sort by balance descending
+        const pairs = tokens.map((token, i) => ({
+            token: String(token),
+            balance: parseFloat(balances[i]) || 0
+        })).sort((a, b) => b.balance - a.balance);
+        
+        const count = pairs.length;
+        
+        // Format for display
+        const formatBalance = (bal) => {
+            if (bal >= 1e9) return (bal / 1e9).toFixed(1) + 'B';
+            if (bal >= 1e6) return (bal / 1e6).toFixed(1) + 'M';
+            if (bal >= 1e3) return (bal / 1e3).toFixed(1) + 'K';
+            return bal.toFixed(1);
+        };
+        
+        const abbrev = (addr) => addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr;
+        
+        // Summary: show top 2 tokens with balances
+        let summary;
+        if (count === 1) {
+            summary = `${abbrev(pairs[0].token)}: ${formatBalance(pairs[0].balance)}`;
+        } else if (count === 2) {
+            summary = `${abbrev(pairs[0].token)}: ${formatBalance(pairs[0].balance)}, +1`;
+        } else {
+            summary = `${abbrev(pairs[0].token)}: ${formatBalance(pairs[0].balance)}, +${count - 1}`;
+        }
+        
+        // Tooltip: show top 15 with balances
+        const tooltipLines = pairs.slice(0, 15).map(p => 
+            `${abbrev(p.token)}: ${formatBalance(p.balance)}`
+        );
+        if (count > 15) {
+            tooltipLines.push(`... +${count - 15} more`);
+        }
+        
+        return { summary, tooltip: tooltipLines.join('\n') };
+    },
+    
+    /**
+     * Format generic array
+     */
+    formatArray(arr, key) {
+        if (!arr || arr.length === 0) {
+            return { summary: '-', tooltip: '' };
+        }
+        
+        const abbrev = (val) => {
+            const s = String(val);
+            return s.length > 12 ? `${s.slice(0, 6)}...${s.slice(-4)}` : s;
+        };
+        
+        const count = arr.length;
+        let summary;
+        
+        if (count <= 2) {
+            summary = arr.map(abbrev).join(', ');
+        } else {
+            summary = `[${count} items]`;
+        }
+        
+        // Tooltip
+        const tooltipLines = arr.slice(0, 15).map(v => String(v));
+        if (count > 15) {
+            tooltipLines.push(`... and ${count - 15} more`);
+        }
+        
+        return { summary, tooltip: tooltipLines.join('\n') };
+    },
+    
+    /**
+     * Escape HTML for safe display
+     */
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     },
 
     /**
@@ -471,5 +615,79 @@ const InfoPanel = {
         
         // Close button
         document.querySelector('.close-btn')?.addEventListener('click', () => this.close());
+        
+        // Tokens modal close on overlay click
+        document.getElementById('tokens-modal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'tokens-modal') {
+                this.closeTokensModal();
+            }
+        });
+        
+        // Close modal on Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeTokensModal();
+            }
+        });
+    },
+    
+    /**
+     * Show tokens modal
+     */
+    showTokensModal() {
+        if (!this.currentTokensData) return;
+        
+        const { tokens, balances } = this.currentTokensData;
+        
+        // Combine and sort by balance
+        const pairs = tokens.map((token, i) => ({
+            token: String(token),
+            balance: parseFloat(balances[i]) || 0
+        })).sort((a, b) => b.balance - a.balance);
+        
+        // Format balance helper
+        const formatBalance = (bal) => {
+            if (bal >= 1e9) return (bal / 1e9).toFixed(2) + 'B';
+            if (bal >= 1e6) return (bal / 1e6).toFixed(2) + 'M';
+            if (bal >= 1e3) return (bal / 1e3).toFixed(2) + 'K';
+            return bal.toFixed(2);
+        };
+        
+        // Update modal count
+        document.getElementById('modal-token-count').textContent = pairs.length;
+        
+        // Build tokens list HTML
+        const listHtml = pairs.map(p => `
+            <div class="token-item">
+                <span class="token-address" onclick="InfoPanel.copyToClipboard('${p.token}')" title="Click to copy">${p.token}</span>
+                <div>
+                    <span class="token-balance">${formatBalance(p.balance)}</span>
+                    <button class="token-copy-btn" onclick="InfoPanel.copyToClipboard('${p.token}')">Copy</button>
+                </div>
+            </div>
+        `).join('');
+        
+        document.getElementById('tokens-list').innerHTML = listHtml;
+        
+        // Show modal
+        document.getElementById('tokens-modal').classList.add('visible');
+    },
+    
+    /**
+     * Close tokens modal
+     */
+    closeTokensModal() {
+        document.getElementById('tokens-modal')?.classList.remove('visible');
+    },
+    
+    /**
+     * Copy text to clipboard
+     */
+    copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            Toast.show('Copied to clipboard', 'success');
+        }).catch(() => {
+            Toast.show('Failed to copy', 'error');
+        });
     }
 };

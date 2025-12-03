@@ -273,8 +273,8 @@
                 
                 <!-- Navigation -->
                 <div class="nav-bar">
-                    <button class="nav-btn nav-back-btn" disabled>←Back</button>
-                    <button class="nav-btn nav-in-btn" title="Select incoming neighbors">←In</button>
+                    <button class="nav-btn nav-back-btn" disabled>← Back</button>
+                    <button class="nav-btn nav-in-btn" title="Select incoming neighbors">← In</button>
                     <button class="nav-btn nav-out-btn" title="Select outgoing neighbors">Out →</button>
                     <button id="neighbor-toggle-btn" class="nav-btn" title="Highlight neighbors">Highlight</button>
                 </div>
@@ -337,9 +337,9 @@
                 
                 <!-- Navigation -->
                 <div class="nav-bar">
-                    <button class="nav-btn nav-back-btn" disabled>←Back</button>
+                    <button class="nav-btn nav-back-btn" disabled>← Back</button>
                     <button class="nav-btn nav-origin-btn" title="Reset to origin">Origin</button>
-                    <button class="nav-btn nav-in-btn" title="Add incoming neighbors">←In</button>
+                    <button class="nav-btn nav-in-btn" title="Add incoming neighbors">← In</button>
                     <button class="nav-btn nav-out-btn" title="Add outgoing neighbors">Out →</button>
                 </div>
                 
@@ -365,6 +365,19 @@
     </div>
 
     <div id="toast-container"></div>
+
+    <!-- Tokens Modal -->
+    <div class="tokens-modal-overlay" id="tokens-modal">
+        <div class="tokens-modal">
+            <div class="tokens-modal-header">
+                <h3>Tokens (<span id="modal-token-count">0</span>)</h3>
+                <button class="tokens-modal-close" onclick="InfoPanel.closeTokensModal()">×</button>
+            </div>
+            <div class="tokens-modal-body">
+                <div class="tokens-list" id="tokens-list"></div>
+            </div>
+        </div>
+    </div>
 
     <!-- Load JS modules in dependency order -->
     <script src="/static/js/icons.js"></script>
