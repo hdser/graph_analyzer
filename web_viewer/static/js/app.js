@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     AutoReload.setup();
     CompositeMetrics.setup();
     InfoPanel.setupNeighborClicks();
+    Metrics.initFilterUI();
     
     console.log('Graph Analyzer initialized');
 });

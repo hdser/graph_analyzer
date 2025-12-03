@@ -134,6 +134,7 @@
                 </div>
 
 
+
                 <div class="section collapsible">
                     <div class="collapsible-header">
                         <h3>Filter Nodes</h3>
@@ -141,20 +142,37 @@
                     </div>
                     <div class="style-subsection">
                         <div class="style-row">
-                            <label>Metric</label>
+                            <label>Property</label>
                             <select id="filter-metric">
-                                <option value="">Select Metric...</option>
+                                <option value="">Select Property...</option>
                             </select>
                         </div>
-                        <div class="style-row filter-inputs">
+                        <div class="style-row filter-inputs" id="numeric-filter-inputs">
                             <select id="filter-operator" style="width: 60px; min-width: 60px;">
                                 <option value="gt">&gt;</option>
                                 <option value="lt">&lt;</option>
                                 <option value="eq">=</option>
-                                <option value="gte">â‰¥</option>
-                                <option value="lte">â‰¤</option>
+                                <option value="gte">≥</option>
+                                <option value="lte">≤</option>
                             </select>
                             <input type="number" id="filter-value" placeholder="Value" style="flex:1;">
+                        </div>
+                        <div class="style-row filter-inputs" id="array-filter-inputs" style="display:none;">
+                            <select id="filter-array-operator" style="width: 90px; min-width: 90px;">
+                                <option value="contains">Contains</option>
+                                <option value="not_contains">Not Contains</option>
+                                <option value="regex">Regex</option>
+                            </select>
+                            <input type="text" id="filter-array-value" placeholder="0x... or /pattern/i" style="flex:1; font-family: monospace;">
+                        </div>
+                        <div class="style-row filter-inputs" id="string-filter-inputs" style="display:none;">
+                            <select id="filter-string-operator" style="width: 90px; min-width: 90px;">
+                                <option value="eq">Equals</option>
+                                <option value="neq">Not Equals</option>
+                                <option value="contains">Contains</option>
+                                <option value="regex">Regex</option>
+                            </select>
+                            <input type="text" id="filter-string-value" placeholder="Value or /pattern/i" style="flex:1;">
                         </div>
                         <div class="style-row">
                              <button id="filter-btn" class="secondary-btn">Select Matches</button>
