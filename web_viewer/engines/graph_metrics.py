@@ -51,7 +51,7 @@ METRIC_CATEGORIES = {
 
 # Quick preset groups
 METRIC_PRESETS = {
-    'basic': ['topology', 'clustering'],
+    'basic': ['topology', 'community'],
     'essential': ['topology', 'centrality', 'clustering', 'community'],
     'moderate': ['topology', 'centrality', 'clustering', 'community', 'paths', 'structural'],
     'all': list(METRIC_CATEGORIES.keys())

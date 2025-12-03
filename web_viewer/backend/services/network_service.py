@@ -553,7 +553,11 @@ class NetworkService:
         metrics_dfs = {}
         metrics_source = "computed"
         
-        if config.skip_sql:
+        # Check if we should skip metrics computation entirely
+        if config.metrics_mode == "skip":
+            print("[METRICS] Skipping metrics computation (metrics_mode='skip')")
+            metrics_source = "skipped"
+        elif config.skip_sql:
             # Try loading cached metrics for each layer
             for sql_file in config.sql_files:
                 version = self._extract_version(Path(sql_file).stem)
@@ -562,8 +566,8 @@ class NetworkService:
                     metrics_dfs[version] = cached_metrics
                     metrics_source = "cache"
         
-        # If no cached metrics found, compute them
-        if not metrics_dfs:
+        # If no cached metrics found and not skipping, compute them
+        if not metrics_dfs and config.metrics_mode != "skip":
             metrics_dfs = self.compute_metrics_for_shared_avatars(
                 edge_layers, 
                 config.metrics_mode

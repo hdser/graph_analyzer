@@ -323,12 +323,20 @@ function updateNodeInfo() {
     const total = nodeData.length;
     const filtered = data.length;
     
+    // Count selected nodes (for debugging/info)
+    const selectedCount = nodeData.filter(n => n._selected).length;
+    
     const infoEl = document.getElementById('node-info');
     if (useSelectedOnly && filtered < total) {
         infoEl.textContent = `Analyzing ${filtered} of ${total} nodes (selected)`;
+    } else if (selectedCount > 0) {
+        // Show selection count even when not in "selected only" mode
+        infoEl.textContent = `Analyzing ${total} nodes (${selectedCount} selected in graph)`;
     } else {
         infoEl.textContent = `Analyzing ${total} nodes`;
     }
+    
+    console.log(`[Distributions] Node info: total=${total}, selected=${selectedCount}, filtered=${filtered}`);
 }
 
 function getFilteredData() {
@@ -1120,6 +1128,12 @@ function populatePCAMetrics() {
     const container = document.getElementById('pca-metrics-list');
     if (!container) return;
     
+    // Preserve current selections before repopulating
+    const previouslySelected = new Set(
+        Array.from(document.querySelectorAll('#pca-metrics-list input:checked'))
+            .map(input => input.value)
+    );
+    
     // Filter to numeric metrics
     const numericMetrics = allMetrics.filter(m => {
         const sample = nodeData[0]?.[m];
@@ -1131,34 +1145,39 @@ function populatePCAMetrics() {
         return;
     }
     
-    container.innerHTML = numericMetrics.map(metric => `
-        <label class="metric-checkbox">
-            <input type="checkbox" name="pca-metric" value="${metric}">
-            <span>${metric.replace(/_/g, ' ')}</span>
-        </label>
-    `).join('');
+    container.innerHTML = numericMetrics.map(metric => {
+        const isSelected = previouslySelected.has(metric);
+        return `
+            <label class="metric-checkbox">
+                <input type="checkbox" name="pca-metric" value="${metric}" ${isSelected ? 'checked' : ''}>
+                <span>${metric.replace(/_/g, ' ')}</span>
+            </label>
+        `;
+    }).join('');
     
-    // Pre-select reasonable defaults
-    const defaults = ['pagerank', 'total_degree', 'in_degree', 'out_degree', 'clustering_coefficient', 
-                      'betweenness_centrality', 'closeness_centrality', 'eigenvector_centrality'];
-    let selectedCount = 0;
-    defaults.forEach(d => {
-        if (selectedCount < 6) {
-            const input = container.querySelector(`input[value="${d}"]`);
-            if (input) {
-                input.checked = true;
-                selectedCount++;
+    // Only set defaults if nothing was previously selected
+    if (previouslySelected.size === 0) {
+        const defaults = ['pagerank', 'total_degree', 'in_degree', 'out_degree', 'clustering_coefficient', 
+                          'betweenness_centrality', 'closeness_centrality', 'eigenvector_centrality'];
+        let selectedCount = 0;
+        defaults.forEach(d => {
+            if (selectedCount < 6) {
+                const input = container.querySelector(`input[value="${d}"]`);
+                if (input) {
+                    input.checked = true;
+                    selectedCount++;
+                }
             }
-        }
-    });
-    
-    // If less than 3 defaults found, select first available metrics
-    if (selectedCount < 3) {
-        const inputs = container.querySelectorAll('input');
-        for (let i = 0; i < Math.min(5, inputs.length) && selectedCount < 5; i++) {
-            if (!inputs[i].checked) {
-                inputs[i].checked = true;
-                selectedCount++;
+        });
+        
+        // If less than 3 defaults found, select first available metrics
+        if (selectedCount < 3) {
+            const inputs = container.querySelectorAll('input');
+            for (let i = 0; i < Math.min(5, inputs.length) && selectedCount < 5; i++) {
+                if (!inputs[i].checked) {
+                    inputs[i].checked = true;
+                    selectedCount++;
+                }
             }
         }
     }
@@ -1178,22 +1197,41 @@ async function runPCAAnalysis() {
     const nComponents = document.getElementById('pca-n-components')?.value || 'auto';
     const standardize = document.getElementById('pca-standardize')?.value === 'true';
     
+    // Get selected node IDs if filtering
+    const activeNodeIds = getActiveNodeIds();
+    
     // Show progress
     document.getElementById('pca-progress').style.display = 'block';
     document.getElementById('run-pca-btn').disabled = true;
     
     try {
+        const requestBody = {
+            metrics: selectedPCAMetrics,
+            n_components: nComponents,
+            standardize: standardize
+        };
+        
+        // Add node_ids filter if using selected only
+        if (activeNodeIds && activeNodeIds.length > 0) {
+            requestBody.node_ids = activeNodeIds;
+            console.log('[PCA] Running analysis on', activeNodeIds.length, 'selected nodes');
+        } else {
+            console.log('[PCA] Running analysis on all nodes');
+        }
+        
         console.log('[PCA] Running analysis:', { metrics: selectedPCAMetrics, nComponents, standardize });
+        
+        // Use AbortController for timeout (30 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         
         const response = await fetch('/api/anomaly/pca', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                metrics: selectedPCAMetrics,
-                n_components: nComponents,
-                standardize: standardize
-            })
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
         });
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
             const error = await response.json();
@@ -1201,6 +1239,13 @@ async function runPCAAnalysis() {
         }
         
         pcaResult = await response.json();
+        
+        // Mark which nodes were in the user's original selection for highlighting
+        if (activeNodeIds) {
+            pcaResult._selectedNodeIds = new Set(activeNodeIds);
+            pcaResult._isFilteredAnalysis = true;
+        }
+        
         console.log('[PCA] Analysis complete:', pcaResult);
         
         displayPCAResults(pcaResult);
@@ -1214,7 +1259,11 @@ async function runPCAAnalysis() {
         
     } catch (error) {
         console.error('[PCA] Analysis failed:', error);
-        showPCAError(error.message);
+        if (error.name === 'AbortError') {
+            showPCAError('Request timed out - server may be busy with reload. Try again.');
+        } else {
+            showPCAError(error.message);
+        }
     } finally {
         document.getElementById('pca-progress').style.display = 'none';
         document.getElementById('run-pca-btn').disabled = false;
@@ -1261,7 +1310,14 @@ function displayPCAResults(result) {
     document.getElementById('pca-variance-explained').textContent = 
         `${(result.total_variance_explained * 100).toFixed(1)}%`;
     document.getElementById('pca-features-used').textContent = result.features.length;
-    document.getElementById('pca-samples').textContent = result.n_samples.toLocaleString();
+    
+    // Show sample count with filter indicator
+    const samplesText = result.n_samples.toLocaleString();
+    const filterNote = result._isFilteredAnalysis ? ' (selected)' : '';
+    document.getElementById('pca-samples').textContent = samplesText + filterNote;
+    
+    // Store for scatter chart highlighting
+    window.pcaSelectedNodeIds = result._selectedNodeIds || null;
     
     // Render charts
     renderPCAScatterChart(result);
@@ -1284,16 +1340,84 @@ function renderPCAScatterChart(result) {
     const pc2 = result.transformed_data.PC2 || [];
     const nodeIds = result.node_ids || [];
     
-    // Create data points
-    const data = pc1.map((x, i) => ({
-        x: x,
-        y: pc2[i] || 0,
-        id: nodeIds[i] || i
-    }));
+    // Get selected node IDs from main graph for highlighting
+    // Build set from nodeData._selected
+    const selectedNodeSet = new Set();
+    let selectedCount = 0;
+    nodeData.forEach(n => {
+        if (n._selected) {
+            selectedCount++;
+            // Add the node ID in various formats for robust matching
+            const nodeIdStr = String(n.id);
+            selectedNodeSet.add(nodeIdStr);
+            selectedNodeSet.add(nodeIdStr.toLowerCase());
+            selectedNodeSet.add(nodeIdStr.toUpperCase());
+        }
+    });
     
-    // Color by reconstruction error if available
+    const hasSelection = selectedCount > 0;
+    
+    // Debug: log sample IDs for comparison
+    if (hasSelection) {
+        const sampleSelected = Array.from(selectedNodeSet).slice(0, 3);
+        const sampleResult = nodeIds.slice(0, 3).map(id => String(id));
+        console.log('[PCA Debug] Sample selected node IDs:', sampleSelected);
+        console.log('[PCA Debug] Sample result node IDs:', sampleResult);
+        
+        // Check if any match
+        let testMatch = false;
+        for (const rid of sampleResult) {
+            if (selectedNodeSet.has(rid) || selectedNodeSet.has(rid.toLowerCase()) || selectedNodeSet.has(rid.toUpperCase())) {
+                testMatch = true;
+                break;
+            }
+        }
+        console.log('[PCA Debug] Test match found:', testMatch);
+    }
+    
+    console.log(`[PCA Chart] Selection status: ${selectedCount} nodes selected, hasSelection=${hasSelection}`);
+    
+    // Create data points with selection info
+    let matchedCount = 0;
+    const data = pc1.map((x, i) => {
+        const nodeId = nodeIds[i] || i;
+        const nodeIdStr = String(nodeId);
+        
+        // Try multiple matching strategies
+        const isSelected = hasSelection && (
+            selectedNodeSet.has(nodeIdStr) || 
+            selectedNodeSet.has(nodeIdStr.toLowerCase()) ||
+            selectedNodeSet.has(nodeIdStr.toUpperCase())
+        );
+        
+        if (isSelected) matchedCount++;
+        
+        return {
+            x: x,
+            y: pc2[i] || 0,
+            id: nodeId,
+            isSelected: isSelected
+        };
+    });
+    
+    console.log(`[PCA Chart] Matched ${matchedCount} of ${selectedCount} selected nodes in ${nodeIds.length} results`);
+    
+    // Color points - selected nodes get orange, others get blue
     let backgroundColors;
-    if (result.reconstruction_errors) {
+    let borderColors;
+    let pointRadii;
+    
+    if (hasSelection && matchedCount > 0) {
+        // Highlight selected nodes
+        backgroundColors = data.map(p => p.isSelected 
+            ? 'rgba(255, 152, 0, 0.9)'   // Orange for selected
+            : 'rgba(74, 144, 226, 0.3)'); // Faded blue for others
+        borderColors = data.map(p => p.isSelected 
+            ? 'rgba(255, 152, 0, 1)'
+            : 'rgba(74, 144, 226, 0.5)');
+        pointRadii = data.map(p => p.isSelected ? 8 : 3);
+    } else if (result.reconstruction_errors) {
+        // Color by reconstruction error if no selection
         const errors = result.reconstruction_errors;
         const maxError = Math.max(...errors);
         const minError = Math.min(...errors);
@@ -1301,12 +1425,21 @@ function renderPCAScatterChart(result) {
             const t = maxError > minError ? (e - minError) / (maxError - minError) : 0;
             return getViridisColor(t, 0.6);
         });
+        borderColors = 'rgba(74, 144, 226, 0.8)';
+        pointRadii = 3;
     } else {
         backgroundColors = 'rgba(74, 144, 226, 0.6)';
+        borderColors = 'rgba(74, 144, 226, 0.8)';
+        pointRadii = 3;
     }
     
     const variance1 = (result.explained_variance_ratio[0] * 100).toFixed(1);
     const variance2 = (result.explained_variance_ratio[1] * 100).toFixed(1);
+    
+    // Title shows selection info
+    const titleSuffix = (hasSelection && matchedCount > 0) 
+        ? ` (${matchedCount} selected highlighted)` 
+        : '';
     
     pcaScatterChart = new Chart(ctx, {
         type: 'scatter',
@@ -1315,10 +1448,10 @@ function renderPCAScatterChart(result) {
                 label: 'Nodes',
                 data: data,
                 backgroundColor: backgroundColors,
-                borderColor: 'rgba(74, 144, 226, 0.8)',
-                borderWidth: 0.5,
-                pointRadius: 3,
-                pointHoverRadius: 6,
+                borderColor: borderColors,
+                borderWidth: (hasSelection && matchedCount > 0) ? data.map(p => p.isSelected ? 2 : 0.5) : 0.5,
+                pointRadius: pointRadii,
+                pointHoverRadius: 8,
             }]
         },
         options: {
@@ -1327,6 +1460,12 @@ function renderPCAScatterChart(result) {
             plugins: {
                 legend: {
                     display: false
+                },
+                title: {
+                    display: (hasSelection && matchedCount > 0),
+                    text: `${matchedCount} selected nodes highlighted in orange`,
+                    color: '#ff9800',
+                    font: { size: 12 }
                 },
                 tooltip: {
                     callbacks: {
@@ -1337,6 +1476,9 @@ function renderPCAScatterChart(result) {
                                 `PC1: ${point.x.toFixed(4)}`,
                                 `PC2: ${point.y.toFixed(4)}`
                             ];
+                            if (point.isSelected) {
+                                lines.unshift('★ SELECTED');
+                            }
                             if (result.reconstruction_errors) {
                                 const idx = context.dataIndex;
                                 lines.push(`Recon. Error: ${result.reconstruction_errors[idx].toFixed(4)}`);
@@ -1603,9 +1745,25 @@ async function initializeAnomalyTab() {
     
     console.log('[Anomaly] Initializing anomaly detection tab...');
     
+    // If algorithms already cached, just use them
+    if (anomalyAlgorithms && Object.keys(anomalyAlgorithms).length > 0) {
+        console.log('[Anomaly] Using cached algorithms');
+        populateAlgorithmSelect();
+        populateAnomalyMetrics();
+        anomalyInitialized = true;
+        return;
+    }
+    
     try {
-        // Fetch available algorithms from backend
-        const response = await fetch('/api/anomaly/algorithms');
+        // Use AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+        
+        const response = await fetch('/api/anomaly/algorithms', {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
         if (!response.ok) {
             throw new Error('Failed to load algorithms');
         }
@@ -1618,9 +1776,15 @@ async function initializeAnomalyTab() {
         anomalyInitialized = true;
         
     } catch (error) {
-        console.error('[Anomaly] Failed to initialize:', error);
+        if (error.name === 'AbortError') {
+            console.warn('[Anomaly] Request timed out, will retry on next tab switch');
+        } else {
+            console.error('[Anomaly] Failed to initialize:', error);
+        }
+        
+        // Show message but don't block - user can retry
         document.getElementById('algorithm-description').innerHTML = 
-            '<div style="color: #ff4d4f;">Failed to load algorithms. Is the server running?</div>';
+            '<div style="color: #faad14;">Loading algorithms... Click another tab and back to retry.</div>';
     }
 }
 
@@ -1648,7 +1812,7 @@ function updateAlgorithmUI() {
     document.getElementById('algorithm-description').innerHTML = `
         <p>${info.description}</p>
         <p class="complexity">Complexity: ${info.complexity}</p>
-         <p class="multivariate">${info.multivariate ? '✓ Supports multiple metrics' : '○ Single metric recommended'}</p>
+         <p class="multivariate">${info.multivariate ? 'âœ“ Supports multiple metrics' : 'â—‹ Single metric recommended'}</p>
     `;
     
     // Update parameters
@@ -1712,6 +1876,12 @@ function populateAnomalyMetrics() {
     const algorithm = document.getElementById('anomaly-algorithm')?.value;
     const info = anomalyAlgorithms[algorithm];
     
+    // Preserve current selections before repopulating
+    const previouslySelected = new Set(
+        Array.from(document.querySelectorAll('#anomaly-metrics-list input:checked'))
+            .map(input => input.value)
+    );
+    
     // Filter to numeric metrics
     const numericMetrics = allMetrics.filter(m => {
         const sample = nodeData[0]?.[m];
@@ -1726,30 +1896,36 @@ function populateAnomalyMetrics() {
     // For multivariate algorithms, use checkboxes; for single-metric, use radio buttons
     const inputType = info?.multivariate !== false ? 'checkbox' : 'radio';
     
-    container.innerHTML = numericMetrics.map(metric => `
-        <label class="metric-checkbox">
-            <input type="${inputType}" name="anomaly-metric" value="${metric}">
-            <span>${metric.replace(/_/g, ' ')}</span>
-        </label>
-    `).join('');
+    container.innerHTML = numericMetrics.map(metric => {
+        // Restore previous selection if metric still exists
+        const isSelected = previouslySelected.has(metric);
+        return `
+            <label class="metric-checkbox">
+                <input type="${inputType}" name="anomaly-metric" value="${metric}" ${isSelected ? 'checked' : ''}>
+                <span>${metric.replace(/_/g, ' ')}</span>
+            </label>
+        `;
+    }).join('');
     
-    // Pre-select reasonable defaults
-    const defaults = ['pagerank', 'total_degree', 'clustering_coefficient', 'in_degree', 'out_degree'];
-    let selectedCount = 0;
-    defaults.forEach(d => {
-        if (selectedCount < 3) {
-            const input = container.querySelector(`input[value="${d}"]`);
-            if (input) {
-                input.checked = true;
-                selectedCount++;
+    // Only set defaults if nothing was previously selected
+    if (previouslySelected.size === 0) {
+        const defaults = ['pagerank', 'total_degree', 'clustering_coefficient', 'in_degree', 'out_degree'];
+        let selectedCount = 0;
+        defaults.forEach(d => {
+            if (selectedCount < 3) {
+                const input = container.querySelector(`input[value="${d}"]`);
+                if (input) {
+                    input.checked = true;
+                    selectedCount++;
+                }
             }
+        });
+        
+        // If no defaults found, select first metric
+        if (selectedCount === 0 && numericMetrics.length > 0) {
+            const firstInput = container.querySelector('input');
+            if (firstInput) firstInput.checked = true;
         }
-    });
-    
-    // If no defaults found, select first metric
-    if (selectedCount === 0 && numericMetrics.length > 0) {
-        const firstInput = container.querySelector('input');
-        if (firstInput) firstInput.checked = true;
     }
 }
 
@@ -1792,24 +1968,43 @@ async function runAnomalyDetection() {
     
     const name = document.getElementById('anomaly-name')?.value || 'anomaly_score';
     
+    // Get selected node IDs if filtering
+    const activeNodeIds = getActiveNodeIds();
+    
     // Show progress
     document.getElementById('anomaly-progress').style.display = 'block';
     document.getElementById('run-anomaly-btn').disabled = true;
     
     try {
+        const requestBody = {
+            name: name,
+            metrics: selectedAnomalyMetrics,
+            algorithm: algorithm,
+            parameters: parameters,
+            apply_to_graph: false  // Don't apply yet, let user decide
+        };
+        
+        // Add node_ids filter if using selected only
+        if (activeNodeIds && activeNodeIds.length > 0) {
+            requestBody.node_ids = activeNodeIds;
+            console.log('[Anomaly] Running detection on', activeNodeIds.length, 'selected nodes');
+        } else {
+            console.log('[Anomaly] Running detection on all nodes');
+        }
+        
         console.log('[Anomaly] Running detection:', { algorithm, metrics: selectedAnomalyMetrics, parameters, name });
+        
+        // Use AbortController for timeout (30 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         
         const response = await fetch('/api/anomaly/detect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name: name,
-                metrics: selectedAnomalyMetrics,
-                algorithm: algorithm,
-                parameters: parameters,
-                apply_to_graph: false  // Don't apply yet, let user decide
-            })
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
         });
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
             const error = await response.json();
@@ -1817,6 +2012,13 @@ async function runAnomalyDetection() {
         }
         
         lastAnomalyResult = await response.json();
+        
+        // Mark which nodes were in the user's original selection for highlighting
+        if (activeNodeIds) {
+            lastAnomalyResult._selectedNodeIds = new Set(activeNodeIds);
+            lastAnomalyResult._isFilteredAnalysis = true;
+        }
+        
         console.log('[Anomaly] Detection complete:', lastAnomalyResult);
         
         displayAnomalyResults(lastAnomalyResult);
@@ -1831,7 +2033,11 @@ async function runAnomalyDetection() {
         
     } catch (error) {
         console.error('[Anomaly] Detection failed:', error);
-        showAnomalyError(error.message);
+        if (error.name === 'AbortError') {
+            showAnomalyError('Request timed out - server may be busy with reload. Try again.');
+        } else {
+            showAnomalyError(error.message);
+        }
     } finally {
         document.getElementById('anomaly-progress').style.display = 'none';
         document.getElementById('run-anomaly-btn').disabled = false;
@@ -1861,7 +2067,9 @@ function displayAnomalyResults(result) {
     document.getElementById('anomaly-table-container').style.display = 'block';
     
     // Update summary stats
-    document.getElementById('result-algorithm').textContent = result.algorithm.replace(/_/g, ' ');
+    const algorithmText = result.algorithm.replace(/_/g, ' ');
+    const filterNote = result._isFilteredAnalysis ? ' (selected nodes)' : '';
+    document.getElementById('result-algorithm').textContent = algorithmText + filterNote;
     document.getElementById('result-count').textContent = `${result.n_anomalies} / ${result.n_total}`;
     document.getElementById('result-percentage').textContent = `${result.anomaly_percentage.toFixed(1)}%`;
     document.getElementById('result-time').textContent = `${result.computation_time.toFixed(2)}s`;
@@ -1890,6 +2098,7 @@ function displayAnomalyResults(result) {
     // Store all data for filtering
     window.anomalyTableData = result.top_anomalies;
     window.anomalyMetricsUsed = metricsUsed;
+    window.anomalySelectedNodeIds = result._selectedNodeIds || null;
     
     // Setup filter checkbox
     const filterCheckbox = document.getElementById('show-anomalies-only');
@@ -1912,19 +2121,50 @@ function renderAnomalyTable(anomaliesOnly = false) {
     const data = window.anomalyTableData || [];
     const metricsUsed = window.anomalyMetricsUsed || [];
     
+    // Get selected node IDs from main graph for highlighting
+    // Build set with multiple ID formats for robust matching
+    const selectedNodeSet = new Set();
+    let selectedCount = 0;
+    nodeData.forEach(n => {
+        if (n._selected) {
+            selectedCount++;
+            selectedNodeSet.add(String(n.id));
+            selectedNodeSet.add(String(n.id).toLowerCase());
+            if (n.avatar) {
+                selectedNodeSet.add(String(n.avatar));
+                selectedNodeSet.add(String(n.avatar).toLowerCase());
+            }
+        }
+    });
+    const hasSelection = selectedCount > 0;
+    
+    console.log(`[Anomaly Table] Selection: ${selectedCount} nodes selected`);
+    
     // Filter if needed
     const filteredData = anomaliesOnly 
         ? data.filter(node => node.is_anomaly) 
         : data;
     
+    // Count how many selected nodes are in the view
+    let selectedInView = 0;
+    filteredData.forEach(node => {
+        const nodeIdStr = String(node.id);
+        if (selectedNodeSet.has(nodeIdStr) || selectedNodeSet.has(nodeIdStr.toLowerCase())) {
+            selectedInView++;
+        }
+    });
+    
     // Update info text
     const tableInfo = document.getElementById('table-info');
     if (tableInfo) {
         const anomalyCount = data.filter(n => n.is_anomaly).length;
+        
         if (anomaliesOnly) {
-            tableInfo.textContent = `Showing ${filteredData.length} anomalies`;
+            tableInfo.textContent = `Showing ${filteredData.length} anomalies` + 
+                (hasSelection ? ` (${selectedInView} selected)` : '');
         } else {
-            tableInfo.textContent = `Showing ${filteredData.length} nodes (${anomalyCount} anomalies)`;
+            tableInfo.textContent = `Showing ${filteredData.length} nodes (${anomalyCount} anomalies)` +
+                (hasSelection ? ` • ${selectedInView} selected highlighted` : '');
         }
     }
     
@@ -1934,6 +2174,13 @@ function renderAnomalyTable(anomaliesOnly = false) {
         const nodeIdDisplay = String(node.id).length > 20 
             ? String(node.id).substring(0, 18) + '...' 
             : String(node.id);
+        
+        // Check if this node is selected in main graph (try multiple formats)
+        const nodeIdStr = String(node.id);
+        const isSelected = hasSelection && (
+            selectedNodeSet.has(nodeIdStr) || 
+            selectedNodeSet.has(nodeIdStr.toLowerCase())
+        );
         
         // Color based on score
         const scoreColor = node.score > 0.7 ? '#ff4d4f' : 
@@ -1954,10 +2201,16 @@ function renderAnomalyTable(anomaliesOnly = false) {
             return `<td>${typeof val === 'number' ? val.toFixed(4) : val}</td>`;
         }).join('');
         
+        // Row style for selected nodes
+        const rowStyle = isSelected 
+            ? 'background: rgba(255, 152, 0, 0.25); border-left: 3px solid #ff9800;' 
+            : '';
+        const selectedMarker = isSelected ? '<span style="color:#ff9800;">★</span> ' : '';
+        
         return `
-            <tr data-node-id="${node.id}" data-is-anomaly="${node.is_anomaly}">
+            <tr data-node-id="${node.id}" data-is-anomaly="${node.is_anomaly}" data-is-selected="${isSelected}" style="${rowStyle}">
                 <td>${node.rank || i + 1}</td>
-                <td class="node-id-cell" title="${node.id}">${nodeIdDisplay}</td>
+                <td class="node-id-cell" title="${node.id}">${selectedMarker}${nodeIdDisplay}</td>
                 <td style="color: ${scoreColor}; font-weight: ${node.score > 0.5 ? 'bold' : 'normal'};">${node.score.toFixed(4)}</td>
                 <td>${anomalyIndicator}</td>
                 ${metricCells}
@@ -1984,19 +2237,51 @@ function renderAnomalyHistogram(result) {
     
     if (scores.length === 0) return;
     
+    // Get selected node IDs from main graph with multiple ID formats
+    const selectedNodeSet = new Set();
+    let selectedCount = 0;
+    nodeData.forEach(n => {
+        if (n._selected) {
+            selectedCount++;
+            selectedNodeSet.add(String(n.id));
+            selectedNodeSet.add(String(n.id).toLowerCase());
+            if (n.avatar) {
+                selectedNodeSet.add(String(n.avatar));
+                selectedNodeSet.add(String(n.avatar).toLowerCase());
+            }
+        }
+    });
+    const hasSelection = selectedCount > 0;
+    
+    console.log(`[Anomaly Histogram] Selection: ${selectedCount} nodes selected`);
+    
     const bins = 30;
     const binWidth = 1.0 / bins;
     const counts = new Array(bins).fill(0);
     const anomalyCounts = new Array(bins).fill(0);
+    const selectedCounts = new Array(bins).fill(0);
     
-    // Count all scores and anomaly scores in each bin
+    // Count scores by category
+    let matchedSelected = 0;
     allNodes.forEach(node => {
         const binIdx = Math.min(Math.floor(node.score / binWidth), bins - 1);
-        counts[binIdx]++;
-        if (node.is_anomaly) {
+        const nodeIdStr = String(node.id);
+        const isSelected = hasSelection && (
+            selectedNodeSet.has(nodeIdStr) || 
+            selectedNodeSet.has(nodeIdStr.toLowerCase())
+        );
+        
+        if (isSelected) {
+            matchedSelected++;
+            selectedCounts[binIdx]++;
+        } else if (node.is_anomaly) {
             anomalyCounts[binIdx]++;
+        } else {
+            counts[binIdx]++;
         }
     });
+    
+    console.log(`[Anomaly Histogram] Matched ${matchedSelected} selected nodes in results`);
     
     // Create labels
     const labels = [];
@@ -2004,26 +2289,44 @@ function renderAnomalyHistogram(result) {
         labels.push(((i + 0.5) * binWidth).toFixed(2));
     }
     
+    // Build datasets
+    const datasets = [
+        {
+            label: 'Normal',
+            data: counts,
+            backgroundColor: 'rgba(74, 144, 226, 0.7)',
+            borderColor: 'rgba(74, 144, 226, 1)',
+            borderWidth: 1
+        },
+        {
+            label: 'Anomalies',
+            data: anomalyCounts,
+            backgroundColor: 'rgba(255, 77, 79, 0.8)',
+            borderColor: 'rgba(255, 77, 79, 1)',
+            borderWidth: 1
+        }
+    ];
+    
+    // Add selected nodes dataset if there's a selection with matches
+    if (hasSelection && matchedSelected > 0) {
+        datasets.push({
+            label: 'Selected',
+            data: selectedCounts,
+            backgroundColor: 'rgba(255, 152, 0, 0.9)',
+            borderColor: 'rgba(255, 152, 0, 1)',
+            borderWidth: 1
+        });
+    }
+    
+    const selectionInfo = (hasSelection && matchedSelected > 0) 
+        ? ` (${matchedSelected} selected highlighted)` 
+        : '';
+    
     anomalyHistogramChart = new Chart(canvas, {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [
-                {
-                    label: 'Normal',
-                    data: counts.map((c, i) => c - anomalyCounts[i]),
-                    backgroundColor: 'rgba(74, 144, 226, 0.7)',
-                    borderColor: 'rgba(74, 144, 226, 1)',
-                    borderWidth: 1
-                },
-                {
-                    label: 'Anomalies',
-                    data: anomalyCounts,
-                    backgroundColor: 'rgba(255, 77, 79, 0.8)',
-                    borderColor: 'rgba(255, 77, 79, 1)',
-                    borderWidth: 1
-                }
-            ]
+            datasets: datasets
         },
         options: {
             responsive: true,
@@ -2035,7 +2338,7 @@ function renderAnomalyHistogram(result) {
                 },
                 title: {
                     display: true,
-                    text: `Anomaly Score Distribution (${allNodes.length} nodes)`,
+                    text: `Anomaly Score Distribution (${allNodes.length} nodes)${selectionInfo}`,
                     color: '#e0e0e0',
                     font: { size: 14 }
                 }
@@ -2515,15 +2818,15 @@ function renderCompositePreview(result, metric1, metric2) {
     if (corrDisplay) {
         corrDisplay.innerHTML = `
             <div class="correlation-row">
-                <span>Input Correlation (${metric1} ↔ ${metric2}):</span>
+                <span>Input Correlation (${metric1} â†” ${metric2}):</span>
                 <span class="${getCorrelationClass(corr.input_correlation)}">${formatNumber(corr.input_correlation)}</span>
             </div>
             <div class="correlation-row">
-                <span>${metric1} ↔ Composite:</span>
+                <span>${metric1} â†” Composite:</span>
                 <span class="${getCorrelationClass(corr.m1_composite)}">${formatNumber(corr.m1_composite)}</span>
             </div>
             <div class="correlation-row">
-                <span>${metric2} ↔ Composite:</span>
+                <span>${metric2} â†” Composite:</span>
                 <span class="${getCorrelationClass(corr.m2_composite)}">${formatNumber(corr.m2_composite)}</span>
             </div>
         `;

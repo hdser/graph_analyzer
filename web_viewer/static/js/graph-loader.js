@@ -23,6 +23,8 @@ const GraphLoader = {
         
         const skipSql = document.getElementById('skip-sql')?.checked || false;
         const useCachedLayout = document.getElementById('use-cached-layout')?.checked !== false;
+        const computeMetrics = document.getElementById('compute-metrics-on-load')?.checked !== false;
+        const metricsMode = computeMetrics ? 'basic' : 'skip';
         
         const loadBtn = document.getElementById('load-btn');
         loadBtn.disabled = true;
@@ -36,7 +38,8 @@ const GraphLoader = {
                 sql_files: selectedFiles,
                 node_properties_files: propertiesFiles,
                 skip_sql: skipSql,
-                use_cached_layout: useCachedLayout
+                use_cached_layout: useCachedLayout,
+                metrics_mode: metricsMode
             });
             
             State.currentState = result;

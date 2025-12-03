@@ -6,6 +6,7 @@ API endpoints for automatic background reload functionality.
 
 import asyncio
 import json
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -15,6 +16,14 @@ from ..config import HAS_SSE
 
 if HAS_SSE:
     from sse_starlette.sse import EventSourceResponse
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 
 router = APIRouter(prefix="/api/auto-reload", tags=["auto-reload"])
@@ -80,7 +89,7 @@ async def auto_reload_events(request: Request):
                     event = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield {
                         "event": event["type"],
-                        "data": json.dumps(event["data"])
+                        "data": json.dumps(event["data"], cls=DateTimeEncoder)
                     }
                 except asyncio.TimeoutError:
                     # Send keepalive

@@ -424,7 +424,15 @@
                     document.getElementById('table-body').innerHTML = 
                         '<tr><td colspan="20" class="loading"></td></tr>';
 
-                    const response = await fetch('/api/nodes/data?limit=100000');
+                    // Use AbortController for timeout
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+                    
+                    const response = await fetch('/api/nodes/data?limit=100000', {
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    
                     if (!response.ok) throw new Error('Failed to load data');
 
                     const result = await response.json();
@@ -446,9 +454,17 @@
 
                 } catch (error) {
                     console.error('[DataExplorer] Error loading data:', error);
-                    this.showToast('Failed to load node data', 'error');
+                    
+                    const message = error.name === 'AbortError' 
+                        ? 'Request timed out - server may be busy. Click Refresh to retry.'
+                        : 'Failed to load node data';
+                    
+                    this.showToast(message, 'error');
                     document.getElementById('table-body').innerHTML = 
-                        '<tr><td colspan="20" style="text-align:center;padding:40px;color:#808080;">Failed to load data</td></tr>';
+                        `<tr><td colspan="20" style="text-align:center;padding:40px;color:#808080;">
+                            ${message}<br><br>
+                            <button onclick="DataExplorer.loadData()" style="padding:8px 16px;cursor:pointer;">Retry</button>
+                        </td></tr>`;
                 }
             },
 

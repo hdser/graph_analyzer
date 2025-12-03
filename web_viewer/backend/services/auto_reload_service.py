@@ -200,6 +200,11 @@ class AutoReloadManager:
             print("[AUTO-RELOAD] No network service configured")
             return
         
+        # Double-check we're still enabled (race condition protection)
+        if not self._enabled or self._stop_event.is_set():
+            print("[AUTO-RELOAD] Skipping reload - auto-reload was stopped")
+            return
+        
         self._reload_in_progress = True
         self._error = None
         start_time = time.time()
@@ -215,19 +220,28 @@ class AutoReloadManager:
             for gid, G in self._network_service.graphs.items():
                 old_nodes.update(G.nodes())
             
-            # Perform reload
-            # NOTE: When compute_metrics is False, use "basic" mode (fast topology only)
-            # "minimal" does not exist - valid modes are: basic, essential, standard, comprehensive, full
+            # Perform reload in a thread pool to avoid blocking the event loop
+            # This allows other API endpoints to respond during reload
             from backend.models.requests import LoadConfig
+            
+            # When compute_metrics is False, use "skip" to avoid metrics computation
+            # When True, use the configured metrics_mode
+            effective_metrics_mode = self._metrics_mode if self._compute_metrics else "skip"
+            print(f"[AUTO-RELOAD] Config: compute_metrics={self._compute_metrics}, metrics_mode={effective_metrics_mode}")
+            
             config = LoadConfig(
                 sql_files=self._sql_files,
                 node_properties_files=self._node_properties_files,
                 use_cached_layout=True,
                 skip_sql=False,
-                metrics_mode=self._metrics_mode if self._compute_metrics else "basic"
+                metrics_mode=effective_metrics_mode
             )
             
-            result = self._network_service.load_network(config)
+            # Run the blocking load_network in a thread pool to avoid blocking event loop
+            result = await asyncio.to_thread(
+                self._network_service.load_network,
+                config
+            )
             
             # Get new node set for diff
             new_nodes = set()

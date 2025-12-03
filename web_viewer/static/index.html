@@ -46,6 +46,9 @@
                                 <label title="If checked, attempts to load the full graph from disk cache without running SQL queries.">
                                     <input type="checkbox" id="skip-sql"> Skip SQL (Fast Load)
                                 </label>
+                                <label title="If checked, compute graph metrics (degree, PageRank, etc.) during load. Uncheck for faster loads.">
+                                    <input type="checkbox" id="compute-metrics-on-load" checked> Compute Metrics
+                                </label>
                             </div>
                         </div>
                         <button id="load-btn" class="primary-btn">Load Networks</button>
