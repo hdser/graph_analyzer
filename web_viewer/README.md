@@ -1,26 +1,28 @@
-# Graph Analyzer - Network Visualization & Analysis Dashboard
+# Graph Analyzer
 
-A sophisticated web-based graph visualization and analysis dashboard built with FastAPI and Cytoscape.js. Designed for large-scale network analysis with support for millions of nodes and edges.
+A powerful web dashboard for large-scale graph visualization and analysis, built with FastAPI and Cytoscape.js.
 
 ## Features
 
-- **Interactive Graph Visualization**: WebGL-accelerated rendering with Cytoscape.js
-- **Anomaly Detection**: Eight statistical and ML-based algorithms
-- **Composite Metrics**: Create custom metrics from combinations of existing ones
-- **Distribution Analysis**: Histograms, scatter plots, and PCA visualization
-- **Auto-Reload**: Real-time data refresh with Server-Sent Events
-- **Multiple Layout Algorithms**: Cytoscape Desktop integration, local spring layout, external services
-- **Advanced Filtering**: Regex support, numeric/string/array filtering
-- **Data Explorer**: Full tabular view with sorting, filtering, and export
+- **Interactive Visualization**: WebGL-accelerated graph rendering with Cytoscape.js
+- **120+ Graph Metrics**: Comprehensive network analysis (centrality, clustering, community detection)
+- **8 Anomaly Detection Algorithms**: Z-Score, IQR, Isolation Forest, LOF, DBSCAN, Mahalanobis, PCA, One-Class SVM
+- **Composite Metrics**: Create custom metrics by combining existing ones
+- **External API Properties**: Enrich nodes with data from external REST APIs (e.g., bot detection)
+- **Distribution Analysis**: Statistical visualizations and histograms
+- **Data Explorer**: Searchable, sortable table view of all node data
+- **Auto-Reload**: Real-time graph updates via Server-Sent Events
+- **Multiple Layout Algorithms**: Force-directed, hierarchical, circular
+- **Cytoscape Desktop Integration**: Professional layouts via py4cytoscape
+- **Export Options**: PNG, JSON, CSV
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.10+
-- Node.js 18+ (for layout service)
+- Python 3.9+
 - PostgreSQL database with network data
-- (Optional) Cytoscape Desktop for advanced layouts
+- Node.js (optional, for layout service)
 
 ### Installation
 
@@ -59,6 +61,29 @@ cd web_viewer
 docker-compose up -d
 ```
 
+## Configuration
+
+### Essential Environment Variables
+
+```bash
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=circles
+DB_USER=readonly_user
+DB_PASSWORD=your_password
+
+# Metrics
+DEFAULT_METRICS_MODE=essential
+
+# External API Properties (optional)
+EXTERNAL_API_PROVIDERS=blacklist
+EXTERNAL_API_BASE_URL=https://your-api-server.com
+EXTERNAL_API_CACHE_TTL=3600
+```
+
+See [Configuration Guide](docs/CONFIGURATION.md) for all options.
+
 ## Documentation
 
 | Document | Description |
@@ -81,8 +106,12 @@ graph-analyzer/
 │   ├── backend/               # FastAPI backend
 │   │   ├── routers/           # API endpoints
 │   │   ├── services/          # Business logic
-│   │   ├── models/            # Pydantic models
-│   │   └── utils/             # Helper functions
+│   │   │   ├── network_service.py
+│   │   │   ├── cache_service.py
+│   │   │   ├── layout_service.py
+│   │   │   ├── auto_reload_service.py
+│   │   │   └── api_properties_service.py  # External API integration
+│   │   └── models/            # Pydantic models
 │   ├── engines/               # Computation engines
 │   │   ├── algorithms/        # Anomaly detection algorithms
 │   │   ├── anomaly_engine.py  # Main anomaly orchestrator
@@ -90,15 +119,83 @@ graph-analyzer/
 │   │   └── graph_metrics.py   # NetworkX metrics
 │   ├── static/                # Frontend assets
 │   │   ├── js/                # JavaScript modules
-│   │   ├── css/               # Stylesheets
-│   │   └── *.html             # HTML pages
+│   │   └── css/               # Stylesheets
 │   ├── layout_service/        # Node.js layout service
 │   └── cache/                 # Cached data and layouts
 ├── sql/                       # SQL query files
 │   └── properties/            # Node properties SQL
-├── cytoscape/                 # Cytoscape Desktop config
-└── figs/                      # Example visualizations
+└── docs/                      # Documentation
 ```
+
+## Key Features
+
+### Graph Loading
+
+Load networks from SQL files with automatic metric computation:
+
+```python
+POST /api/load
+{
+  "sql_files": ["crc_v2_trusts.sql"],
+  "node_properties_files": ["crc_v2_avatars.sql"],
+  "metrics_mode": "essential",
+  "load_api_properties": true
+}
+```
+
+### External API Properties
+
+Enrich node data with information from external REST APIs:
+
+```bash
+# Configure in .env
+EXTERNAL_API_PROVIDERS=blacklist
+EXTERNAL_API_BLACKLIST_ENABLED=true
+```
+
+This adds properties like `isBlacklisted` and `blacklistReason` to nodes, with intelligent caching and fallback mechanisms.
+
+### Anomaly Detection
+
+Detect outliers using multiple algorithms:
+
+```python
+POST /api/anomaly/detect
+{
+  "metrics": ["in_degree", "out_degree", "pagerank"],
+  "algorithm": "isolation_forest",
+  "parameters": {"contamination": 0.05}
+}
+```
+
+### Auto-Reload
+
+Enable real-time updates with SSE:
+
+```python
+POST /api/auto-reload/start
+{
+  "interval_seconds": 300,
+  "preserve_layout": true,
+  "load_api_properties": true
+}
+```
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/config` | GET | Application configuration |
+| `/api/load` | POST | Load network from SQL |
+| `/api/state` | GET | Current application state |
+| `/api/graphs/{id}/elements` | GET | Graph elements for rendering |
+| `/api/metrics` | POST | Compute graph metrics |
+| `/api/anomaly/detect` | POST | Run anomaly detection |
+| `/api/api-properties/providers` | GET | List API property providers |
+| `/api/api-properties/refresh` | POST | Refresh API properties |
+| `/api/auto-reload/start` | POST | Start auto-reload |
+
+See [API Reference](docs/API.md) for complete documentation.
 
 ## Screenshots
 
@@ -108,13 +205,18 @@ graph-analyzer/
 ### Cytoscape Desktop Integration
 ![Cytoscape Desktop](img/cytoscape_desktop.png)
 
-## Technology Stack
+## Performance
 
-- **Backend**: FastAPI, Python 3.10+, NetworkX, scikit-learn
-- **Frontend**: Vanilla JavaScript, Cytoscape.js, Chart.js
-- **Database**: PostgreSQL with SQLAlchemy
-- **Real-time**: Server-Sent Events (SSE)
-- **Layout**: Cytoscape Desktop (py4cytoscape), Node.js service
+| Graph Size | Load Time | Recommended Mode |
+|------------|-----------|------------------|
+| < 10K nodes | < 5s | Full features |
+| 10K - 50K | 5-30s | Essential metrics |
+| 50K - 100K | 30s-2m | Performance mode |
+| > 100K | 2m+ | Sampling required |
+
+## Contributing
+
+Contributions are welcome! Please read our contributing guidelines before submitting PRs.
 
 ## License
 

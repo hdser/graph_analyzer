@@ -54,7 +54,20 @@ GET /api/config
   ],
   "anomaly_available": true,
   "auto_reload_available": true,
-  "hide_data_source_ui": false
+  "hide_data_source_ui": false,
+  "api_properties": {
+    "enabled": true,
+    "providers": [
+      {
+        "name": "blacklist",
+        "display_name": "Blacklist (Bot Detection)",
+        "columns": ["isBlacklisted", "blacklistReason"],
+        "enabled": true
+      }
+    ],
+    "base_url": "https://squid-app-3gxnl.ondigitalocean.app",
+    "cache_ttl_seconds": 3600
+  }
 }
 ```
 
@@ -62,7 +75,7 @@ GET /api/config
 
 ### Load Network
 
-Load network data from SQL files.
+Load network data from SQL files with optional API properties.
 
 ```
 POST /api/load
@@ -76,18 +89,24 @@ Content-Type: application/json
   "node_properties_files": ["crc_v2_avatars.sql"],
   "use_cached_layout": true,
   "skip_sql": false,
-  "metrics_mode": "essential"
+  "metrics_mode": "essential",
+  "load_api_properties": true,
+  "api_properties_providers": null,
+  "skip_api_cache": false
 }
 ```
 
 **Parameters**:
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| sql_files | array | Yes | List of SQL file names |
-| node_properties_files | array | No | List of properties SQL files |
-| use_cached_layout | boolean | No | Use cached layout positions |
-| skip_sql | boolean | No | Skip SQL, use cached edges |
-| metrics_mode | string | No | Metrics preset (basic, essential, moderate, all) |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| sql_files | array | Yes | - | List of SQL file names |
+| node_properties_files | array | No | [] | List of properties SQL files |
+| use_cached_layout | boolean | No | true | Use cached layout positions |
+| skip_sql | boolean | No | false | Skip SQL, use cached edges |
+| metrics_mode | string | No | "basic" | Metrics preset |
+| load_api_properties | boolean | No | true | Load properties from external APIs |
+| api_properties_providers | array | No | null | Specific providers to use (null = all enabled) |
+| skip_api_cache | boolean | No | false | Skip API cache, always fetch fresh |
 
 **Response**:
 ```json
@@ -101,8 +120,13 @@ Content-Type: application/json
   "layout_algorithm": "cached",
   "layout_cached": true,
   "data_source": "sql",
-  "node_properties_loaded": ["name", "signup_timestamp"],
-  "metrics_source": "computed"
+  "node_properties_loaded": ["name", "signup_timestamp", "isBlacklisted", "blacklistReason"],
+  "node_properties_source": "sql",
+  "metrics_source": "computed",
+  "api_properties_loaded": {
+    "blacklist": ["isBlacklisted", "blacklistReason"]
+  },
+  "api_properties_source": "api"
 }
 ```
 
@@ -132,14 +156,14 @@ GET /api/graphs/{graph_id}/elements?mode=full
         "id": "0x1234...",
         "in_degree": 10,
         "out_degree": 5,
-        "pagerank": 0.001
+        "pagerank": 0.001,
+        "isBlacklisted": true,
+        "blacklistReason": "repeated_username"
       },
       "position": {"x": 100.5, "y": 200.3}
     }
   ],
-  "total_nodes": 50000,
-  "total_edges": 150000,
-  "edges_included": false
+  "count": 50000
 }
 ```
 
@@ -183,12 +207,44 @@ GET /api/graphs/{graph_id}/edges?offset=0&limit=50000
 
 ---
 
+### Get Node Updates
+
+Get updated node data for incremental refresh.
+
+```
+GET /api/graphs/{graph_id}/node-updates?node_ids=0x1234,0x5678
+```
+
+**Parameters**:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| graph_id | string | Graph identifier |
+| node_ids | string | Comma-separated node IDs (optional) |
+
+**Response**:
+```json
+{
+  "updates": [
+    {
+      "id": "0x1234...",
+      "in_degree": 10,
+      "out_degree": 5,
+      "isBlacklisted": true,
+      "position": {"x": 100.5, "y": 200.3}
+    }
+  ],
+  "count": 2
+}
+```
+
+---
+
 ### Get Neighbors
 
 Get neighbors of specified nodes.
 
 ```
-POST /api/graphs/{graph_id}/neighbors
+POST /api/network/graphs/{graph_id}/neighbors
 Content-Type: application/json
 ```
 
@@ -209,12 +265,37 @@ Content-Type: application/json
 **Response**:
 ```json
 {
-  "neighbors": {
-    "0x1234...": {
-      "in": ["0xaaaa...", "0xbbbb..."],
-      "out": ["0xcccc...", "0xdddd..."]
-    }
-  }
+  "incoming": ["0xaaaa...", "0xbbbb..."],
+  "outgoing": ["0xcccc...", "0xdddd..."],
+  "incoming_count": 2,
+  "outgoing_count": 2,
+  "source_nodes": ["0x1234...", "0x5678..."]
+}
+```
+
+---
+
+### Get Application State
+
+```
+GET /api/state
+```
+
+**Response**:
+```json
+{
+  "loaded": true,
+  "loaded_graphs": ["crc_v2_trusts"],
+  "node_count": 50000,
+  "edge_count": 150000,
+  "metrics_computed": ["in_degree", "out_degree"],
+  "cytoscape_available": false,
+  "anomaly_available": true,
+  "auto_reload_available": true,
+  "api_properties_loaded": {
+    "blacklist": ["isBlacklisted", "blacklistReason"]
+  },
+  "api_properties_source": "cache"
 }
 ```
 
@@ -225,7 +306,7 @@ Content-Type: application/json
 Get paginated list of all nodes with attributes.
 
 ```
-GET /api/nodes?offset=0&limit=100
+GET /api/nodes/data?offset=0&limit=100
 ```
 
 **Response**:
@@ -237,16 +318,141 @@ GET /api/nodes?offset=0&limit=100
       "in_degree": 10,
       "out_degree": 5,
       "pagerank": 0.001,
-      "name": "User123"
+      "name": "User123",
+      "isBlacklisted": false,
+      "blacklistReason": null
     }
   ],
   "columns": [
     {"name": "avatar", "type": "string"},
-    {"name": "in_degree", "type": "number"}
+    {"name": "in_degree", "type": "number"},
+    {"name": "isBlacklisted", "type": "boolean"}
   ],
   "total": 50000,
   "offset": 0,
   "limit": 100
+}
+```
+
+---
+
+## External API Properties Endpoints
+
+Endpoints for managing node properties loaded from external REST APIs.
+
+### List API Properties Providers
+
+Get available external API providers and their status.
+
+```
+GET /api/api-properties/providers
+```
+
+**Response**:
+```json
+{
+  "providers": [
+    {
+      "name": "blacklist",
+      "display_name": "Blacklist (Bot Detection)",
+      "columns": ["isBlacklisted", "blacklistReason"],
+      "enabled": true
+    }
+  ],
+  "all_columns": ["isBlacklisted", "blacklistReason"],
+  "cache_ttl_seconds": 3600,
+  "base_url": "https://squid-app-3gxnl.ondigitalocean.app"
+}
+```
+
+---
+
+### List API Properties Cache
+
+List cached API properties with metadata.
+
+```
+GET /api/api-properties/cache
+```
+
+**Response**:
+```json
+{
+  "caches": [
+    {
+      "filename": "api_properties_blacklist_v2.parquet",
+      "provider": "blacklist",
+      "version": "v2",
+      "row_count": 3404,
+      "columns": ["avatar", "isBlacklisted", "blacklistReason"],
+      "timestamp": 1704067200.0,
+      "age_seconds": 1800.5,
+      "size_mb": 0.15
+    }
+  ]
+}
+```
+
+---
+
+### Clear API Properties Cache
+
+Clear API properties cache, optionally for specific provider/version.
+
+```
+DELETE /api/api-properties/cache?provider=blacklist&version=v2
+```
+
+**Parameters**:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| provider | string | Provider name (optional, null = all) |
+| version | string | Version (optional, null = all) |
+
+**Response**:
+```json
+{
+  "status": "cleared",
+  "provider": "blacklist",
+  "version": "v2"
+}
+```
+
+---
+
+### Refresh API Properties
+
+Force refresh API properties by fetching fresh data from APIs.
+
+```
+POST /api/api-properties/refresh?version=v2&providers=blacklist
+```
+
+**Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| version | string | "v2" | Version to refresh |
+| providers | string | null | Comma-separated provider names (null = all) |
+
+**Response**:
+```json
+{
+  "status": "success",
+  "rows_fetched": 3404,
+  "columns": ["avatar", "isBlacklisted", "blacklistReason"],
+  "provider_columns": {
+    "blacklist": ["isBlacklisted", "blacklistReason"]
+  },
+  "source": "api"
+}
+```
+
+**Error Response** (no data):
+```json
+{
+  "status": "no_data",
+  "message": "No data fetched from API providers",
+  "providers_queried": ["blacklist"]
 }
 ```
 
@@ -259,56 +465,24 @@ GET /api/nodes?offset=0&limit=100
 Compute graph metrics.
 
 ```
-POST /api/metrics/run
+POST /api/metrics
 Content-Type: application/json
 ```
 
 **Request Body**:
 ```json
 {
-  "categories": ["topology", "centrality"],
-  "preset": null
-}
-```
-
-Or use preset:
-```json
-{
-  "preset": "essential"
+  "metrics_mode": "essential",
+  "metrics_graph_id": "crc_v2_trusts"
 }
 ```
 
 **Response**:
 ```json
 {
-  "metrics_computed": ["in_degree", "out_degree", "pagerank"],
-  "node_count": 50000,
+  "metrics_computed": ["avatar", "in_degree", "out_degree", "pagerank"],
   "computation_time": 15.3,
-  "categories_run": ["topology", "centrality", "clustering", "community"]
-}
-```
-
----
-
-### Get Metric Categories
-
-List available metric categories.
-
-```
-GET /api/metrics/categories
-```
-
-**Response**:
-```json
-{
-  "categories": {
-    "topology": "Basic Topology (in/out degree, degree imbalance)",
-    "centrality": "Centrality Measures (pagerank, betweenness, etc.)"
-  },
-  "presets": {
-    "basic": ["topology", "community"],
-    "essential": ["topology", "centrality", "clustering", "community"]
-  }
+  "node_data": [...]
 }
 ```
 
@@ -316,82 +490,7 @@ GET /api/metrics/categories
 
 ## Anomaly Detection Endpoints
 
-### Detect Anomalies
-
-Run anomaly detection on specified metrics.
-
-```
-POST /api/anomaly/detect
-Content-Type: application/json
-```
-
-**Request Body**:
-```json
-{
-  "name": "anomaly_score",
-  "metrics": ["pagerank", "betweenness_centrality", "clustering_coefficient"],
-  "algorithm": "isolation_forest",
-  "parameters": {
-    "n_estimators": 100,
-    "contamination": 0.1
-  },
-  "config": {
-    "nan_strategy": "zero",
-    "global_scaling": "standard"
-  },
-  "apply_to_graph": true,
-  "node_ids": null
-}
-```
-
-**Parameters**:
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| name | string | Name for anomaly score metric |
-| metrics | array | Metrics to analyze |
-| algorithm | string | Detection algorithm |
-| parameters | object | Algorithm-specific parameters |
-| config | object | Preprocessing configuration |
-| apply_to_graph | boolean | Apply scores to graph nodes |
-| node_ids | array | Filter to specific nodes (null = all) |
-
-**Response**:
-```json
-{
-  "algorithm": "isolation_forest",
-  "n_total": 50000,
-  "n_anomalies": 523,
-  "anomaly_percentage": 1.05,
-  "threshold": 0.65,
-  "computation_time": 3.45,
-  "top_anomalies": [
-    {
-      "id": "0x1234...",
-      "score": 0.95,
-      "is_anomaly": true,
-      "rank": 1
-    }
-  ],
-  "statistics": {
-    "mean": 0.42,
-    "std": 0.18,
-    "min": 0.0,
-    "max": 0.98
-  },
-  "visualization": {
-    "histogram": {
-      "bins": [0, 0.1, 0.2],
-      "counts": [1000, 2000, 1500]
-    }
-  }
-}
-```
-
----
-
-### Get Algorithms
-
-List available anomaly detection algorithms.
+### Get Available Algorithms
 
 ```
 GET /api/anomaly/algorithms
@@ -403,96 +502,47 @@ GET /api/anomaly/algorithms
   "zscore": {
     "name": "zscore",
     "display_name": "Z-Score",
-    "description": "Statistical z-score based outlier detection",
-    "complexity": "O(n × d)",
-    "multivariate": true,
-    "requires_sklearn": false,
-    "parameters": {
-      "threshold": {
-        "name": "threshold",
-        "type": "float",
-        "default": 3.0,
-        "min": 1.0,
-        "max": 10.0,
-        "description": "Z-score threshold"
-      }
-    }
-  }
-}
-```
-
----
-
-### Profile Metrics
-
-Analyze metrics for preprocessing recommendations.
-
-```
-POST /api/anomaly/profile
-Content-Type: application/json
-```
-
-**Request Body**:
-```json
-{
-  "metrics": ["pagerank", "in_degree", "clustering_coefficient"]
-}
-```
-
-**Response**:
-```json
-{
-  "profiles": {
-    "pagerank": {
-      "name": "pagerank",
-      "n_samples": 50000,
-      "mean": 0.00002,
-      "std": 0.0001,
-      "skewness": 15.3,
-      "warnings": ["High positive skewness, log transform suggested"],
-      "suggested_transform": {
-        "log": true,
-        "clip_max": null
-      }
-    }
-  }
-}
-```
-
----
-
-### Run PCA
-
-Perform PCA dimensionality reduction.
-
-```
-POST /api/anomaly/pca
-Content-Type: application/json
-```
-
-**Request Body**:
-```json
-{
-  "metrics": ["pagerank", "betweenness_centrality", "clustering_coefficient"],
-  "n_components": "auto",
-  "standardize": true,
-  "node_ids": null
-}
-```
-
-**Response**:
-```json
-{
-  "n_components": 2,
-  "explained_variance_ratio": [0.65, 0.25],
-  "total_variance_explained": 0.90,
-  "loadings": {
-    "PC1": {"pagerank": 0.8, "betweenness": 0.5},
-    "PC2": {"clustering": 0.9}
+    "description": "Statistical outlier detection using standard deviations",
+    "multivariate": false,
+    "parameters": {...}
   },
-  "projections": [
-    {"id": "0x1234...", "PC1": 1.5, "PC2": -0.3}
-  ]
+  "isolation_forest": {...},
+  "lof": {...}
+}
+```
+
+---
+
+### Run Anomaly Detection
+
+```
+POST /api/anomaly/detect
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "name": "anomaly_score",
+  "metrics": ["in_degree", "out_degree", "pagerank"],
+  "algorithm": "isolation_forest",
+  "parameters": {
+    "contamination": 0.05
+  },
+  "apply_to_graph": true
+}
+```
+
+**Response**:
+```json
+{
+  "metric_name": "anomaly_score",
+  "algorithm": "isolation_forest",
+  "n_anomalies": 250,
+  "n_total": 50000,
+  "anomaly_percentage": 0.5,
+  "computation_time": 2.5,
+  "top_anomalies": [...]
 }
 ```
 
@@ -500,87 +550,10 @@ Content-Type: application/json
 
 ## Composite Metrics Endpoints
 
-### Get Operations
-
-List available composite operations.
+### Create Composite Metric
 
 ```
-GET /api/metrics/composite/operations
-```
-
-**Response**:
-```json
-{
-  "operations": [
-    {
-      "name": "multiply",
-      "symbol": "×",
-      "description": "Product of two metrics"
-    },
-    {
-      "name": "add",
-      "symbol": "+",
-      "description": "Sum of two metrics"
-    }
-  ]
-}
-```
-
----
-
-### Preview Composite
-
-Preview composite without saving.
-
-```
-POST /api/metrics/composite/preview
-Content-Type: application/json
-```
-
-**Request Body**:
-```json
-{
-  "metrics": ["pagerank", "betweenness_centrality"],
-  "operation": "multiply",
-  "normalize": true,
-  "node_ids": null
-}
-```
-
-**Response**:
-```json
-{
-  "formula": "norm(pagerank) × norm(betweenness_centrality)",
-  "statistics": {
-    "min": 0.0,
-    "max": 0.85,
-    "mean": 0.04,
-    "std": 0.09,
-    "median": 0.01
-  },
-  "correlations": {
-    "input_correlation": 0.45,
-    "m1_composite": 0.82,
-    "m2_composite": 0.71
-  },
-  "histogram": {
-    "bins": [0, 0.1, 0.2],
-    "counts": [8000, 1500, 400]
-  },
-  "values": [
-    {"id": "0x1234...", "metric1": 0.001, "metric2": 0.05, "composite": 0.012}
-  ]
-}
-```
-
----
-
-### Create Composite
-
-Create and save composite metric.
-
-```
-POST /api/metrics/composite/create
+POST /api/metrics/composite
 Content-Type: application/json
 ```
 
@@ -588,96 +561,47 @@ Content-Type: application/json
 ```json
 {
   "name": "influence_score",
-  "metrics": ["pagerank", "betweenness_centrality"],
+  "metrics": ["pagerank", "out_degree"],
   "operation": "multiply",
-  "weights": null,
   "normalize": true,
   "save": true
 }
 ```
 
+---
+
+## Cache Management Endpoints
+
+### List Cached Layouts
+
+```
+GET /api/cached-layouts
+```
+
 **Response**:
 ```json
-{
-  "metric_name": "influence_score",
-  "formula": "norm(pagerank) × norm(betweenness_centrality)",
-  "statistics": {"min": 0, "max": 0.85, "mean": 0.04},
-  "saved": true,
-  "composite_id": "abc123",
-  "node_updates": [
-    {"id": "0x1234...", "influence_score": 0.012}
-  ]
-}
+[
+  {
+    "filename": "crc_v2_trusts.parquet",
+    "graph_id": "crc_v2_trusts",
+    "node_count": 50000,
+    "is_base": false,
+    "size_mb": 2.5
+  }
+]
 ```
 
 ---
 
-### List Saved Composites
+### Clear Cached Layouts
 
 ```
-GET /api/metrics/composite/saved
-```
-
-**Response**:
-```json
-{
-  "composites": [
-    {
-      "id": "abc123",
-      "name": "influence_score",
-      "formula": "norm(pagerank) × norm(betweenness)",
-      "operation": "multiply",
-      "source_metrics": ["pagerank", "betweenness_centrality"],
-      "normalize": true,
-      "created_at": "2024-01-15T10:30:00Z"
-    }
-  ]
-}
-```
-
----
-
-### Delete Composite
-
-```
-DELETE /api/metrics/composite/saved/{name}
-```
-
-**Response**:
-```json
-{
-  "deleted": true,
-  "name": "influence_score"
-}
+DELETE /api/cached-layouts?graph_id=crc_v2_trusts
 ```
 
 ---
 
 ## Auto-Reload Endpoints
-
-### Get Status
-
-```
-GET /api/auto-reload/status
-```
-
-**Response**:
-```json
-{
-  "enabled": true,
-  "interval_seconds": 300,
-  "last_reload_time": "2024-01-15T10:30:00Z",
-  "next_reload_time": "2024-01-15T10:35:00Z",
-  "reload_in_progress": false,
-  "current_node_count": 50000,
-  "last_reload_duration": 5.3,
-  "last_reload_nodes_added": 50,
-  "last_reload_nodes_removed": 10,
-  "error": null
-}
-```
-
----
 
 ### Start Auto-Reload
 
@@ -693,8 +617,8 @@ Content-Type: application/json
   "interval_seconds": 300,
   "sql_files": ["crc_v2_trusts.sql"],
   "node_properties_files": ["crc_v2_avatars.sql"],
-  "compute_metrics": true,
-  "metrics_mode": "basic"
+  "load_api_properties": true,
+  "preserve_layout": true
 }
 ```
 
@@ -708,13 +632,22 @@ POST /api/auto-reload/stop
 
 ---
 
-### SSE Events Stream
+### Get Auto-Reload Status
 
 ```
-GET /api/auto-reload/events
+GET /api/auto-reload/status
 ```
 
-**Event Format**:
+---
+
+### SSE Stream (Auto-Reload Events)
+
+```
+GET /api/auto-reload/stream
+Accept: text/event-stream
+```
+
+**Events**:
 ```
 event: reload_started
 data: {"timestamp": "2024-01-15T10:30:00Z"}

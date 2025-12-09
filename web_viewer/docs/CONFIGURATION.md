@@ -127,6 +127,91 @@ AUTO_RELOAD_DEFAULT_INTERVAL=300
 
 ---
 
+## External API Properties
+
+Graph Analyzer can fetch additional node properties from external REST APIs. This allows enriching node data with information not stored in the PostgreSQL database, such as blacklist status, reputation scores, or labels from external services.
+
+### Base Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXTERNAL_API_BASE_URL` | `https://squid-app-3gxnl.ondigitalocean.app` | Base URL for external APIs |
+| `EXTERNAL_API_TIMEOUT` | `30` | HTTP request timeout (seconds) |
+| `EXTERNAL_API_RETRIES` | `3` | Number of retry attempts on failure |
+| `EXTERNAL_API_CACHE_TTL` | `3600` | Cache time-to-live (seconds, 0 = no expiry) |
+| `EXTERNAL_API_PROVIDERS` | `blacklist` | Comma-separated list of enabled providers |
+
+### Blacklist Provider
+
+The blacklist provider fetches bot detection data, adding `isBlacklisted` and `blacklistReason` columns to nodes.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXTERNAL_API_BLACKLIST_ENABLED` | `true` | Enable blacklist provider |
+| `EXTERNAL_API_BLACKLIST_ENDPOINT` | `/aboutcircles-advanced-analytics2/bot-analytics/blacklist` | API endpoint path |
+| `EXTERNAL_API_BLACKLIST_V2_ONLY` | `true` | Filter for v2 addresses only |
+
+**Properties Added**:
+| Column | Type | Description |
+|--------|------|-------------|
+| `isBlacklisted` | boolean | `true` if address is blacklisted |
+| `blacklistReason` | string | Reason (e.g., `repeated_username`, `duplicate_avatar`) |
+
+### Example Configuration
+
+```bash
+# External API Properties
+EXTERNAL_API_BASE_URL=https://squid-app-3gxnl.ondigitalocean.app
+EXTERNAL_API_TIMEOUT=30
+EXTERNAL_API_RETRIES=3
+EXTERNAL_API_CACHE_TTL=3600
+EXTERNAL_API_PROVIDERS=blacklist
+
+# Blacklist Provider
+EXTERNAL_API_BLACKLIST_ENABLED=true
+EXTERNAL_API_BLACKLIST_ENDPOINT=/aboutcircles-advanced-analytics2/bot-analytics/blacklist
+EXTERNAL_API_BLACKLIST_V2_ONLY=true
+```
+
+### Caching Behavior
+
+- API properties are cached in `cache/data/api_properties_{provider}_{version}.parquet`
+- Cache TTL is configurable via `EXTERNAL_API_CACHE_TTL`
+- Setting TTL to `0` disables cache expiry
+- On API failure, the system falls back to cached data (ignoring TTL)
+- Cache metadata is stored in `.meta.json` files for TTL tracking
+
+### Adding New Providers
+
+To add a new external API provider:
+
+1. **Add environment variables** following the naming pattern:
+   ```bash
+   EXTERNAL_API_{PROVIDER}_ENABLED=true
+   EXTERNAL_API_{PROVIDER}_ENDPOINT=/path/to/api
+   ```
+
+2. **Implement provider class** in `api_properties_service.py`:
+   ```python
+   class NewProvider(ExternalPropertyProvider):
+       name = "newprovider"
+       display_name = "New Provider"
+       
+       @property
+       def columns_provided(self) -> List[str]:
+           return ['column1', 'column2']
+       
+       def transform_to_df(self, response_data):
+           # Transform API response to DataFrame with 'avatar' column
+           ...
+   ```
+
+3. **Register provider** in `PROVIDER_CLASSES` dictionary
+
+4. **Add to `EXTERNAL_API_PROVIDERS`** environment variable
+
+---
+
 ## Configuration File (.env)
 
 Create a `.env` file in the `web_viewer` directory:
@@ -163,6 +248,16 @@ EDGE_CHUNK_SIZE=50000
 # Auto-Reload
 AUTO_RELOAD_DEFAULT_INTERVAL=300
 
+# External API Properties
+EXTERNAL_API_BASE_URL=https://squid-app-3gxnl.ondigitalocean.app
+EXTERNAL_API_TIMEOUT=30
+EXTERNAL_API_RETRIES=3
+EXTERNAL_API_CACHE_TTL=3600
+EXTERNAL_API_PROVIDERS=blacklist
+EXTERNAL_API_BLACKLIST_ENABLED=true
+EXTERNAL_API_BLACKLIST_ENDPOINT=/aboutcircles-advanced-analytics2/bot-analytics/blacklist
+EXTERNAL_API_BLACKLIST_V2_ONLY=true
+
 # UI Mode (Production)
 # HIDE_DATA_SOURCE_UI=true
 # DEFAULT_SQL_FILES=crc_v2_trusts.sql,crc_v2_flows.sql
@@ -192,180 +287,63 @@ services:
       - LAYOUT_SERVICE_URL=http://layout:3000/layout
       - HIDE_DATA_SOURCE_UI=true
       - DEFAULT_SQL_FILES=crc_v2_trusts.sql
+      - DEFAULT_METRICS_MODE=essential
+      # External API
+      - EXTERNAL_API_BASE_URL=https://squid-app-3gxnl.ondigitalocean.app
+      - EXTERNAL_API_PROVIDERS=blacklist
+      - EXTERNAL_API_BLACKLIST_ENABLED=true
+    volumes:
+      - ./sql:/app/sql:ro
+      - cache_data:/app/cache
     depends_on:
       - db
       - layout
-
-  layout:
-    build: ./layout_service
-    ports:
-      - "3000:3000"
-
-  db:
-    image: postgres:15
-    environment:
-      - POSTGRES_DB=circles
-      - POSTGRES_USER=readonly_user
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-```
-
-### Using .env with Docker
-
-```bash
-# .env file
-DB_PASSWORD=supersecret
-```
-
-```bash
-docker-compose --env-file .env up
 ```
 
 ---
 
-## Directory Structure
+## Environment Variable Precedence
 
-### Required Directories
-
-```
-web_viewer/
-├── sql/                    # SQL query files
-│   └── properties/         # Node properties SQL
-├── cache/                  # Auto-created cache
-│   ├── layouts/            # Layout cache
-│   └── data/               # Data cache
-└── static/                 # Frontend files
-```
-
-### Cache Structure
-
-```
-cache/
-├── layouts/
-│   ├── {graph_id}.parquet        # Current layout
-│   └── {graph_id}_base.parquet   # Base layout (protected)
-└── data/
-    ├── {graph_id}_edges.parquet  # Edge data
-    ├── node_metrics_{version}.parquet
-    └── node_properties_{version}.parquet
-```
+1. Environment variables set in shell
+2. Variables in `.env` file
+3. Default values in `config.py`
 
 ---
 
-## Feature Flags
+## Validating Configuration
 
-Certain features are enabled/disabled based on installed packages:
-
-### Anomaly Detection
-
-Requires `scikit-learn`:
-```bash
-pip install scikit-learn
-```
-
-Without scikit-learn:
-- Z-Score and IQR still available
-- ML algorithms (IF, LOF, etc.) disabled
-
-### Cytoscape Desktop Integration
-
-Requires `py4cytoscape` and running Cytoscape Desktop:
-```bash
-pip install py4cytoscape
-```
-
-### Server-Sent Events
-
-Requires `sse-starlette`:
-```bash
-pip install sse-starlette
-```
-
-Without SSE:
-- Auto-reload disabled
-- No real-time updates
-
----
-
-## Logging
-
-### Log Level
-
-Set via environment:
-```bash
-LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
-```
-
-### Log Format
-
-```
-2024-01-15 10:30:00 - INFO - [load_network] Loading 3 SQL files
-2024-01-15 10:30:05 - INFO - [compute_layout] Using local spring layout
-```
-
----
-
-## Health Check
-
-The `/health` endpoint provides status information:
+Check your configuration at startup:
 
 ```bash
-curl http://localhost:8000/health
+python run.py
 ```
 
-```json
-{
-  "status": "healthy",
-  "version": "2.0.0",
-  "mode": "admin",
-  "data_status": "ready",
-  "graphs_loaded": true,
-  "node_count": 50000
-}
-```
-
----
-
-## Troubleshooting
-
-### Database Connection
+The startup banner displays current settings:
 
 ```
-Error: could not connect to server
+============================================================
+  Graph Analyzer Web Viewer v2.0.0
+============================================================
+  Database: localhost:5432/circles
+  SQL Dir:  /path/to/sql
+  Properties Dir: /path/to/sql/properties
+  Cache:    /path/to/cache
+------------------------------------------------------------
+  SSE Support:        Y
+  Anomaly Detection:  Y
+  Cytoscape Desktop:  N
+------------------------------------------------------------
+  External API Properties:
+    Base URL: https://squid-app-3gxnl.ondigitalocean.app
+    Providers: blacklist
+    Blacklist: Y
+------------------------------------------------------------
+  Mode: Admin (manual control)
+============================================================
 ```
 
-**Check**:
-1. PostgreSQL is running
-2. `DB_HOST` is correct
-3. `DB_PORT` is accessible
-4. Credentials are valid
+Or via API:
 
-### Layout Service
-
+```bash
+curl http://localhost:8000/api/config | jq
 ```
-[LAYOUT] External service failed
-```
-
-**Check**:
-1. Layout service is running: `http://localhost:3000/health`
-2. `LAYOUT_SERVICE_URL` is correct
-3. No firewall blocking
-
-### Memory Issues
-
-```
-MemoryError during metrics computation
-```
-
-**Solutions**:
-1. Reduce `N_JOBS` to limit parallel workers
-2. Use `basic` or `essential` metrics mode
-3. Increase system swap space
-4. Filter to smaller subgraph
-
-### Slow Performance
-
-**For large graphs**:
-1. Enable performance mode in UI
-2. Use cached layouts
-3. Load edges incrementally
-4. Reduce metrics categories

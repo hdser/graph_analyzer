@@ -5,14 +5,16 @@ This guide provides comprehensive documentation of all features in Graph Analyze
 ## Table of Contents
 
 1. [Graph Loading](#graph-loading)
-2. [Visualization](#visualization)
-3. [Node Information](#node-information)
-4. [Metrics Computation](#metrics-computation)
-5. [Anomaly Detection](#anomaly-detection)
-6. [Distribution Analysis](#distribution-analysis)
-7. [Data Explorer](#data-explorer)
-8. [Auto-Reload](#auto-reload)
-9. [Export Functions](#export-functions)
+2. [Node Properties](#node-properties)
+3. [External API Properties](#external-api-properties)
+4. [Visualization](#visualization)
+5. [Node Information](#node-information)
+6. [Metrics Computation](#metrics-computation)
+7. [Anomaly Detection](#anomaly-detection)
+8. [Distribution Analysis](#distribution-analysis)
+9. [Data Explorer](#data-explorer)
+10. [Auto-Reload](#auto-reload)
+11. [Export Functions](#export-functions)
 
 ---
 
@@ -46,9 +48,20 @@ Supported column names:
 - `truster` / `trustee`
 - `sender` / `receiver`
 
-### Node Properties
+### Multi-Graph Support
 
-Properties SQL files add attributes to nodes:
+Load multiple SQL files simultaneously:
+- Each file creates a separate graph layer
+- Switch between graphs using the dropdown
+- Shared node properties across layers
+
+---
+
+## Node Properties
+
+### SQL-Based Properties
+
+Properties SQL files add attributes to nodes from the PostgreSQL database:
 
 ```sql
 -- Example: crc_v2_avatars.sql
@@ -60,12 +73,124 @@ SELECT
 FROM circles_v2.avatars
 ```
 
-### Multi-Graph Support
+**Requirements**:
+- Must include `avatar` column (used as join key)
+- Column names become property names
+- Supports all data types (string, number, boolean, timestamp, arrays)
 
-Load multiple SQL files simultaneously:
-- Each file creates a separate graph layer
-- Switch between graphs using the dropdown
-- Shared node properties across layers
+### Property Sources
+
+Node properties can come from multiple sources:
+
+| Source | Description | Example Properties |
+|--------|-------------|-------------------|
+| SQL Properties | From PostgreSQL via properties SQL files | name, signup_timestamp, verified |
+| Computed Metrics | Calculated from graph structure | in_degree, pagerank, clustering |
+| External APIs | Fetched from REST APIs | isBlacklisted, blacklistReason |
+| Anomaly Scores | From anomaly detection | anomaly_score, is_anomaly |
+| Composite Metrics | User-defined combinations | influence_score, activity_ratio |
+
+---
+
+## External API Properties
+
+Graph Analyzer can enrich node data with properties from external REST APIs. This is useful for incorporating data that isn't stored in your PostgreSQL database, such as:
+
+- Bot detection / blacklist status
+- Reputation scores
+- External labels or classifications
+- Real-time data from other services
+
+### Blacklist Provider
+
+The built-in blacklist provider fetches bot detection data:
+
+**Properties Added**:
+| Property | Type | Description |
+|----------|------|-------------|
+| `isBlacklisted` | boolean | `true` if address is flagged as a bot |
+| `blacklistReason` | string | Reason for blacklisting |
+
+**Blacklist Reasons**:
+- `repeated_username` - Multiple accounts with same username pattern
+- `duplicate_avatar` - Multiple accounts with same avatar image
+- `suspicious_activity` - Unusual transaction patterns
+- Other custom reasons from the detection system
+
+### How It Works
+
+1. **During Load**: When you load a graph, the system:
+   - Fetches data from configured API endpoints
+   - Caches results for performance (configurable TTL)
+   - Merges API properties with SQL properties
+   - Applies all properties to graph nodes
+
+2. **Caching**: API results are cached to avoid repeated requests:
+   - Default cache TTL: 1 hour (3600 seconds)
+   - Cache stored in `cache/data/api_properties_{provider}_{version}.parquet`
+   - On API failure, falls back to cached data
+
+3. **Load Options**:
+   - `load_api_properties`: Enable/disable API fetching (default: true)
+   - `skip_api_cache`: Force fresh fetch from API
+   - `api_properties_providers`: Select specific providers
+
+### Using API Properties
+
+**In Visualization**:
+- Color nodes by `isBlacklisted` to highlight bots
+- Filter to show only blacklisted nodes
+- Use in anomaly detection as a feature
+
+**In Data Explorer**:
+- Filter table by `isBlacklisted = true`
+- Export blacklisted nodes for review
+- Cross-reference with other properties
+
+**In Anomaly Detection**:
+- Include `isBlacklisted` as a feature
+- Compare ML-detected anomalies with known bots
+- Validate detection algorithms
+
+### API Endpoints
+
+Manage external API properties via REST API:
+
+```bash
+# List available providers
+curl http://localhost:8000/api/api-properties/providers
+
+# View cached data
+curl http://localhost:8000/api/api-properties/cache
+
+# Clear cache
+curl -X DELETE "http://localhost:8000/api/api-properties/cache?provider=blacklist"
+
+# Force refresh
+curl -X POST "http://localhost:8000/api/api-properties/refresh?version=v2"
+```
+
+### Configuration
+
+Configure in `.env`:
+
+```bash
+# Enable external API properties
+EXTERNAL_API_PROVIDERS=blacklist
+
+# Base URL for APIs
+EXTERNAL_API_BASE_URL=https://your-api-server.com
+
+# Cache TTL (seconds)
+EXTERNAL_API_CACHE_TTL=3600
+
+# Blacklist provider settings
+EXTERNAL_API_BLACKLIST_ENABLED=true
+EXTERNAL_API_BLACKLIST_ENDPOINT=/bot-analytics/blacklist
+EXTERNAL_API_BLACKLIST_V2_ONLY=true
+```
+
+See [Configuration Guide](CONFIGURATION.md#external-api-properties) for full details.
 
 ---
 
@@ -119,36 +244,13 @@ Map metric to color gradient:
    - **Purples**: Light purple → Dark purple
 3. Click "Apply Style"
 
-#### Edge Styling
+#### Boolean Properties
 
-Configure edges:
-- **Width Range**: Min/max edge thickness
-- **Opacity**: Edge transparency (0-100%)
-- **Color**: Edge color picker
+For boolean properties like `isBlacklisted`:
 
-### Node Highlighting
-
-#### Selection Highlight
-
-Selected nodes show:
-- Blue border
-- Enlarged size
-- Connected edges highlighted
-
-#### Neighbor Highlighting
-
-Toggle "Highlight Neighbors" to show:
-- Direct connections of selected nodes
-- In-neighbors (incoming edges)
-- Out-neighbors (outgoing edges)
-
-#### Anomaly Highlighting
-
-Anomalous nodes (from detection) get red styling.
-
-#### Search Highlighting
-
-Searched nodes get orange highlight.
+1. Select the boolean property for Node Color
+2. Nodes with `true` values appear in red
+3. Nodes with `false`/null appear in default color
 
 ---
 
@@ -156,174 +258,107 @@ Searched nodes get orange highlight.
 
 ### Info Panel
 
-Click any node to see its info panel:
+Click any node to see its details:
 
-1. **Header**: Node ID with copy button
-2. **Quick Stats**: Degree, community, core
-3. **All Attributes**: Scrollable list of all metrics/properties
-4. **Neighbors Section**: In/out neighbor lists
+- **ID**: Node identifier (address)
+- **Metrics**: All computed metrics with values
+- **Properties**: Loaded properties from SQL and APIs
+- **Neighbors**: In/out degree links
 
-### Neighbor Navigation
+### Copy Functions
 
-Click neighbor IDs in the info panel to:
-- Jump to that node
-- Center view
-- Show its info
-
-### Copying Node Data
-
-- **Copy ID**: Click the copy icon next to node ID
-- **Copy Selection**: Copy all selected node IDs
+- Copy node ID to clipboard
+- Copy all data as JSON
+- Link to external explorer (Etherscan, etc.)
 
 ---
 
 ## Metrics Computation
 
-### Running Metrics
+### Available Metrics
 
-1. Select metrics mode (or individual categories)
-2. Click "Run Metrics"
-3. Wait for computation
-4. Metrics added to all nodes
+Graph Analyzer computes 120+ metrics in categories:
+
+| Category | Example Metrics |
+|----------|-----------------|
+| Topology | in_degree, out_degree, total_degree |
+| Centrality | pagerank, betweenness, eigenvector |
+| Clustering | clustering_coefficient, triangles |
+| Community | component_id, component_size |
+| Paths | eccentricity, avg_path_length |
+| Structural | core_number, authority, hub |
 
 ### Metrics Modes
 
-| Mode | Categories | Speed | Use Case |
-|------|------------|-------|----------|
-| basic | topology, community | Fast | Quick overview |
-| essential | + centrality, clustering | Medium | Standard analysis |
-| moderate | + paths, structural | Slow | Detailed analysis |
-| all | All categories | Very slow | Comprehensive |
-
-### Metric Categories
-
-See [METRICS.md](METRICS.md) for full documentation.
-
-### Post-Computation
-
-After metrics run:
-- Dropdowns populated with new metrics
-- Size/color mappings available
-- Filter options expanded
-- Distributions page updated
+| Mode | Categories | Use Case |
+|------|------------|----------|
+| basic | topology, community | Quick overview |
+| essential | + centrality, clustering | Standard analysis |
+| moderate | + paths, structural | Detailed analysis |
+| all | all categories | Complete analysis |
 
 ---
 
 ## Anomaly Detection
 
-### Quick Start
-
-1. Open Distributions page (📊 button)
-2. Switch to "Anomaly" tab
-3. Select metrics to analyze
-4. Choose algorithm
-5. Configure parameters
-6. Click "Run Detection"
-
 ### Algorithms
 
-| Algorithm | Best For | Speed |
-|-----------|----------|-------|
-| Z-Score | Normal distributions | Fast |
-| IQR | Skewed data | Fast |
-| Mahalanobis | Correlated features | Medium |
-| Isolation Forest | General purpose | Medium |
-| LOF | Local anomalies | Slow |
-| DBSCAN | Clustered data | Medium |
+| Algorithm | Type | Best For |
+|-----------|------|----------|
+| Z-Score | Statistical | Single metrics, normal distributions |
+| IQR | Statistical | Robust to outliers |
+| Isolation Forest | ML | Multivariate, unknown patterns |
+| LOF | Density | Local anomalies, clusters |
+| DBSCAN | Clustering | Density-based outliers |
+| Mahalanobis | Distance | Correlated features |
+| PCA Reconstruction | Dimensionality | High-dimensional data |
+| One-Class SVM | ML | Complex boundaries |
 
-See [ALGORITHMS.md](ALGORITHMS.md) for details.
+### Running Detection
 
-### Results
+1. Select metrics to analyze
+2. Choose algorithm
+3. Configure parameters
+4. Set threshold method
+5. Click "Run Detection"
 
-After detection:
-- **Score histogram**: Distribution of anomaly scores
-- **Threshold line**: Anomaly cutoff
-- **Top anomalies table**: Ranked list
-- **Per-metric charts**: Feature contribution
-
-### Actions
-
-- **Apply to Graph**: Add scores as node attribute
-- **Highlight Anomalies**: Visual highlighting
-- **Export CSV**: Download results
+Results are applied as node attributes:
+- `anomaly_score`: Normalized score (0-1)
+- `is_anomaly`: Boolean flag
 
 ---
 
 ## Distribution Analysis
 
-### Histogram View
+### Viewing Distributions
 
-View distribution of any metric:
+1. Click "Distributions" in toolbar
+2. Select metrics to analyze
+3. View histograms and statistics
 
-1. Open Distributions page
-2. Check metrics to visualize
-3. Histograms appear in grid
+### Statistics Shown
 
-### Scatter Plot
-
-Compare two metrics:
-
-1. Switch to "Scatter" tab
-2. Select X and Y metrics
-3. Optionally select color metric
-4. Click "Create Scatter Plot"
-
-### PCA View
-
-Dimensionality reduction visualization:
-
-1. Switch to "PCA" tab
-2. Select metrics for analysis
-3. Choose components (2D or 3D)
-4. Click "Run PCA"
-
-### Selection Integration
-
-Charts sync with main graph selection:
-- Select nodes in main graph → highlighted in charts
-- Toggle "Selected Only" to filter charts
+- Count, unique values
+- Min, max, mean, median
+- Standard deviation
+- Percentiles (25th, 75th, 95th, 99th)
+- Skewness, kurtosis
 
 ---
 
 ## Data Explorer
 
-### Overview
-
-Full tabular view of all node data.
-
 ### Features
 
-| Feature | Description |
-|---------|-------------|
-| Pagination | Navigate through pages |
-| Sorting | Click column headers |
-| Search | Filter by any value |
-| Column hiding | Toggle column visibility |
-| Export | Download as CSV |
+- Sortable columns
+- Search/filter
+- Column visibility toggle
+- Pagination
+- Export to CSV
 
-### Access
+### Accessing
 
-Click "Data Explorer" button in toolbar.
-
-### Navigation
-
-- **Page size**: 10, 25, 50, 100, 500 rows
-- **Navigation**: First, Prev, Next, Last buttons
-- **Jump to page**: Direct page entry
-
-### Sorting
-
-Click column header to sort:
-- First click: Ascending ↑
-- Second click: Descending ↓
-- Third click: Clear sort
-
-### Column Management
-
-Click "Columns" button to:
-- Show/hide specific columns
-- Reorder columns
-- Reset to defaults
+Click "Data Explorer" in toolbar or navigate to `/data-explorer.html`
 
 ---
 
@@ -331,179 +366,46 @@ Click "Columns" button to:
 
 ### Purpose
 
-Automatically refresh data from database at intervals.
+Automatically refresh graph data at intervals:
+- Detect new nodes/edges
+- Update properties
+- Maintain real-time view
 
 ### Configuration
 
-1. Open Auto-Reload section in sidebar
+1. Enable auto-reload toggle
 2. Set interval (60-3600 seconds)
-3. Configure SQL files to reload
-4. Enable auto-reload
+3. Configure options:
+   - Preserve layout positions
+   - Recompute metrics
+   - Refresh API properties
 
-### Behavior
+### Events
 
-When enabled:
-- Data refreshes at configured interval
-- New nodes animate into view
-- Removed nodes fade out
-- Status shows reload progress
-
-### SSE Events
-
-Real-time updates via Server-Sent Events:
-- Reload started
-- Progress updates
-- Completion notification
-- Error alerts
-
-### API
-
-```bash
-# Start auto-reload
-POST /api/auto-reload/start
-{
-  "enabled": true,
-  "interval_seconds": 300,
-  "sql_files": ["crc_v2_trusts.sql"]
-}
-
-# Stop auto-reload
-POST /api/auto-reload/stop
-
-# Get status
-GET /api/auto-reload/status
-
-# SSE stream
-GET /api/auto-reload/events
-```
+Monitor via SSE stream:
+- `reload_started`: Reload beginning
+- `reload_complete`: Success with stats
+- `reload_error`: Failure with message
 
 ---
 
 ## Export Functions
 
-### Graph Export
+### Export Options
 
-Export current graph state:
+| Format | Contents |
+|--------|----------|
+| PNG | Graph visualization |
+| JSON | Node/edge data |
+| CSV | Tabular node data |
 
-| Format | Contents | Use Case |
-|--------|----------|----------|
-| PNG | Graph image | Documentation |
-| JSON | Elements + positions | Backup/restore |
-| CSV (nodes) | All node data | Analysis |
-| CSV (edges) | Edge list | Processing |
-
-### Anomaly Export
-
-Export detection results:
-- Node ID
-- Anomaly score
-- Is anomaly (boolean)
-- Per-metric values
-- Rank
-
-### Selection Export
+### Node Selection Export
 
 Export selected nodes:
-- All attributes
-- Computed metrics
-- Properties
+1. Select nodes (click or box select)
+2. Click "Export Selected"
+3. Choose format
 
-### How to Export
+### Full Export
 
-1. **Graph Image**: File → Export PNG
-2. **Node Data**: Data Explorer → Export CSV
-3. **Selection**: Select nodes → Copy IDs
-4. **Anomalies**: Distributions → Anomaly tab → Export
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| F | Fit graph to view |
-| C | Center graph |
-| Enter (in search) | Execute search |
-| Escape | Clear search/selection |
-| Delete | Remove selected |
-| Ctrl+A | Select all |
-| Ctrl+C | Copy selected IDs |
-
----
-
-## UI Sections
-
-### Sidebar Sections
-
-All sections are collapsible:
-
-| Section | Purpose |
-|---------|---------|
-| Data Source | Load graphs and properties |
-| Filter Nodes | Filter by metric values |
-| Visual Style | Node/edge styling |
-| Composite Metrics | Create derived metrics |
-| Auto-Reload | Configure refresh |
-
-### Toolbar
-
-Left side:
-- Graph selector dropdown
-- Search input and button
-
-Right side:
-- Fit/Center buttons
-- Load edges button
-- Data Explorer button
-- Distributions button
-
-### Status Bar
-
-Bottom of sidebar:
-- Current operation status
-- Success/error messages
-- Progress indicators
-
----
-
-## Tips and Tricks
-
-### Performance
-
-1. **Large graphs**: Enable performance mode
-2. **Initial load**: Load nodes first, edges progressively
-3. **Metrics**: Use "basic" mode for quick exploration
-4. **Filtering**: Filter before applying expensive operations
-
-### Workflow
-
-1. **Exploration**: Load → Basic metrics → Visual styling → Explore
-2. **Analysis**: Load → Full metrics → Anomaly detection → Export
-3. **Monitoring**: Configure auto-reload → Watch for changes
-
-### Common Tasks
-
-**Find influential nodes**:
-```
-1. Load graph
-2. Run essential metrics
-3. Color by pagerank
-4. Filter pagerank > 0.001
-```
-
-**Detect anomalies**:
-```
-1. Run all metrics
-2. Open Distributions
-3. Select multiple metrics
-4. Run Isolation Forest
-5. Highlight anomalies
-```
-
-**Export for external analysis**:
-```
-1. Run desired metrics
-2. Open Data Explorer
-3. Verify columns
-4. Export CSV
-```
+Export entire dataset from Data Explorer.

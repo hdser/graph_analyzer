@@ -75,6 +75,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -106,15 +107,27 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # Database
       - DB_HOST=db
       - DB_PORT=5432
       - DB_NAME=circles
       - DB_USER=readonly_user
       - DB_PASSWORD=${DB_PASSWORD}
+      
+      # Layout
       - LAYOUT_SERVICE_URL=http://layout:3000/layout
+      
+      # UI Mode
       - HIDE_DATA_SOURCE_UI=true
       - DEFAULT_SQL_FILES=crc_v2_trusts.sql
       - DEFAULT_METRICS_MODE=essential
+      
+      # External API Properties
+      - EXTERNAL_API_BASE_URL=${EXTERNAL_API_BASE_URL}
+      - EXTERNAL_API_PROVIDERS=blacklist
+      - EXTERNAL_API_CACHE_TTL=3600
+      - EXTERNAL_API_BLACKLIST_ENABLED=true
+      - EXTERNAL_API_BLACKLIST_V2_ONLY=true
     volumes:
       - ./sql:/app/sql:ro
       - cache_data:/app/cache
@@ -158,7 +171,10 @@ volumes:
 
 ```bash
 # Create .env file
-echo "DB_PASSWORD=your-secure-password" > .env
+cat > .env << 'EOF'
+DB_PASSWORD=your-secure-password
+EXTERNAL_API_BASE_URL=https://squid-app-3gxnl.ondigitalocean.app
+EOF
 
 # Build images
 docker-compose build
@@ -181,6 +197,7 @@ docker-compose down
 
 ```bash
 # .env.production
+
 # Database (read-only user recommended)
 DB_HOST=your-db-host.com
 DB_PORT=5432
@@ -203,6 +220,16 @@ EDGE_CHUNK_SIZE=100000
 
 # Auto-reload (5 minutes)
 AUTO_RELOAD_DEFAULT_INTERVAL=300
+
+# External API Properties
+EXTERNAL_API_BASE_URL=https://your-api-server.com
+EXTERNAL_API_TIMEOUT=30
+EXTERNAL_API_RETRIES=3
+EXTERNAL_API_CACHE_TTL=3600
+EXTERNAL_API_PROVIDERS=blacklist
+EXTERNAL_API_BLACKLIST_ENABLED=true
+EXTERNAL_API_BLACKLIST_ENDPOINT=/bot-analytics/blacklist
+EXTERNAL_API_BLACKLIST_V2_ONLY=true
 ```
 
 ### Security Considerations
@@ -212,6 +239,7 @@ AUTO_RELOAD_DEFAULT_INTERVAL=300
 3. **HTTPS**: Use reverse proxy with TLS
 4. **CORS**: Restrict to known origins
 5. **Rate Limiting**: Implement at load balancer
+6. **External APIs**: Ensure API endpoints are trusted and use HTTPS
 
 ### Nginx Reverse Proxy
 
@@ -261,44 +289,39 @@ server {
 2. **Configure Build**:
    - Build Command: `pip install -r web_viewer/requirements.txt`
    - Run Command: `cd web_viewer && python run.py`
-3. **Set Environment Variables** in App Settings
+3. **Set Environment Variables** in App Settings:
+   - Database connection settings
+   - External API configuration
 4. **Add Database** component (managed PostgreSQL)
-5. **Deploy**
+5. **Configure Health Check**: `/health`
 
-### Droplet Deployment
+### Environment Variables for App Platform
 
-```bash
-# SSH to droplet
-ssh root@your-droplet-ip
+Set these in the App Platform settings:
 
-# Update system
-apt update && apt upgrade -y
-
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sh get-docker.sh
-
-# Install Docker Compose
-apt install docker-compose-plugin
-
-# Clone repository
-git clone https://github.com/your-repo/graph-analyzer.git
-cd graph-analyzer/web_viewer
-
-# Configure and start
-cp .env.example .env
-nano .env  # Edit settings
-docker compose up -d
+```
+DB_HOST=your-db-cluster.db.ondigitalocean.com
+DB_PORT=25060
+DB_NAME=circles
+DB_USER=readonly_user
+DB_PASSWORD=***
+DB_SSLMODE=require
+ENVIRONMENT=production
+PORT=8080
+HIDE_DATA_SOURCE_UI=true
+DEFAULT_SQL_FILES=crc_v2_trusts.sql
+EXTERNAL_API_BASE_URL=https://squid-app-3gxnl.ondigitalocean.app
+EXTERNAL_API_PROVIDERS=blacklist
 ```
 
 ---
 
 ## Kubernetes Deployment
 
-### Deployment Manifest
+### Deployment YAML
 
 ```yaml
-# k8s/deployment.yaml
+# deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -329,13 +352,17 @@ spec:
             secretKeyRef:
               name: db-credentials
               key: password
+        - name: EXTERNAL_API_BASE_URL
+          value: "https://squid-app-3gxnl.ondigitalocean.app"
+        - name: EXTERNAL_API_PROVIDERS
+          value: "blacklist"
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
             memory: "2Gi"
-            cpu: "1000m"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
         livenessProbe:
           httpGet:
             path: /health
@@ -349,41 +376,67 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
         volumeMounts:
-        - name: cache-volume
+        - name: cache
           mountPath: /app/cache
       volumes:
-      - name: cache-volume
+      - name: cache
         persistentVolumeClaim:
           claimName: graph-analyzer-cache
----
+```
+
+### Service YAML
+
+```yaml
+# service.yaml
 apiVersion: v1
 kind: Service
 metadata:
   name: graph-analyzer
 spec:
-  selector:
-    app: graph-analyzer
+  type: ClusterIP
   ports:
   - port: 80
     targetPort: 8000
-  type: LoadBalancer
+  selector:
+    app: graph-analyzer
 ```
 
-### Persistent Volume Claim
+---
 
-```yaml
-# k8s/pvc.yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: graph-analyzer-cache
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
+## External API Properties in Production
+
+### Caching Strategy
+
+For production deployments, consider these caching strategies:
+
+| Scenario | TTL Setting | Rationale |
+|----------|-------------|-----------|
+| Stable data | 3600-86400s | Daily/hourly refresh sufficient |
+| Dynamic data | 300-900s | Frequent updates needed |
+| Critical data | 0 (no expiry) | Manual refresh only |
+
+### Monitoring API Health
+
+Add monitoring for external API availability:
+
+```bash
+# Check API properties status
+curl http://localhost:8000/api/api-properties/providers
+
+# View cache status
+curl http://localhost:8000/api/api-properties/cache
+
+# Force refresh if stale
+curl -X POST "http://localhost:8000/api/api-properties/refresh?version=v2"
 ```
+
+### Fallback Behavior
+
+The system handles API failures gracefully:
+
+1. **API Timeout**: Retries up to 3 times with exponential backoff
+2. **API Error**: Falls back to cached data (ignoring TTL)
+3. **No Cache**: Continues without API properties, logs warning
 
 ---
 
@@ -391,35 +444,37 @@ spec:
 
 ### Health Checks
 
-The `/health` endpoint returns:
+```bash
+# Basic health
+curl http://localhost:8000/health
 
-```json
-{
-  "status": "healthy",
-  "version": "2.0.0",
-  "mode": "production",
-  "data_status": "ready",
-  "graphs_loaded": true,
-  "node_count": 50000
-}
+# Detailed status
+curl http://localhost:8000/api/state
+
+# API properties status
+curl http://localhost:8000/api/api-properties/cache
+```
+
+### Logging
+
+Configure log levels via environment:
+
+```bash
+# Set log level
+LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
+
+# Log format
+LOG_FORMAT=json  # json or text
 ```
 
 ### Metrics to Monitor
 
-| Metric | Warning | Critical |
-|--------|---------|----------|
-| Response Time | > 5s | > 30s |
-| Error Rate | > 1% | > 5% |
-| Memory Usage | > 70% | > 90% |
-| CPU Usage | > 70% | > 90% |
-| Disk Usage | > 70% | > 90% |
-
-### Logging
-
-Logs are written to stdout and can be collected with:
-- Docker: `docker logs` or logging driver
-- Kubernetes: fluentd, Loki, etc.
-- Standalone: redirect to file or syslog
+| Metric | Source | Alert Threshold |
+|--------|--------|-----------------|
+| Response time | Application logs | > 5s average |
+| Memory usage | Container metrics | > 80% |
+| API cache age | `/api/api-properties/cache` | > TTL × 2 |
+| Error rate | Application logs | > 1% |
 
 ---
 
@@ -445,11 +500,11 @@ For multiple instances:
 
 For large datasets:
 ```bash
+# Pre-warm API properties cache
+curl -X POST "http://localhost:8000/api/api-properties/refresh?version=v2"
+
 # Pre-compute layouts
 python -c "from backend.services.layout_service import LayoutService; ..."
-
-# Pre-compute metrics
-python -c "from engines.graph_metrics import GraphMetrics; ..."
 ```
 
 ---
@@ -459,7 +514,7 @@ python -c "from engines.graph_metrics import GraphMetrics; ..."
 ### Data to Backup
 
 1. **PostgreSQL Database**: Contains source network data
-2. **Cache Directory**: Layouts and computed metrics
+2. **Cache Directory**: Layouts, computed metrics, API properties cache
 3. **Configuration**: .env files (encrypted)
 
 ### Backup Commands
@@ -468,7 +523,7 @@ python -c "from engines.graph_metrics import GraphMetrics; ..."
 # Database backup
 pg_dump -h localhost -U user -d circles > backup.sql
 
-# Cache backup
+# Cache backup (includes API properties cache)
 tar -czf cache-backup.tar.gz cache/
 
 # Restore database
@@ -494,12 +549,29 @@ docker logs graph-analyzer-web-1
 # - Port in use: change port mapping
 ```
 
+### External API Issues
+
+```bash
+# Test API connectivity
+curl -v https://squid-app-3gxnl.ondigitalocean.app/health
+
+# Check API properties cache
+curl http://localhost:8000/api/api-properties/cache
+
+# Clear stale cache
+curl -X DELETE "http://localhost:8000/api/api-properties/cache"
+
+# Force refresh
+curl -X POST "http://localhost:8000/api/api-properties/refresh?version=v2"
+```
+
 ### Slow Performance
 
 1. Enable performance mode in UI
 2. Reduce metrics mode (use "basic")
 3. Increase container resources
 4. Check database query performance
+5. Verify API properties cache is warm
 
 ### Memory Issues
 
@@ -557,3 +629,47 @@ curl http://localhost:8001/health
 # Stop old version
 docker-compose -f docker-compose.green.yml down
 ```
+
+---
+
+## Environment Variable Reference
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `DB_HOST` | PostgreSQL host |
+| `DB_PORT` | PostgreSQL port |
+| `DB_NAME` | Database name |
+| `DB_USER` | Database user |
+| `DB_PASSWORD` | Database password |
+
+### Optional - Core
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENVIRONMENT` | `development` | `development` or `production` |
+| `PORT` | `8000` | Application port |
+| `DEFAULT_METRICS_MODE` | `essential` | Metrics preset |
+| `N_JOBS` | `-1` | Parallel workers |
+
+### Optional - External API Properties
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXTERNAL_API_BASE_URL` | (see config) | Base URL for external APIs |
+| `EXTERNAL_API_TIMEOUT` | `30` | Request timeout (seconds) |
+| `EXTERNAL_API_RETRIES` | `3` | Retry attempts |
+| `EXTERNAL_API_CACHE_TTL` | `3600` | Cache TTL (seconds) |
+| `EXTERNAL_API_PROVIDERS` | `blacklist` | Enabled providers |
+| `EXTERNAL_API_BLACKLIST_ENABLED` | `true` | Enable blacklist provider |
+| `EXTERNAL_API_BLACKLIST_ENDPOINT` | (see config) | Blacklist API endpoint |
+| `EXTERNAL_API_BLACKLIST_V2_ONLY` | `true` | Filter v2 addresses only |
+
+### Optional - UI Mode
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HIDE_DATA_SOURCE_UI` | `false` | Hide data source controls |
+| `DEFAULT_SQL_FILES` | (empty) | Auto-load SQL files |
+| `DEFAULT_PROPERTIES_FILES` | (empty) | Auto-load properties |
