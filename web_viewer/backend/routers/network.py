@@ -8,6 +8,7 @@ API endpoints for network/graph management:
 - Cache management
 - Neighbor queries
 - Node updates for auto-reload
+- API properties management
 """
 
 from typing import Optional, List
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 
 from ..models.requests import LoadConfig
 from ..services.network_service import network_service
+from ..services.api_properties_service import api_properties_service
 from ..config import settings, HAS_ANOMALY, HAS_SSE
 
 from engines.graph_metrics import METRIC_CATEGORIES, METRIC_PRESETS
@@ -56,6 +58,13 @@ async def get_config():
         "default_properties_files": settings.DEFAULT_PROPERTIES_FILES,
         "default_metrics_mode": settings.DEFAULT_METRICS_MODE,
         "auto_reload_interval": settings.AUTO_RELOAD_DEFAULT_INTERVAL,
+        # API properties configuration
+        "api_properties": {
+            "enabled": bool(settings.EXTERNAL_API_PROVIDERS),
+            "providers": api_properties_service.available_providers,
+            "base_url": settings.EXTERNAL_API_BASE_URL,
+            "cache_ttl_seconds": settings.EXTERNAL_API_CACHE_TTL,
+        },
     }
     
     # Add anomaly algorithms if available
@@ -191,7 +200,8 @@ async def get_state():
             "loaded_graphs": [],
             "node_count": 0,
             "edge_count": 0,
-            "metrics_computed": []
+            "metrics_computed": [],
+            "api_properties_loaded": {}
         }
     
     total_nodes = sum(G.number_of_nodes() for G in network_service.graphs.values())
@@ -211,8 +221,82 @@ async def get_state():
         "metrics_computed": metrics_computed,
         "cytoscape_available": network_service.cytoscape_available,
         "anomaly_available": HAS_ANOMALY,
-        "auto_reload_available": HAS_SSE
+        "auto_reload_available": HAS_SSE,
+        "api_properties_loaded": network_service._api_properties_loaded,
+        "api_properties_source": network_service._api_properties_source
     }
+
+
+@router.get("/api-properties/providers")
+async def list_api_properties_providers():
+    """List available API properties providers and their status."""
+    return {
+        "providers": api_properties_service.available_providers,
+        "all_columns": api_properties_service.all_columns_provided,
+        "cache_ttl_seconds": settings.EXTERNAL_API_CACHE_TTL,
+        "base_url": settings.EXTERNAL_API_BASE_URL
+    }
+
+
+@router.get("/api-properties/cache")
+async def list_api_properties_caches():
+    """List cached API properties with metadata."""
+    return {
+        "caches": network_service.cache_service.list_api_properties_caches()
+    }
+
+
+@router.delete("/api-properties/cache")
+async def clear_api_properties_cache(
+    provider: Optional[str] = Query(None, description="Provider name to clear"),
+    version: Optional[str] = Query(None, description="Version to clear")
+):
+    """Clear API properties cache, optionally for specific provider/version."""
+    network_service.cache_service.clear_api_properties_cache(provider, version)
+    return {
+        "status": "cleared",
+        "provider": provider,
+        "version": version
+    }
+
+
+@router.post("/api-properties/refresh")
+async def refresh_api_properties(
+    version: str = Query("v2", description="Version to refresh"),
+    providers: Optional[str] = Query(None, description="Comma-separated provider names")
+):
+    """
+    Refresh API properties by fetching fresh data from APIs.
+    
+    This fetches new data regardless of cache state and updates the cache.
+    """
+    try:
+        provider_list = None
+        if providers:
+            provider_list = [p.strip() for p in providers.split(",") if p.strip()]
+        
+        df, provider_cols, source = network_service.load_api_properties(
+            version=version,
+            providers=provider_list,
+            skip_cache=True  # Always fetch fresh
+        )
+        
+        if df.empty:
+            return {
+                "status": "no_data",
+                "message": "No data fetched from API providers",
+                "providers_queried": provider_list or settings.EXTERNAL_API_PROVIDERS
+            }
+        
+        return {
+            "status": "success",
+            "rows_fetched": len(df),
+            "columns": list(df.columns),
+            "provider_columns": provider_cols,
+            "source": source
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/nodes/data")

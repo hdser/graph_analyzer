@@ -3,6 +3,7 @@ Network Service
 
 Main service for managing network/graph data including:
 - Loading from SQL
+- Loading from external APIs
 - Metrics computation
 - Layout management
 - Graph element access
@@ -24,9 +25,10 @@ from ..models.responses import NetworkState
 from .cache_service import CacheService
 from .layout_service import LayoutService
 from .auto_reload_service import AutoReloadManager
+from .api_properties_service import api_properties_service
 from ..utils.helpers import clean_numpy_types
 
-from engines.graph_metrics  import GraphMetrics, METRIC_PRESETS
+from engines.graph_metrics import GraphMetrics, METRIC_PRESETS
 
 if HAS_ANOMALY:
     from engines.anomaly_engine import AnomalyEngine
@@ -56,6 +58,8 @@ class NetworkService:
         # Track loaded properties
         self._loaded_property_names: List[str] = []
         self._properties_source: Optional[str] = None
+        self._api_properties_loaded: Dict[str, List[str]] = {}  # provider -> columns
+        self._api_properties_source: Optional[str] = None
         
         # Services
         self.cache_service = CacheService()
@@ -100,6 +104,11 @@ class NetworkService:
                     "path": str(sql_path)
                 })
         return properties_files
+    
+    @property
+    def available_api_properties_providers(self) -> List[Dict[str, Any]]:
+        """Get list of available API properties providers."""
+        return api_properties_service.available_providers
     
     @property
     def cytoscape_available(self) -> bool:
@@ -244,6 +253,87 @@ class NetworkService:
                 traceback.print_exc()
         
         return properties_by_version
+    
+    def load_api_properties(
+        self,
+        version: str,
+        providers: Optional[List[str]] = None,
+        skip_cache: bool = False
+    ) -> Tuple[pd.DataFrame, Dict[str, List[str]], str]:
+        """
+        Load node properties from external APIs.
+        
+        Args:
+            version: Graph version (e.g., 'v2')
+            providers: List of provider names to use (None = all enabled)
+            skip_cache: If True, always fetch fresh data
+            
+        Returns:
+            Tuple of (DataFrame, provider_columns dict, source string)
+        """
+        if not settings.EXTERNAL_API_PROVIDERS:
+            print("[API-PROPS] No external API providers configured")
+            return pd.DataFrame(), {}, "none"
+        
+        provider_columns: Dict[str, List[str]] = {}
+        all_dfs: List[pd.DataFrame] = []
+        source = "api"
+        
+        # Determine which providers to use
+        target_providers = providers or settings.EXTERNAL_API_PROVIDERS
+        
+        for provider_name in target_providers:
+            provider = api_properties_service.get_provider(provider_name)
+            if not provider:
+                continue
+            
+            # Try cache first (unless skipping)
+            if not skip_cache:
+                cached_df = self.cache_service.load_api_properties_cache(
+                    provider_name, version
+                )
+                if cached_df is not None:
+                    all_dfs.append(cached_df)
+                    provider_columns[provider_name] = [
+                        c for c in cached_df.columns if c != 'avatar'
+                    ]
+                    source = "cache"
+                    continue
+            
+            # Fetch from API
+            try:
+                df = provider.fetch_all(version)
+                if not df.empty:
+                    all_dfs.append(df)
+                    provider_columns[provider_name] = provider.columns_provided
+                    
+                    # Save to cache
+                    self.cache_service.save_api_properties_cache(
+                        provider_name, version, df
+                    )
+                    source = "api"
+            except Exception as e:
+                print(f"[API-PROPS] Error fetching from {provider_name}: {e}")
+                # Try fallback to cache
+                cached_df = self.cache_service.load_api_properties_cache(
+                    provider_name, version, ttl=0  # Ignore TTL for fallback
+                )
+                if cached_df is not None:
+                    all_dfs.append(cached_df)
+                    provider_columns[provider_name] = [
+                        c for c in cached_df.columns if c != 'avatar'
+                    ]
+                    source = "cache_fallback"
+        
+        if not all_dfs:
+            return pd.DataFrame(), {}, "none"
+        
+        # Merge all DataFrames
+        result_df = all_dfs[0]
+        for df in all_dfs[1:]:
+            result_df = result_df.merge(df, on='avatar', how='outer')
+        
+        return result_df, provider_columns, source
     
     def _merge_properties_to_graph(
         self,
@@ -496,11 +586,12 @@ class NetworkService:
         """
         Load network data with optional caching.
         
-        Four-phase loading:
+        Five-phase loading:
         1. Load edge data & compute metrics (per version)
-        2. Load node properties (if configured)
-        3. Build graphs & compute layouts
-        4. Atomic state swap
+        2. Load SQL node properties (if configured)
+        3. Load API node properties (if enabled)
+        4. Build graphs & compute layouts
+        5. Atomic state swap
         
         Args:
             config: Load configuration
@@ -532,7 +623,7 @@ class NetworkService:
         if not edge_layers:
             raise ValueError("No data loaded")
         
-        # Phase 1.5: Load node properties (if configured)
+        # Phase 2: Load SQL node properties (if configured)
         node_properties: Dict[str, pd.DataFrame] = {}
         property_names: List[str] = []
         properties_source: Optional[str] = None
@@ -548,6 +639,46 @@ class NetworkService:
                 for col in df.columns:
                     if col != 'avatar' and col not in property_names:
                         property_names.append(col)
+        
+        # Phase 3: Load API properties (if enabled)
+        api_properties_loaded: Dict[str, List[str]] = {}
+        api_properties_source: Optional[str] = None
+        
+        if config.load_api_properties:
+            # Get all versions from edge layers
+            versions = set()
+            for layer_id in edge_layers.keys():
+                versions.add(self._extract_version(layer_id))
+            
+            for version in versions:
+                api_df, provider_cols, api_source = self.load_api_properties(
+                    version=version,
+                    providers=config.api_properties_providers,
+                    skip_cache=config.skip_api_cache
+                )
+                
+                if not api_df.empty:
+                    # Merge API properties into node_properties
+                    if version in node_properties:
+                        # Merge with existing SQL properties
+                        existing_df = node_properties[version]
+                        node_properties[version] = existing_df.merge(
+                            api_df, on='avatar', how='outer'
+                        )
+                    else:
+                        node_properties[version] = api_df
+                    
+                    # Track loaded columns per provider
+                    for provider, cols in provider_cols.items():
+                        if provider not in api_properties_loaded:
+                            api_properties_loaded[provider] = []
+                        api_properties_loaded[provider].extend(cols)
+                        # Add to property_names
+                        for col in cols:
+                            if col not in property_names:
+                                property_names.append(col)
+                    
+                    api_properties_source = api_source
         
         # Load or compute metrics
         metrics_dfs = {}
@@ -578,7 +709,7 @@ class NetworkService:
             for version, df in metrics_dfs.items():
                 self.cache_service.save_metrics_cache(df, version)
         
-        # Phase 2: Build graphs and layouts
+        # Phase 4: Build graphs and layouts
         graphs = {}
         layouts = {}
         layout_time = 0.0
@@ -614,7 +745,7 @@ class NetworkService:
                         for metric, value in metrics_dict[node].items():
                             G.nodes[node][metric] = value
             
-            # Add node properties as node attributes
+            # Add node properties as node attributes (SQL + API combined)
             if version in node_properties:
                 self._merge_properties_to_graph(G, node_properties[version], version)
             
@@ -639,7 +770,7 @@ class NetworkService:
             if algorithm != "cached":
                 self.cache_service.save_layout_cache(layer_id, positions)
         
-        # Phase 3: Atomic state swap
+        # Phase 5: Atomic state swap
         self.edge_layers = edge_layers
         self.metrics_dfs = metrics_dfs
         self.node_properties_dfs = node_properties
@@ -647,6 +778,8 @@ class NetworkService:
         self.layouts = layouts
         self._loaded_property_names = property_names
         self._properties_source = properties_source
+        self._api_properties_loaded = api_properties_loaded
+        self._api_properties_source = api_properties_source
         
         # Compute totals
         total_nodes = sum(G.number_of_nodes() for G in graphs.values())
@@ -670,7 +803,9 @@ class NetworkService:
             data_source=data_source,
             node_properties_loaded=property_names,
             node_properties_source=properties_source,
-            metrics_source=metrics_source
+            metrics_source=metrics_source,
+            api_properties_loaded=api_properties_loaded,
+            api_properties_source=api_properties_source
         )
     
     def update_metrics(self, config: MetricsConfig) -> Dict[str, Any]:
@@ -768,6 +903,8 @@ class NetworkService:
             for key, value in G.nodes[node].items():
                 if isinstance(value, (int, float, np.integer, np.floating)):
                     node_data[key] = float(value) if pd.notna(value) else 0.0
+                elif isinstance(value, (bool, np.bool_)):
+                    node_data[key] = bool(value)
                 elif isinstance(value, str):
                     node_data[key] = value
                 elif isinstance(value, (list, np.ndarray)):
@@ -992,6 +1129,7 @@ class NetworkService:
             "outgoing_count": len(outgoing_set),
             "source_nodes": node_ids,
         }
+
 
 # Singleton instance
 network_service = NetworkService()

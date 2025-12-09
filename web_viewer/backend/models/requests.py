@@ -30,6 +30,19 @@ class LoadConfig(BaseModel):
         default="basic",
         description="Metrics computation mode: basic, essential, standard, comprehensive, or full"
     )
+    # API properties configuration
+    load_api_properties: bool = Field(
+        default=True,
+        description="Whether to load properties from external APIs"
+    )
+    api_properties_providers: Optional[List[str]] = Field(
+        default=None,
+        description="List of API providers to use (None = all enabled providers)"
+    )
+    skip_api_cache: bool = Field(
+        default=False,
+        description="Skip API cache and always fetch fresh data"
+    )
 
 
 class MetricsConfig(BaseModel):
@@ -227,4 +240,13 @@ class AutoReloadConfig(BaseModel):
     metrics_mode: str = Field(
         default="basic",
         description="Metrics mode for recomputation"
+    )
+    # API properties configuration for auto-reload
+    load_api_properties: bool = Field(
+        default=True,
+        description="Whether to refresh API properties on reload"
+    )
+    preserve_layout: bool = Field(
+        default=True,
+        description="Whether to preserve layout positions on reload"
     )

@@ -46,7 +46,7 @@ class NetworkState(BaseModel):
     )
     node_properties_loaded: List[str] = Field(
         default_factory=list,
-        description="List of fixed node property names loaded"
+        description="List of fixed node property names loaded (from SQL)"
     )
     node_properties_source: Optional[str] = Field(
         default=None,
@@ -55,6 +55,15 @@ class NetworkState(BaseModel):
     metrics_source: str = Field(
         default="computed",
         description="Source of metrics: computed or cache"
+    )
+    # API properties fields
+    api_properties_loaded: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="API properties loaded: {provider_name: [column_names]}"
+    )
+    api_properties_source: Optional[str] = Field(
+        default=None,
+        description="Source of API properties: api, cache, or None if not loaded"
     )
 
 
@@ -265,7 +274,7 @@ class CompositeMetricResult(BaseModel):
         description="Name of the composite metric"
     )
     formula: str = Field(
-        description="Formula string (e.g., 'metric1 Ã— metric2')"
+        description="Formula string (e.g., 'metric1 × metric2')"
     )
     node_updates: List[Dict[str, Any]] = Field(
         default_factory=list,
@@ -360,4 +369,33 @@ class AutoReloadStatus(BaseModel):
     error: Optional[str] = Field(
         default=None,
         description="Error message if last reload failed"
+    )
+
+
+class APIPropertiesProviderInfo(BaseModel):
+    """Information about an external API properties provider."""
+    name: str = Field(
+        description="Provider identifier"
+    )
+    display_name: str = Field(
+        description="Human-readable provider name"
+    )
+    columns: List[str] = Field(
+        description="Column names provided by this provider"
+    )
+    enabled: bool = Field(
+        description="Whether this provider is enabled"
+    )
+
+
+class APIPropertiesStatusResponse(BaseModel):
+    """Status of external API properties providers."""
+    providers: List[APIPropertiesProviderInfo] = Field(
+        description="List of available providers"
+    )
+    cache_ttl_seconds: int = Field(
+        description="Cache time-to-live in seconds"
+    )
+    base_url: str = Field(
+        description="Base URL for API requests"
     )

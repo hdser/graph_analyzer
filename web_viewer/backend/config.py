@@ -77,6 +77,57 @@ class Settings:
         f.strip() for f in os.getenv("DEFAULT_PROPERTIES_FILES", "").split(",") if f.strip()
     ]
     
+    # ==========================================================================
+    # EXTERNAL API PROPERTIES
+    # ==========================================================================
+    # Configuration for fetching node properties from external REST APIs.
+    # Each provider can be enabled/disabled independently.
+    # ==========================================================================
+    
+    # Base URL for external APIs
+    EXTERNAL_API_BASE_URL: str = os.getenv(
+        "EXTERNAL_API_BASE_URL",
+        "https://squid-app-3gxnl.ondigitalocean.app"
+    )
+    
+    # HTTP timeout for API requests (seconds)
+    EXTERNAL_API_TIMEOUT: int = int(os.getenv("EXTERNAL_API_TIMEOUT", "30"))
+    
+    # Number of retries for failed API requests
+    EXTERNAL_API_RETRIES: int = int(os.getenv("EXTERNAL_API_RETRIES", "3"))
+    
+    # Cache TTL for API properties (seconds, 0 = no cache expiry)
+    EXTERNAL_API_CACHE_TTL: int = int(os.getenv("EXTERNAL_API_CACHE_TTL", "3600"))
+    
+    # Comma-separated list of enabled providers
+    EXTERNAL_API_PROVIDERS: List[str] = [
+        p.strip() for p in os.getenv("EXTERNAL_API_PROVIDERS", "blacklist").split(",") if p.strip()
+    ]
+    
+    # --------------------------------------------------------------------------
+    # Blacklist Provider Settings
+    # --------------------------------------------------------------------------
+    EXTERNAL_API_BLACKLIST_ENABLED: bool = os.getenv(
+        "EXTERNAL_API_BLACKLIST_ENABLED", "true"
+    ).lower() == "true"
+    
+    EXTERNAL_API_BLACKLIST_ENDPOINT: str = os.getenv(
+        "EXTERNAL_API_BLACKLIST_ENDPOINT",
+        "/aboutcircles-advanced-analytics2/bot-analytics/blacklist"
+    )
+    
+    # Whether to filter for v2 addresses only
+    EXTERNAL_API_BLACKLIST_V2_ONLY: bool = os.getenv(
+        "EXTERNAL_API_BLACKLIST_V2_ONLY", "true"
+    ).lower() == "true"
+    
+    # --------------------------------------------------------------------------
+    # Add new provider settings here following the pattern:
+    # EXTERNAL_API_{PROVIDER}_ENABLED
+    # EXTERNAL_API_{PROVIDER}_ENDPOINT
+    # EXTERNAL_API_{PROVIDER}_{SETTING}
+    # --------------------------------------------------------------------------
+    
     @property
     def database_url(self) -> str:
         """Construct database URL from components."""
@@ -130,6 +181,12 @@ def print_startup_banner():
     print(f"  SSE Support:        {'Y' if HAS_SSE else 'N'}")
     print(f"  Anomaly Detection:  {'Y' if HAS_ANOMALY else 'N'}")
     print(f"  Cytoscape Desktop:  {'Y' if HAS_CYTOSCAPE_DESKTOP else 'N'}")
+    print("-" * 60)
+    # External API providers
+    print("  External API Properties:")
+    print(f"    Base URL: {settings.EXTERNAL_API_BASE_URL}")
+    print(f"    Providers: {', '.join(settings.EXTERNAL_API_PROVIDERS) or 'None'}")
+    print(f"    Blacklist: {'Y' if settings.EXTERNAL_API_BLACKLIST_ENABLED else 'N'}")
     print("-" * 60)
     if settings.HIDE_DATA_SOURCE_UI:
         print("  Mode: Production (auto-load + auto-reload)")
