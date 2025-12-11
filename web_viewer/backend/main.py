@@ -21,6 +21,7 @@ from .routers import (
     composite_router,
     auto_reload_router,
 )
+from .routers.snapshots import router as snapshots_router
 
 
 print_startup_banner()
@@ -133,11 +134,13 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+# Register routers
 app.include_router(network_router)
 app.include_router(metrics_router)
 app.include_router(anomaly_router)
 app.include_router(composite_router)
 app.include_router(auto_reload_router)
+app.include_router(snapshots_router)  # NEW: Historical Snapshots
 
 
 @app.get("/")

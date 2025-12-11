@@ -31,6 +31,33 @@ from .responses import (
     AutoReloadStatus,
 )
 
+from .snapshot import (
+    # Enums
+    SnapshotStatus,
+    MetricsMode,
+    LayoutSource,
+    
+    # Request models
+    SnapshotCreateRequest,
+    SnapshotBatchRequest,
+    SnapshotSuggestRequest,
+    
+    # Response models
+    SnapshotInfo,
+    SnapshotListResponse,
+    SnapshotData,
+    BlockSuggestion,
+    SnapshotSuggestResponse,
+    SnapshotProgress,
+    StorageStats,
+    
+    # Internal models
+    SnapshotMetadata,
+    MasterLayoutEntry,
+    IndexEntry
+)
+
+
 __all__ = [
     # Requests
     "LoadConfig",
@@ -55,4 +82,27 @@ __all__ = [
     "SavedCompositeResponse",
     "SavedCompositesListResponse",
     "AutoReloadStatus",
+    # Enums
+    'SnapshotStatus',
+    'MetricsMode', 
+    'LayoutSource',
+    
+    # Request models
+    'SnapshotCreateRequest',
+    'SnapshotBatchRequest',
+    'SnapshotSuggestRequest',
+    
+    # Response models
+    'SnapshotInfo',
+    'SnapshotListResponse',
+    'SnapshotData',
+    'BlockSuggestion',
+    'SnapshotSuggestResponse',
+    'SnapshotProgress',
+    'StorageStats',
+    
+    # Internal models
+    'SnapshotMetadata',
+    'MasterLayoutEntry',
+    'IndexEntry'
 ]

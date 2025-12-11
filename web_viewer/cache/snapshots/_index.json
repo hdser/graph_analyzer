@@ -1,0 +1,550 @@
+{
+  "version": 1,
+  "last_updated": "2025-12-10T16:24:25.305201Z",
+  "snapshots": {
+    "crc_v2_trusts": [
+      {
+        "snapshot_id": "crc_v2_trusts_block_43568092",
+        "block_number": 43568092,
+        "block_timestamp": "2025-12-10T00:00:00",
+        "label": "2025-12-10 (Wednesday)",
+        "node_count": 13020,
+        "edge_count": 261897,
+        "created_at": "2025-12-10T00:25:13.277993"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43551344",
+        "block_number": 43551344,
+        "block_timestamp": "2025-12-09T00:00:00",
+        "label": "2025-12-09 (Tuesday)",
+        "node_count": 13006,
+        "edge_count": 261760,
+        "created_at": "2025-12-10T00:20:50.414694"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43534696",
+        "block_number": 43534696,
+        "block_timestamp": "2025-12-08T00:00:00",
+        "label": "2025-12-08 (Monday)",
+        "node_count": 12996,
+        "edge_count": 261784,
+        "created_at": "2025-12-10T10:32:58.825872"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43518012",
+        "block_number": 43518012,
+        "block_timestamp": "2025-12-07T00:00:00",
+        "label": "2025-12-07 (Sunday)",
+        "node_count": 12985,
+        "edge_count": 261505,
+        "created_at": "2025-12-10T10:28:33.497888"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43501299",
+        "block_number": 43501299,
+        "block_timestamp": "2025-12-06T00:00:00",
+        "label": "2025-12-06 (Saturday)",
+        "node_count": 12980,
+        "edge_count": 261137,
+        "created_at": "2025-12-10T10:24:35.038130"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43484648",
+        "block_number": 43484648,
+        "block_timestamp": "2025-12-05T00:00:00",
+        "label": "2025-12-05 (Friday)",
+        "node_count": 12974,
+        "edge_count": 260995,
+        "created_at": "2025-12-10T10:21:28.757597"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43467958",
+        "block_number": 43467958,
+        "block_timestamp": "2025-12-04T00:00:00",
+        "label": "2025-12-04 (Thursday)",
+        "node_count": 12974,
+        "edge_count": 260388,
+        "created_at": "2025-12-10T10:17:41.065299"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43451259",
+        "block_number": 43451259,
+        "block_timestamp": "2025-12-03T00:00:00",
+        "label": "2025-12-03 (Wednesday)",
+        "node_count": 12942,
+        "edge_count": 260244,
+        "created_at": "2025-12-10T10:14:37.534400"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43434431",
+        "block_number": 43434431,
+        "block_timestamp": "2025-12-02T00:00:00",
+        "label": "2025-12-02 (Tuesday)",
+        "node_count": 12927,
+        "edge_count": 260142,
+        "created_at": "2025-12-10T10:11:22.451584"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43417601",
+        "block_number": 43417601,
+        "block_timestamp": "2025-12-01T00:00:00",
+        "label": "2025-12-01 (Monday)",
+        "node_count": 12911,
+        "edge_count": 259557,
+        "created_at": "2025-12-10T10:08:13.593430"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43400742",
+        "block_number": 43400742,
+        "block_timestamp": "2025-11-30T00:00:05",
+        "label": "2025-11-30 (Sunday)",
+        "node_count": 12894,
+        "edge_count": 259471,
+        "created_at": "2025-12-10T10:05:01.077548"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43383911",
+        "block_number": 43383911,
+        "block_timestamp": "2025-11-29T00:00:00",
+        "label": "2025-11-29 (Saturday)",
+        "node_count": 12874,
+        "edge_count": 258502,
+        "created_at": "2025-12-10T10:00:28.834409"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43367086",
+        "block_number": 43367086,
+        "block_timestamp": "2025-11-28T00:00:00",
+        "label": "2025-11-28 (Friday)",
+        "node_count": 12853,
+        "edge_count": 258078,
+        "created_at": "2025-12-10T09:56:10.760024"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43350244",
+        "block_number": 43350244,
+        "block_timestamp": "2025-11-27T00:00:00",
+        "label": "2025-11-27 (Thursday)",
+        "node_count": 12824,
+        "edge_count": 258039,
+        "created_at": "2025-12-10T09:51:33.325500"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43333460",
+        "block_number": 43333460,
+        "block_timestamp": "2025-11-26T00:00:00",
+        "label": "2025-11-26 (Wednesday)",
+        "node_count": 12783,
+        "edge_count": 255923,
+        "created_at": "2025-12-10T09:47:28.638885"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43316667",
+        "block_number": 43316667,
+        "block_timestamp": "2025-11-25T00:00:00",
+        "label": "2025-11-25 (Tuesday)",
+        "node_count": 12761,
+        "edge_count": 255735,
+        "created_at": "2025-12-10T09:43:27.161355"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43299823",
+        "block_number": 43299823,
+        "block_timestamp": "2025-11-24T00:00:00",
+        "label": "2025-11-24 (Monday)",
+        "node_count": 12481,
+        "edge_count": 254988,
+        "created_at": "2025-12-10T09:39:25.226692"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43282936",
+        "block_number": 43282936,
+        "block_timestamp": "2025-11-23T00:00:00",
+        "label": "2025-11-23 (Sunday)",
+        "node_count": 12460,
+        "edge_count": 254777,
+        "created_at": "2025-12-10T09:35:42.814710"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43266050",
+        "block_number": 43266050,
+        "block_timestamp": "2025-11-22T00:00:00",
+        "label": "2025-11-22 (Saturday)",
+        "node_count": 12429,
+        "edge_count": 254503,
+        "created_at": "2025-12-10T09:31:15.972627"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43249450",
+        "block_number": 43249450,
+        "block_timestamp": "2025-11-21T00:00:00",
+        "label": "2025-11-21 (Friday)",
+        "node_count": 12134,
+        "edge_count": 253644,
+        "created_at": "2025-12-10T09:26:35.203788"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43232664",
+        "block_number": 43232664,
+        "block_timestamp": "2025-11-20T00:00:00",
+        "label": "2025-11-20 (Thursday)",
+        "node_count": 12091,
+        "edge_count": 251965,
+        "created_at": "2025-12-10T09:22:12.531788"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43215882",
+        "block_number": 43215882,
+        "block_timestamp": "2025-11-19T00:00:00",
+        "label": "2025-11-19 (Wednesday)",
+        "node_count": 12053,
+        "edge_count": 251745,
+        "created_at": "2025-12-10T09:17:53.108785"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43199140",
+        "block_number": 43199140,
+        "block_timestamp": "2025-11-18T00:00:00",
+        "label": "2025-11-18 (Tuesday)",
+        "node_count": 11818,
+        "edge_count": 254689,
+        "created_at": "2025-12-10T09:13:51.420633"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43182392",
+        "block_number": 43182392,
+        "block_timestamp": "2025-11-17T00:00:00",
+        "label": "2025-11-17 (Monday)",
+        "node_count": 11711,
+        "edge_count": 249360,
+        "created_at": "2025-12-10T09:10:16.993393"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43165644",
+        "block_number": 43165644,
+        "block_timestamp": "2025-11-16T00:00:00",
+        "label": "2025-11-16 (Sunday)",
+        "node_count": 11693,
+        "edge_count": 249158,
+        "created_at": "2025-12-10T09:06:05.198793"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43148907",
+        "block_number": 43148907,
+        "block_timestamp": "2025-11-15T00:00:00",
+        "label": "2025-11-15 (Saturday)",
+        "node_count": 11683,
+        "edge_count": 248884,
+        "created_at": "2025-12-10T09:01:42.635147"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43132135",
+        "block_number": 43132135,
+        "block_timestamp": "2025-11-14T00:00:00",
+        "label": "2025-11-14 (Friday)",
+        "node_count": 11637,
+        "edge_count": 248396,
+        "created_at": "2025-12-10T08:58:09.134324"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43115380",
+        "block_number": 43115380,
+        "block_timestamp": "2025-11-13T00:00:00",
+        "label": "2025-11-13 (Thursday)",
+        "node_count": 11597,
+        "edge_count": 246185,
+        "created_at": "2025-12-10T08:55:19.477373"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43098574",
+        "block_number": 43098574,
+        "block_timestamp": "2025-11-12T00:00:00",
+        "label": "2025-11-12 (Wednesday)",
+        "node_count": 11573,
+        "edge_count": 245866,
+        "created_at": "2025-12-10T08:52:20.030497"
+      },
+      {
+        "snapshot_id": "crc_v2_trusts_block_43081681",
+        "block_number": 43081681,
+        "block_timestamp": "2025-11-11T00:00:00",
+        "label": "2025-11-11 (Tuesday)",
+        "node_count": 11455,
+        "edge_count": 252802,
+        "created_at": "2025-12-10T08:49:25.369902"
+      }
+    ],
+    "crc_v2_flows": [
+      {
+        "snapshot_id": "crc_v2_flows_block_43568092",
+        "block_number": 43568092,
+        "block_timestamp": "2025-12-10T00:00:00",
+        "label": "2025-12-10 (Wednesday)",
+        "node_count": 3790,
+        "edge_count": 246807,
+        "created_at": "2025-12-10T16:24:25.256854"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43551344",
+        "block_number": 43551344,
+        "block_timestamp": "2025-12-09T00:00:00",
+        "label": "2025-12-09 (Tuesday)",
+        "node_count": 3788,
+        "edge_count": 246662,
+        "created_at": "2025-12-10T16:20:44.417348"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43534696",
+        "block_number": 43534696,
+        "block_timestamp": "2025-12-08T00:00:00",
+        "label": "2025-12-08 (Monday)",
+        "node_count": 3788,
+        "edge_count": 246469,
+        "created_at": "2025-12-10T16:16:00.377490"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43518012",
+        "block_number": 43518012,
+        "block_timestamp": "2025-12-07T00:00:00",
+        "label": "2025-12-07 (Sunday)",
+        "node_count": 3785,
+        "edge_count": 246072,
+        "created_at": "2025-12-10T16:12:29.042760"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43501299",
+        "block_number": 43501299,
+        "block_timestamp": "2025-12-06T00:00:00",
+        "label": "2025-12-06 (Saturday)",
+        "node_count": 3780,
+        "edge_count": 245896,
+        "created_at": "2025-12-10T16:08:48.652367"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43484648",
+        "block_number": 43484648,
+        "block_timestamp": "2025-12-05T00:00:00",
+        "label": "2025-12-05 (Friday)",
+        "node_count": 3777,
+        "edge_count": 245707,
+        "created_at": "2025-12-10T16:05:21.165076"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43467958",
+        "block_number": 43467958,
+        "block_timestamp": "2025-12-04T00:00:00",
+        "label": "2025-12-04 (Thursday)",
+        "node_count": 3770,
+        "edge_count": 245504,
+        "created_at": "2025-12-10T16:01:57.443342"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43451259",
+        "block_number": 43451259,
+        "block_timestamp": "2025-12-03T00:00:00",
+        "label": "2025-12-03 (Wednesday)",
+        "node_count": 3762,
+        "edge_count": 245296,
+        "created_at": "2025-12-10T15:58:18.824022"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43434431",
+        "block_number": 43434431,
+        "block_timestamp": "2025-12-02T00:00:00",
+        "label": "2025-12-02 (Tuesday)",
+        "node_count": 3759,
+        "edge_count": 245145,
+        "created_at": "2025-12-10T15:54:44.008131"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43417601",
+        "block_number": 43417601,
+        "block_timestamp": "2025-12-01T00:00:00",
+        "label": "2025-12-01 (Monday)",
+        "node_count": 3754,
+        "edge_count": 245006,
+        "created_at": "2025-12-10T15:51:03.699890"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43400742",
+        "block_number": 43400742,
+        "block_timestamp": "2025-11-30T00:00:05",
+        "label": "2025-11-30 (Sunday)",
+        "node_count": 3751,
+        "edge_count": 244882,
+        "created_at": "2025-12-10T15:47:38.655975"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43383911",
+        "block_number": 43383911,
+        "block_timestamp": "2025-11-29T00:00:00",
+        "label": "2025-11-29 (Saturday)",
+        "node_count": 3747,
+        "edge_count": 244758,
+        "created_at": "2025-12-10T15:44:07.865329"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43367086",
+        "block_number": 43367086,
+        "block_timestamp": "2025-11-28T00:00:00",
+        "label": "2025-11-28 (Friday)",
+        "node_count": 3744,
+        "edge_count": 244546,
+        "created_at": "2025-12-10T15:41:05.682265"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43350244",
+        "block_number": 43350244,
+        "block_timestamp": "2025-11-27T00:00:00",
+        "label": "2025-11-27 (Thursday)",
+        "node_count": 3736,
+        "edge_count": 244333,
+        "created_at": "2025-12-10T15:37:14.473720"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43333460",
+        "block_number": 43333460,
+        "block_timestamp": "2025-11-26T00:00:00",
+        "label": "2025-11-26 (Wednesday)",
+        "node_count": 3732,
+        "edge_count": 244142,
+        "created_at": "2025-12-10T15:33:37.594633"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43316667",
+        "block_number": 43316667,
+        "block_timestamp": "2025-11-25T00:00:00",
+        "label": "2025-11-25 (Tuesday)",
+        "node_count": 3724,
+        "edge_count": 243961,
+        "created_at": "2025-12-10T15:30:14.131119"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43299823",
+        "block_number": 43299823,
+        "block_timestamp": "2025-11-24T00:00:00",
+        "label": "2025-11-24 (Monday)",
+        "node_count": 3719,
+        "edge_count": 243837,
+        "created_at": "2025-12-10T15:26:34.223654"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43282936",
+        "block_number": 43282936,
+        "block_timestamp": "2025-11-23T00:00:00",
+        "label": "2025-11-23 (Sunday)",
+        "node_count": 3707,
+        "edge_count": 243423,
+        "created_at": "2025-12-10T15:23:03.498319"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43266050",
+        "block_number": 43266050,
+        "block_timestamp": "2025-11-22T00:00:00",
+        "label": "2025-11-22 (Saturday)",
+        "node_count": 3687,
+        "edge_count": 243282,
+        "created_at": "2025-12-10T15:19:38.684590"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43249450",
+        "block_number": 43249450,
+        "block_timestamp": "2025-11-21T00:00:00",
+        "label": "2025-11-21 (Friday)",
+        "node_count": 3676,
+        "edge_count": 243117,
+        "created_at": "2025-12-10T15:16:16.181850"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43232664",
+        "block_number": 43232664,
+        "block_timestamp": "2025-11-20T00:00:00",
+        "label": "2025-11-20 (Thursday)",
+        "node_count": 3671,
+        "edge_count": 242990,
+        "created_at": "2025-12-10T15:12:25.924321"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43215882",
+        "block_number": 43215882,
+        "block_timestamp": "2025-11-19T00:00:00",
+        "label": "2025-11-19 (Wednesday)",
+        "node_count": 3642,
+        "edge_count": 242696,
+        "created_at": "2025-12-10T15:08:54.341783"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43199140",
+        "block_number": 43199140,
+        "block_timestamp": "2025-11-18T00:00:00",
+        "label": "2025-11-18 (Tuesday)",
+        "node_count": 3637,
+        "edge_count": 242547,
+        "created_at": "2025-12-10T15:05:25.667298"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43182392",
+        "block_number": 43182392,
+        "block_timestamp": "2025-11-17T00:00:00",
+        "label": "2025-11-17 (Monday)",
+        "node_count": 3624,
+        "edge_count": 242159,
+        "created_at": "2025-12-10T15:01:48.281516"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43165644",
+        "block_number": 43165644,
+        "block_timestamp": "2025-11-16T00:00:00",
+        "label": "2025-11-16 (Sunday)",
+        "node_count": 3621,
+        "edge_count": 241780,
+        "created_at": "2025-12-10T14:57:42.382985"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43148907",
+        "block_number": 43148907,
+        "block_timestamp": "2025-11-15T00:00:00",
+        "label": "2025-11-15 (Saturday)",
+        "node_count": 3620,
+        "edge_count": 241336,
+        "created_at": "2025-12-10T14:53:10.836897"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43132135",
+        "block_number": 43132135,
+        "block_timestamp": "2025-11-14T00:00:00",
+        "label": "2025-11-14 (Friday)",
+        "node_count": 3616,
+        "edge_count": 241007,
+        "created_at": "2025-12-10T14:49:14.014383"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43115380",
+        "block_number": 43115380,
+        "block_timestamp": "2025-11-13T00:00:00",
+        "label": "2025-11-13 (Thursday)",
+        "node_count": 3600,
+        "edge_count": 240784,
+        "created_at": "2025-12-10T14:45:33.225671"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43098574",
+        "block_number": 43098574,
+        "block_timestamp": "2025-11-12T00:00:00",
+        "label": "2025-11-12 (Wednesday)",
+        "node_count": 3589,
+        "edge_count": 240599,
+        "created_at": "2025-12-10T14:41:22.977725"
+      },
+      {
+        "snapshot_id": "crc_v2_flows_block_43081681",
+        "block_number": 43081681,
+        "block_timestamp": "2025-11-11T00:00:00",
+        "label": "2025-11-11 (Tuesday)",
+        "node_count": 3585,
+        "edge_count": 240450,
+        "created_at": "2025-12-10T14:31:56.438589"
+      }
+    ]
+  }
+}

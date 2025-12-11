@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     setupDropdownLogic();
     setupCollapsibleSections();
+    setupSubsectionCollapsibles();
     
     // Initialize features
     initializeDefaultStyle();
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     CompositeMetrics.setup();
     InfoPanel.setupNeighborClicks();
     Metrics.initFilterUI();
+    Snapshots.init();
     
     console.log('Graph Analyzer initialized');
 });
@@ -194,111 +196,107 @@ async function pollForDataReady() {
             eventSource.close();
             await displayLoadedGraph(status);
         } else if (status.status === 'error') {
-            console.error('[STARTUP] ✗ Load failed:', status.message);
+            console.error('[STARTUP] ✗ Error:', status.message);
             eventSource.close();
-            updateStatus(`Load failed: ${status.message}`, 'error');
+            updateStatus(`Error: ${status.message}`, 'error');
             DOMCache.loading.style.display = 'none';
         }
     });
     
-    eventSource.addEventListener('ping', () => {
-        // Keepalive, ignore
-    });
-    
-    eventSource.onerror = (err) => {
-        console.error('[STARTUP] SSE error:', err);
+    eventSource.onerror = (error) => {
+        console.error('[STARTUP] SSE error:', error);
         eventSource.close();
         
-        // Fallback to simple polling if SSE fails
+        // Fallback to polling if SSE fails
         console.log('[STARTUP] Falling back to polling...');
-        fallbackPoll();
+        startPollingFallback();
     };
 }
 
 /**
- * Display the loaded graph after startup completes.
+ * Fallback polling in case SSE doesn't work
  */
-async function displayLoadedGraph(status) {
-    updateStatus('Data loaded, displaying graph...', 'info');
-    
-    try {
-        // Get the full network state
-        const stateResponse = await fetch('/api/state');
-        const state = await stateResponse.json();
-        
-        if (state.loaded_graphs && state.loaded_graphs.length > 0) {
-            State.currentState = state;
-            
-            // Populate graph selector
-            const graphSelect = document.getElementById('graph-select');
-            const graphSelector = document.getElementById('graph-selector');
-            
-            graphSelect.innerHTML = '<option value="">Select graph...</option>' +
-                state.loaded_graphs.map(g => `<option value="${g}">${g}</option>`).join('');
-            
-            if (graphSelector) {
-                graphSelector.style.display = 'block';
-            }
-            
-            // Auto-select and display first graph
-            const firstGraph = state.loaded_graphs[0];
-            graphSelect.value = firstGraph;
-            console.log('[STARTUP] Displaying graph:', firstGraph);
-            await GraphLoader.displayGraph(firstGraph);
-            
-            updateStatus(`Loaded ${status.node_count || state.node_count} nodes`, 'success');
-        }
-    } catch (err) {
-        console.error('[STARTUP] Error displaying graph:', err);
-        updateStatus('Error loading graph data', 'error');
-    }
-    
-    DOMCache.loading.style.display = 'none';
-}
-
-/**
- * Fallback polling if SSE is not available.
- * Polls every 5 seconds (much less frequent than before).
- */
-async function fallbackPoll() {
-    const maxAttempts = 60;  // 5 minutes max
+async function startPollingFallback() {
+    const maxAttempts = 60;
     let attempts = 0;
     
     const poll = async () => {
         attempts++;
-        
         try {
             const response = await fetch('/api/startup-status');
             const status = await response.json();
-            
-            console.log(`[POLL #${attempts}] status=${status.status}`);
             
             if (status.status === 'ready') {
                 await displayLoadedGraph(status);
                 return;
             } else if (status.status === 'error') {
-                updateStatus(`Load failed: ${status.message}`, 'error');
+                updateStatus(`Error: ${status.message}`, 'error');
                 DOMCache.loading.style.display = 'none';
                 return;
             }
-            
-            updateStatus(`Loading... (${attempts * 5}s)`, 'info');
-            
-            if (attempts < maxAttempts) {
-                setTimeout(poll, 5000);  // Poll every 5 seconds
-            } else {
-                updateStatus('Load timeout - please refresh', 'error');
-                DOMCache.loading.style.display = 'none';
-            }
         } catch (err) {
-            console.error('[POLL] Error:', err);
-            if (attempts < maxAttempts) {
-                setTimeout(poll, 5000);
-            }
+            console.error('[STARTUP] Poll error:', err);
+        }
+        
+        if (attempts < maxAttempts) {
+            setTimeout(poll, 2000);
+        } else {
+            updateStatus('Timeout waiting for data', 'error');
+            DOMCache.loading.style.display = 'none';
         }
     };
     
-    setTimeout(poll, 2000);
+    poll();
+}
+
+/**
+ * Display graph after background load completes
+ */
+async function displayLoadedGraph(status) {
+    console.log('[STARTUP] Displaying loaded graph:', status);
+    
+    // The graphs are already loaded in State.graphs by the background loader
+    // We just need to fetch them via the API and display
+    const graphs = status.graphs || [];
+    
+    if (graphs.length === 0) {
+        updateStatus('No graphs loaded', 'error');
+        DOMCache.loading.style.display = 'none';
+        return;
+    }
+    
+    // Fetch each graph's data
+    for (const graphId of graphs) {
+        try {
+            const graphData = await API.getGraph(graphId);
+            State.graphs[graphId] = graphData;
+            console.log(`[STARTUP] Loaded ${graphId}: ${graphData.nodes?.length || 0} nodes`);
+        } catch (err) {
+            console.error(`[STARTUP] Error loading ${graphId}:`, err);
+        }
+    }
+    
+    // Setup graph selector if multiple graphs
+    if (graphs.length > 1) {
+        const selector = document.getElementById('graph-selector');
+        const select = document.getElementById('graph-select');
+        
+        select.innerHTML = graphs.map(id => 
+            `<option value="${id}">${id}</option>`
+        ).join('');
+        
+        selector.style.display = 'block';
+    }
+    
+    // Display first graph
+    const firstGraph = graphs[0];
+    GraphLoader.displayGraph(firstGraph);
+    
+    // Enable metrics
+    document.getElementById('metrics-btn').disabled = false;
+    
+    DOMCache.loading.style.display = 'none';
+    updateStatus(`Loaded ${graphs.length} graph(s)`, 'success');
 }
 
 // =============================================================================
@@ -322,6 +320,35 @@ function setupCollapsibleSections() {
             
             // Rotate chevron icon
             const icon = header.querySelector('.collapse-icon');
+            if (icon) {
+                icon.style.transform = header.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
+            }
+        });
+    });
+}
+
+/**
+ * Setup collapsible subsections (like create snapshot section)
+ */
+function setupSubsectionCollapsibles() {
+    document.querySelectorAll('.collapsible-sub').forEach(header => {
+        header.addEventListener('click', () => {
+            header.classList.toggle('collapsed');
+            
+            // Find the target content
+            const targetId = header.dataset.target;
+            const content = document.getElementById(targetId);
+            
+            if (content) {
+                if (header.classList.contains('collapsed')) {
+                    content.style.display = 'none';
+                } else {
+                    content.style.display = '';
+                }
+            }
+            
+            // Rotate icon
+            const icon = header.querySelector('.collapse-icon-small');
             if (icon) {
                 icon.style.transform = header.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
             }
@@ -358,8 +385,14 @@ function setupEventListeners() {
     });
     document.getElementById('clear-search-btn')?.addEventListener('click', () => Search.clear());
 
-    // Edge loader
-    document.getElementById('load-edges-btn')?.addEventListener('click', () => {
+    // Edge loader - check if snapshot is active first
+    document.getElementById('load-edges-btn')?.addEventListener('click', async () => {
+        // If Snapshots module is available and handles it, we're done
+        if (typeof Snapshots !== 'undefined' && Snapshots.loadEdges) {
+            const handled = await Snapshots.loadEdges();
+            if (handled) return;
+        }
+        // Otherwise use normal graph loader
         if (State.currentGraph) GraphLoader.loadEdgesIncrementally(State.currentGraph);
     });
     
@@ -400,6 +433,13 @@ function setupEventListeners() {
         const valueDisplay = document.getElementById('edge-opacity-value');
         if (valueDisplay) {
             valueDisplay.textContent = `${e.target.value}%`;
+        }
+    });
+
+    // Data Explorer
+    document.getElementById('data-explorer-btn')?.addEventListener('click', () => {
+        if (typeof DataExplorer !== 'undefined') {
+            DataExplorer.open();
         }
     });
 }

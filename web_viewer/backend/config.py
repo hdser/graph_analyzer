@@ -22,12 +22,45 @@ class Settings:
     BASE_DIR: Path = Path(__file__).parent.parent
     SQL_DIR: Path = BASE_DIR.parent / "sql"
     NODE_PROPERTIES_DIR: Path = SQL_DIR / "properties"
+    SNAPSHOT_SQL_DIR: Path = SQL_DIR / "snapshots"
     CACHE_DIR: Path = BASE_DIR / "cache"
     LAYOUTS_DIR: Path = CACHE_DIR / "layouts"
     DATA_CACHE_DIR: Path = CACHE_DIR / "data"
     STATIC_DIR: Path = BASE_DIR / "static"
     
-    # Database configuration
+    # ==========================================================================
+    # SNAPSHOT CONFIGURATION
+    # ==========================================================================
+    
+    # Snapshot storage directory
+    SNAPSHOT_CACHE_DIR: Path = CACHE_DIR / "snapshots"
+    SNAPSHOT_MASTER_LAYOUTS_DIR: str = "_master_layouts"
+    SNAPSHOT_INDEX_FILE: str = "_index.json"
+    
+    # Spring layout parameters for unknown nodes
+    SNAPSHOT_SPRING_ITERATIONS: int = int(os.getenv("SNAPSHOT_SPRING_ITERATIONS", "50"))
+    SNAPSHOT_SPRING_K: float = float(os.getenv("SNAPSHOT_SPRING_K", "1.0"))
+    SNAPSHOT_SPRING_REPULSION: float = float(os.getenv("SNAPSHOT_SPRING_REPULSION", "100.0"))
+    SNAPSHOT_SPRING_ATTRACTION: float = float(os.getenv("SNAPSHOT_SPRING_ATTRACTION", "0.1"))
+    SNAPSHOT_SPRING_DAMPING: float = float(os.getenv("SNAPSHOT_SPRING_DAMPING", "0.9"))
+    
+    # Snapshot default metrics mode
+    SNAPSHOT_DEFAULT_METRICS_MODE: str = os.getenv("SNAPSHOT_DEFAULT_METRICS_MODE", "standard")
+    
+    # Standard metrics to compute for snapshots
+    SNAPSHOT_STANDARD_METRICS: List[str] = [
+        "in_degree", "out_degree", "total_degree",
+        "pagerank", "betweenness_centrality"
+    ]
+    
+    # Limits
+    SNAPSHOT_MAX_BATCH_SIZE: int = int(os.getenv("SNAPSHOT_MAX_BATCH_SIZE", "30"))
+    SNAPSHOT_MAX_SUGGESTIONS: int = int(os.getenv("SNAPSHOT_MAX_SUGGESTIONS", "90"))
+    
+    # ==========================================================================
+    # DATABASE CONFIGURATION
+    # ==========================================================================
+    
     DB_USER: str = os.getenv("DB_USER", "readonly_user")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     DB_HOST: str = os.getenv("DB_HOST", "localhost")
@@ -139,6 +172,8 @@ class Settings:
         self.LAYOUTS_DIR.mkdir(parents=True, exist_ok=True)
         self.DATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self.NODE_PROPERTIES_DIR.mkdir(parents=True, exist_ok=True)
+        self.SNAPSHOT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.SNAPSHOT_SQL_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Global settings instance
@@ -181,6 +216,12 @@ def print_startup_banner():
     print(f"  SSE Support:        {'Y' if HAS_SSE else 'N'}")
     print(f"  Anomaly Detection:  {'Y' if HAS_ANOMALY else 'N'}")
     print(f"  Cytoscape Desktop:  {'Y' if HAS_CYTOSCAPE_DESKTOP else 'N'}")
+    print("-" * 60)
+    # Snapshot configuration
+    print("  Snapshots:")
+    print(f"    Storage: {settings.SNAPSHOT_CACHE_DIR}")
+    print(f"    SQL Templates: {settings.SNAPSHOT_SQL_DIR}")
+    print(f"    Max Batch Size: {settings.SNAPSHOT_MAX_BATCH_SIZE}")
     print("-" * 60)
     # External API providers
     print("  External API Properties:")

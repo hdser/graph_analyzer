@@ -130,6 +130,11 @@ const GraphLoader = {
             // Send data to distributions window
             DistributionsComm.sendData();
             
+            // Dispatch event for other modules (like Snapshots)
+            document.dispatchEvent(new CustomEvent('graphLoaded', { 
+                detail: { graphId: graphId } 
+            }));
+            
             updateStatus(`Graph displayed: ${State.cy.nodes().length} nodes (edges not loaded)`, 'success');
             
         } catch (error) {
@@ -162,6 +167,10 @@ const GraphLoader = {
             DOMCache.loadEdgesBtn.disabled = true;
             DOMCache.loadEdgesBtn.textContent = 'Loading...';
         }
+        
+        // CRITICAL: Disable pointer events during bulk add to prevent WebGL crash
+        // The crash happens when findNearestElements is called during texture updates
+        DOMCache.cyContainer.style.pointerEvents = 'none';
         
         try {
             while (hasMore && State.edgesLoading) {
@@ -201,6 +210,12 @@ const GraphLoader = {
             updateStatus('Edge loading failed: ' + error.message, 'error');
         } finally {
             State.edgesLoading = false;
+            
+            // Re-enable pointer events after WebGL settles (500ms for large edge counts)
+            setTimeout(() => {
+                DOMCache.cyContainer.style.pointerEvents = 'auto';
+            }, 500);
+            
             if (DOMCache.loadEdgesBtn) {
                 DOMCache.loadEdgesBtn.disabled = false;
                 DOMCache.loadEdgesBtn.textContent = State.cy.edges().length > 0 ? 'Clear Edges' : 'Load Edges';
@@ -214,11 +229,24 @@ const GraphLoader = {
     clearEdges() {
         if (!State.cy) return;
         
-        const edgeCount = State.cy.edges().length;
+        const edges = State.cy.edges();
+        const edgeCount = edges.length;
         
-        State.cy.batch(() => {
-            State.cy.edges().remove();
-        });
+        if (edgeCount === 0) {
+            Toast.show('No edges to clear', 'info');
+            return;
+        }
+        
+        // Disable pointer events during removal
+        DOMCache.cyContainer.style.pointerEvents = 'none';
+        
+        // Remove all edges in one operation (faster than batch + forEach)
+        edges.remove();
+        
+        // Re-enable after a delay
+        setTimeout(() => {
+            DOMCache.cyContainer.style.pointerEvents = 'auto';
+        }, 300);
         
         DOMCache.edgeCount.textContent = '0 edges';
         if (DOMCache.edgesProgress) {

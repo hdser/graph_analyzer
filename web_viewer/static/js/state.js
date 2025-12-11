@@ -48,7 +48,94 @@ const State = {
     autoReloadSSE: null,
     
     // Auto-reload enabled flag
-    autoReloadEnabled: false
+    autoReloadEnabled: false,
+    
+    // ==========================================================================
+    // SNAPSHOT STATE
+    // ==========================================================================
+    
+    // Snapshot viewing state
+    snapshot: {
+        isActive: false,            // Currently viewing a snapshot?
+        currentSnapshot: null,      // SnapshotInfo of current snapshot
+        availableSnapshots: [],     // List of available snapshots
+        isLoading: false,           // Loading a snapshot?
+        error: null,                // Last error message
+        batchProgress: null         // Batch creation progress
+    },
+    
+    // ==========================================================================
+    // SNAPSHOT METHODS (on State object for easy access)
+    // ==========================================================================
+    
+    /**
+     * Set snapshot active state
+     */
+    setSnapshotActive(isActive, snapshotInfo = null) {
+        this.snapshot.isActive = isActive;
+        this.snapshot.currentSnapshot = snapshotInfo;
+        
+        // Dispatch event for UI updates
+        document.dispatchEvent(new CustomEvent('snapshotStateChanged', { 
+            detail: { isActive, snapshotInfo } 
+        }));
+    },
+    
+    /**
+     * Set available snapshots list
+     */
+    setAvailableSnapshots(snapshots) {
+        this.snapshot.availableSnapshots = snapshots;
+    },
+    
+    /**
+     * Get available snapshots
+     */
+    getAvailableSnapshots() {
+        return this.snapshot.availableSnapshots;
+    },
+    
+    /**
+     * Check if currently viewing a snapshot
+     */
+    isViewingSnapshot() {
+        return this.snapshot.isActive;
+    },
+    
+    /**
+     * Get current snapshot info
+     */
+    getCurrentSnapshot() {
+        return this.snapshot.currentSnapshot;
+    },
+    
+    /**
+     * Set snapshot loading state
+     */
+    setSnapshotLoading(isLoading) {
+        this.snapshot.isLoading = isLoading;
+    },
+    
+    /**
+     * Check if snapshot is loading
+     */
+    isSnapshotLoading() {
+        return this.snapshot.isLoading;
+    },
+    
+    /**
+     * Set snapshot error
+     */
+    setSnapshotError(error) {
+        this.snapshot.error = error;
+    },
+    
+    /**
+     * Set batch progress
+     */
+    setSnapshotBatchProgress(progress) {
+        this.snapshot.batchProgress = progress;
+    }
 };
 
 /**
@@ -113,7 +200,21 @@ function cacheDOMElements() {
         compositeNormalize: document.getElementById('composite-normalize'),
         createCompositeBtn: document.getElementById('create-composite-btn'),
         savedCompositesList: document.getElementById('saved-composites-list'),
-        refreshCompositesBtn: document.getElementById('refresh-composites-btn')
+        refreshCompositesBtn: document.getElementById('refresh-composites-btn'),
+        
+        // Snapshot controls
+        snapshotSection: document.getElementById('snapshots-section'),
+        snapshotSelect: document.getElementById('snapshot-select'),
+        loadSnapshotBtn: document.getElementById('load-snapshot-btn'),
+        returnLiveBtn: document.getElementById('return-live-btn'),
+        snapshotBlockInput: document.getElementById('snapshot-block-input'),
+        createSnapshotBtn: document.getElementById('create-snapshot-btn'),
+        batchSnapshotsBtn: document.getElementById('batch-snapshots-btn'),
+        suggestBlocksBtn: document.getElementById('suggest-blocks-btn'),
+        snapshotProgress: document.getElementById('snapshot-progress'),
+        snapshotProgressBar: document.getElementById('snapshot-progress-bar'),
+        snapshotProgressText: document.getElementById('snapshot-progress-text'),
+        snapshotStatus: document.getElementById('snapshot-status')
     });
 }
 
