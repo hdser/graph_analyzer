@@ -168,6 +168,7 @@ async def get_snapshot_nodes(
             "elements": nodes_data["elements"],
             "metadata": {
                 "snapshot_id": metadata.snapshot_id if metadata else snapshot_id,
+                "base_sql_file": base_sql_file,
                 "block_number": metadata.block_number if metadata else block_number,
                 "block_timestamp": metadata.block_timestamp.isoformat() if metadata and metadata.block_timestamp else None,
                 "label": metadata.label if metadata else None,

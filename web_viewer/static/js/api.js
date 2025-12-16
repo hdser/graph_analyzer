@@ -150,6 +150,13 @@ const API = {
         });
     },
 
+    /**
+     * Get available analysis algorithms
+     */
+    getAnalysisAlgorithms() {
+        return this.fetch('/api/anomaly/algorithms');
+    },
+
     // =========================================================================
     // Auto-Reload
     // =========================================================================
@@ -205,12 +212,248 @@ const API = {
         return this.fetch('/api/layouts/clear', {
             method: 'POST'
         });
+    },
+
+    // =========================================================================
+    // Snapshot Analysis
+    // =========================================================================
+    
+    /**
+     * Run analysis on a snapshot
+     * @param {string} snapshotId - Snapshot identifier
+     * @param {Object} config - Analysis configuration
+     * @returns {Promise<Object>} SnapshotAnalysisResult
+     */
+    analyzeSnapshot(snapshotId, config = {}) {
+        return this.fetch(`/api/snapshots/${encodeURIComponent(snapshotId)}/analyze`, {
+            method: 'POST',
+            body: JSON.stringify(config)
+        });
+    },
+    
+    /**
+     * Get existing analysis results for a snapshot
+     * @param {string} snapshotId - Snapshot identifier
+     * @returns {Promise<Object|null>} SnapshotAnalysisResult or null if not found
+     */
+    async getSnapshotAnalysis(snapshotId) {
+        try {
+            return await this.fetch(`/api/snapshots/${encodeURIComponent(snapshotId)}/analysis`);
+        } catch (e) {
+            if (e.message.includes('404')) return null;
+            throw e;
+        }
+    },
+    
+    /**
+     * Get metric values from a snapshot analysis
+     * @param {string} snapshotId - Snapshot identifier
+     * @param {string} metricName - Metric name
+     * @param {boolean} includeValues - Include per-node values
+     * @returns {Promise<Object>} MetricValuesResponse
+     */
+    getSnapshotMetricValues(snapshotId, metricName, includeValues = true) {
+        const url = `/api/snapshots/${encodeURIComponent(snapshotId)}/metrics/${encodeURIComponent(metricName)}?include_values=${includeValues}`;
+        return this.fetch(url);
+    },
+    
+    /**
+     * List analyzed snapshots
+     * @param {string} baseSqlFile - Base SQL file name
+     * @returns {Promise<Object>} AnalyzedSnapshotsListResponse
+     */
+    listAnalyzedSnapshots(baseSqlFile) {
+        return this.fetch(`/api/snapshots/analyzed?base_sql_file=${encodeURIComponent(baseSqlFile)}`);
+    },
+    
+    /**
+     * Check if snapshot has analysis
+     * @param {string} snapshotId - Snapshot identifier
+     * @returns {Promise<boolean>}
+     */
+    async hasSnapshotAnalysis(snapshotId) {
+        try {
+            const data = await this.fetch(`/api/snapshots/${encodeURIComponent(snapshotId)}/has-analysis`);
+            return data.has_analysis;
+        } catch (e) {
+            return false;
+        }
+    },
+    
+    /**
+     * Run batch analysis
+     * @param {Object} config - Batch analysis configuration
+     * @returns {Promise<Object>} BatchAnalysisResult
+     */
+    analyzeBatch(config) {
+        return this.fetch('/api/snapshots/analyze/batch', {
+            method: 'POST',
+            body: JSON.stringify(config)
+        });
+    },
+    
+    // =========================================================================
+    // Timeseries
+    // =========================================================================
+    
+    /**
+     * Get metric timeseries data
+     * @param {string} baseSqlFile - Base SQL file
+     * @param {string} metric - Metric name
+     * @param {Object} options - Query options
+     * @returns {Promise<Object>} TimeseriesData
+     */
+    getMetricTimeseries(baseSqlFile, metric, options = {}) {
+        const params = new URLSearchParams({
+            base_sql_file: baseSqlFile,
+            metric: metric,
+            aggregation: options.aggregation || 'mean',
+            include_trend: options.includeTrend !== false
+        });
+        
+        if (options.startBlock) params.append('start_block', options.startBlock);
+        if (options.endBlock) params.append('end_block', options.endBlock);
+        
+        return this.fetch(`/api/timeseries/metric?${params}`);
+    },
+    
+    /**
+     * Get network summary timeseries
+     * @param {string} baseSqlFile - Base SQL file
+     * @returns {Promise<Object>} NetworkTimeseriesData
+     */
+    getNetworkTimeseries(baseSqlFile) {
+        return this.fetch(`/api/timeseries/network?base_sql_file=${encodeURIComponent(baseSqlFile)}`);
+    },
+    
+    /**
+     * Get node trajectories
+     * @param {string} baseSqlFile - Base SQL file
+     * @param {string[]} nodeIds - Node IDs
+     * @param {string} metric - Metric name
+     * @param {Object} options - Query options
+     * @returns {Promise<Object>} NodeTrajectoriesResponse
+     */
+    getNodeTrajectories(baseSqlFile, nodeIds, metric, options = {}) {
+        return this.fetch('/api/timeseries/trajectories', {
+            method: 'POST',
+            body: JSON.stringify({
+                base_sql_file: baseSqlFile,
+                node_ids: nodeIds,
+                metric: metric,
+                include_statistics: options.includeStatistics !== false,
+                include_trend: options.includeTrend || false
+            })
+        });
+    },
+    
+    /**
+     * Compare distributions between snapshots
+     * @param {string} baseSqlFile - Base SQL file
+     * @param {string} metric - Metric name
+     * @param {number} fromBlock - Earlier block number
+     * @param {number} toBlock - Later block number
+     * @returns {Promise<Object>} DistributionComparison
+     */
+    compareDistributions(baseSqlFile, metric, fromBlock, toBlock) {
+        return this.fetch('/api/timeseries/distributions/compare', {
+            method: 'POST',
+            body: JSON.stringify({
+                base_sql_file: baseSqlFile,
+                metric: metric,
+                from_block: fromBlock,
+                to_block: toBlock
+            })
+        });
+    },
+    
+    /**
+     * Get available metrics for timeseries
+     * @param {string} baseSqlFile - Base SQL file
+     * @returns {Promise<Object>} Available metrics
+     */
+    getTimeseriesMetrics(baseSqlFile) {
+        return this.fetch(`/api/timeseries/available-metrics?base_sql_file=${encodeURIComponent(baseSqlFile)}`);
+    },
+    
+    // =========================================================================
+    // Temporal Composite
+    // =========================================================================
+    
+    /**
+     * Get available temporal operations
+     * @returns {Promise<Object>} AvailableOperationsResponse
+     */
+    getTemporalOperations() {
+        return this.fetch('/api/temporal/operations');
+    },
+    
+    /**
+     * Get temporal presets
+     * @returns {Promise<Object>} TemporalPresetsResponse
+     */
+    getTemporalPresets() {
+        return this.fetch('/api/temporal/presets');
+    },
+    
+    /**
+     * Compute temporal composite metric
+     * @param {Object} config - TemporalCompositeConfig
+     * @returns {Promise<Object>} TemporalCompositeResult
+     */
+    computeTemporalMetric(config) {
+        return this.fetch('/api/temporal/compute', {
+            method: 'POST',
+            body: JSON.stringify({ config })
+        });
+    },
+    
+    /**
+     * Preview temporal composite metric
+     * @param {Object} config - TemporalCompositeConfig
+     * @param {number} sampleSize - Number of top/bottom nodes
+     * @returns {Promise<Object>} TemporalPreviewResult
+     */
+    previewTemporalMetric(config, sampleSize = 10) {
+        return this.fetch('/api/temporal/preview', {
+            method: 'POST',
+            body: JSON.stringify({ config, sample_size: sampleSize })
+        });
+    },
+    
+    /**
+     * Apply temporal preset
+     * @param {string} presetId - Preset identifier
+     * @param {string} baseSqlFile - Base SQL file
+     * @param {number} targetBlock - Target block number
+     * @param {Object} options - Options
+     * @returns {Promise<Object>} TemporalCompositeResult
+     */
+    applyTemporalPreset(presetId, baseSqlFile, targetBlock, options = {}) {
+        return this.fetch(`/api/temporal/presets/${encodeURIComponent(presetId)}/apply`, {
+            method: 'POST',
+            body: JSON.stringify({
+                base_sql_file: baseSqlFile,
+                target_block: targetBlock,
+                window_blocks: options.windowBlocks,
+                save: options.save !== false
+            })
+        });
+    },
+    
+    /**
+     * Get saved temporal metrics
+     * @param {string} baseSqlFile - Base SQL file
+     * @returns {Promise<Object>} List of saved temporal metrics
+     */
+    getSavedTemporalMetrics(baseSqlFile) {
+        return this.fetch(`/api/temporal/saved?base_sql_file=${encodeURIComponent(baseSqlFile)}`);
     }
 };
 
 
 // =============================================================================
-// SNAPSHOT API
+// SNAPSHOT API (Separate object for snapshot-specific operations)
 // =============================================================================
 
 const SnapshotAPI = {
@@ -296,19 +539,8 @@ const SnapshotAPI = {
      * @returns {EventSource} - EventSource for manual close if needed
      */
     createBatch(params, onProgress, onComplete, onDone, onError) {
-        const url = '/api/snapshots/create-batch';
-        
-        // For SSE, we need to POST then listen
-        const eventSource = new EventSource(url + '?' + new URLSearchParams({
-            base_sql_file: params.base_sql_file,
-            block_numbers: params.block_numbers.join(','),
-            metrics_mode: params.metrics_mode || 'standard'
-        }));
-        
-        // Actually, SSE requires POST body, so we need a different approach
-        // Use fetch with ReadableStream instead
+        // Use fetch with ReadableStream for SSE
         this._createBatchWithFetch(params, onProgress, onComplete, onDone, onError);
-        
         return { close: () => {} }; // Placeholder
     },
     

@@ -2,6 +2,8 @@
  * Distributions Analysis Window
  * Standalone window for analyzing metric distributions
  * Features: Histograms with stats, Scatter plots with zoom and selection, PCA Analysis, Anomaly Detection
+ * 
+ * UPDATED: Now snapshot-aware - supports timeseries analysis when viewing snapshots
  */
 
 // Global state
@@ -14,6 +16,18 @@ let useSelectedOnly = false;
 let currentView = 'histograms';
 let selectedScatterPoints = [];
 let scatterNodeData = []; // Store node data for scatter plot selection
+
+// Snapshot state
+let isSnapshotMode = false;
+let currentSnapshotId = null;
+let currentSnapshotContext = null;
+let availableSnapshots = [];
+let timeseriesInitialized = false;
+let timeseriesResult = null;
+let timeseriesCharts = {
+    line: null,
+    box: null
+};
 
 // Anomaly detection state
 let anomalyAlgorithms = {};
@@ -54,6 +68,23 @@ window.addEventListener('message', (event) => {
         console.log('[Distributions] Received', nodeData.length, 'nodes');
         if (nodeData.length > 0) {
             console.log('[Distributions] Sample node keys:', Object.keys(nodeData[0]));
+        }
+        
+        // Handle snapshot context - debug log full payload
+        console.log('[Distributions] Payload isSnapshot:', payload.isSnapshot, 'snapshotId:', payload.snapshotId);
+        
+        isSnapshotMode = payload.isSnapshot === true;
+        currentSnapshotId = payload.snapshotId || null;
+        currentSnapshotContext = payload.snapshotContext || null;
+        
+        console.log('[Distributions] isSnapshotMode set to:', isSnapshotMode);
+        
+        if (isSnapshotMode) {
+            console.log('[Distributions] Enabling snapshot mode:', currentSnapshotId);
+            enableSnapshotMode();
+        } else {
+            console.log('[Distributions] Live network mode');
+            disableSnapshotMode();
         }
         
         // Mark selected nodes
@@ -176,6 +207,77 @@ function setupEventListeners() {
     document.getElementById('preview-composite-btn')?.addEventListener('click', previewComposite);
     document.getElementById('create-dist-composite-btn')?.addEventListener('click', createComposite);
     document.getElementById('export-composite-btn')?.addEventListener('click', exportCompositePreview);
+
+    // Timeseries event listeners (snapshot mode only)
+    document.getElementById('run-timeseries-btn')?.addEventListener('click', runTimeseriesAnalysis);
+    document.getElementById('export-timeseries-btn')?.addEventListener('click', exportTimeseries);
+    document.getElementById('apply-temporal-btn')?.addEventListener('click', applyTemporalMetric);
+}
+
+/**
+ * Apply temporal metric to graph
+ */
+async function applyTemporalMetric() {
+    if (!timeseriesResult || timeseriesResult.mode !== 'temporal') return;
+    
+    const config = timeseriesResult.config;
+    const btn = document.getElementById('apply-temporal-btn');
+    
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Applying...';
+        }
+        
+        // Re-run with save=true using correct structure
+        const response = await fetch('/api/temporal/compute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: config.name,
+                base_metric: config.baseMetric,
+                temporal_config: {
+                    operation: config.operation,
+                    window_blocks: config.windowSize
+                },
+                base_sql_file: config.baseSqlFile,
+                target_block: config.targetBlock,
+                save: true
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || 'Failed to apply');
+        }
+        
+        const data = await response.json();
+        
+        // Send to parent window to update graph
+        if (window.opener) {
+            window.opener.postMessage({
+                type: 'TEMPORAL_APPLIED',
+                data: {
+                    metric_name: config.name,
+                    node_updates: Object.entries(data.values || {}).map(([id, value]) => ({
+                        id,
+                        [config.name]: value
+                    }))
+                }
+            }, '*');
+        }
+        
+        alert(`Applied temporal metric "${config.name}" to graph`);
+        
+    } catch (error) {
+        console.error('[Distributions] Apply temporal error:', error);
+        alert('Error applying metric: ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Apply to Graph';
+        }
+    }
 }
 
 function switchView(view) {
@@ -192,6 +294,7 @@ function switchView(view) {
     document.getElementById('pca-config').classList.toggle('active', view === 'pca');
     document.getElementById('anomaly-config').classList.toggle('active', view === 'anomaly');
     document.getElementById('composite-config')?.classList.toggle('active', view === 'composite');
+    document.getElementById('timeseries-config')?.classList.toggle('active', view === 'timeseries');
 
     // Update main content
     document.getElementById('charts-area').style.display = view === 'histograms' ? 'flex' : 'none';
@@ -199,6 +302,7 @@ function switchView(view) {
     document.getElementById('pca-area').classList.toggle('active', view === 'pca');
     document.getElementById('anomaly-area').classList.toggle('active', view === 'anomaly');
     document.getElementById('composite-area')?.classList.toggle('active', view === 'composite');
+    document.getElementById('timeseries-area')?.classList.toggle('active', view === 'timeseries');
 
     // Update toolbar
     if (view === 'histograms') {
@@ -215,6 +319,9 @@ function switchView(view) {
     } else if (view === 'composite') {
         document.getElementById('chart-label').textContent = 'composite metrics';
         document.getElementById('chart-count').textContent = compositePreviewResult ? '1' : '0';
+    } else if (view === 'timeseries') {
+        document.getElementById('chart-label').textContent = 'timeseries analysis';
+        document.getElementById('chart-count').textContent = timeseriesResult ? '1' : '0';
     }
     
     // Initialize tabs if switching to them for the first time
@@ -226,6 +333,9 @@ function switchView(view) {
     }
     if (view === 'composite' && !compositeInitialized) {
         initializeCompositeTab();
+    }
+    if (view === 'timeseries' && !timeseriesInitialized) {
+        initializeTimeseriesTab();
     }
 }
 
@@ -1477,7 +1587,7 @@ function renderPCAScatterChart(result) {
                                 `PC2: ${point.y.toFixed(4)}`
                             ];
                             if (point.isSelected) {
-                                lines.unshift('★ SELECTED');
+                                lines.unshift('â˜… SELECTED');
                             }
                             if (result.reconstruction_errors) {
                                 const idx = context.dataIndex;
@@ -1812,7 +1922,7 @@ function updateAlgorithmUI() {
     document.getElementById('algorithm-description').innerHTML = `
         <p>${info.description}</p>
         <p class="complexity">Complexity: ${info.complexity}</p>
-         <p class="multivariate">${info.multivariate ? '✓ Supports multiple metrics' : '○ Single metric recommended'}</p>
+         <p class="multivariate">${info.multivariate ? 'âœ“ Supports multiple metrics' : 'â—‹ Single metric recommended'}</p>
     `;
     
     // Update parameters
@@ -2164,7 +2274,7 @@ function renderAnomalyTable(anomaliesOnly = false) {
                 (hasSelection ? ` (${selectedInView} selected)` : '');
         } else {
             tableInfo.textContent = `Showing ${filteredData.length} nodes (${anomalyCount} anomalies)` +
-                (hasSelection ? ` • ${selectedInView} selected highlighted` : '');
+                (hasSelection ? ` â€¢ ${selectedInView} selected highlighted` : '');
         }
     }
     
@@ -2205,7 +2315,7 @@ function renderAnomalyTable(anomaliesOnly = false) {
         const rowStyle = isSelected 
             ? 'background: rgba(255, 152, 0, 0.25); border-left: 3px solid #ff9800;' 
             : '';
-        const selectedMarker = isSelected ? '<span style="color:#ff9800;">★</span> ' : '';
+        const selectedMarker = isSelected ? '<span style="color:#ff9800;">â˜…</span> ' : '';
         
         return `
             <tr data-node-id="${node.id}" data-is-anomaly="${node.is_anomaly}" data-is-selected="${isSelected}" style="${rowStyle}">
@@ -2818,15 +2928,15 @@ function renderCompositePreview(result, metric1, metric2) {
     if (corrDisplay) {
         corrDisplay.innerHTML = `
             <div class="correlation-row">
-                <span>Input Correlation (${metric1} â†” ${metric2}):</span>
+                <span>Input Correlation (${metric1} Ã¢â€ â€ ${metric2}):</span>
                 <span class="${getCorrelationClass(corr.input_correlation)}">${formatNumber(corr.input_correlation)}</span>
             </div>
             <div class="correlation-row">
-                <span>${metric1} â†” Composite:</span>
+                <span>${metric1} Ã¢â€ â€ Composite:</span>
                 <span class="${getCorrelationClass(corr.m1_composite)}">${formatNumber(corr.m1_composite)}</span>
             </div>
             <div class="correlation-row">
-                <span>${metric2} â†” Composite:</span>
+                <span>${metric2} Ã¢â€ â€ Composite:</span>
                 <span class="${getCorrelationClass(corr.m2_composite)}">${formatNumber(corr.m2_composite)}</span>
             </div>
         `;
@@ -3125,4 +3235,1327 @@ function exportCompositePreview() {
     URL.revokeObjectURL(url);
     
     showCompositeSuccess('Preview exported to CSV');
+}
+
+// =============================================================================
+// SNAPSHOT MODE FUNCTIONS
+// =============================================================================
+
+/**
+ * Enable snapshot mode UI
+ */
+function enableSnapshotMode() {
+    console.log('[Distributions] Enabling snapshot mode');
+    
+    // Show snapshot indicator
+    const indicator = document.getElementById('snapshot-indicator');
+    if (indicator) {
+        indicator.classList.add('active');
+        
+        if (currentSnapshotContext) {
+            const blockDisplay = document.getElementById('snapshot-block-display');
+            const dateDisplay = document.getElementById('snapshot-date-display');
+            
+            if (blockDisplay) {
+                blockDisplay.textContent = currentSnapshotContext.blockNumber?.toLocaleString() || '-';
+            }
+            if (dateDisplay && currentSnapshotContext.blockTimestamp) {
+                const date = new Date(currentSnapshotContext.blockTimestamp);
+                dateDisplay.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+            }
+        }
+    }
+    
+    // Update timeseries empty state message
+    const hintEl = document.getElementById('timeseries-snapshot-hint');
+    if (hintEl) hintEl.style.display = 'none';
+    
+    // Enable timeseries controls
+    const runBtn = document.getElementById('run-timeseries-btn');
+    if (runBtn) runBtn.disabled = false;
+    
+    // Load available snapshots for timeseries
+    loadAvailableSnapshots().then(() => {
+        console.log('[Distributions] Snapshots loaded, count:', availableSnapshots.length);
+        // Populate compare dropdowns
+        populateCompareSnapshots();
+    });
+}
+
+/**
+ * Disable snapshot mode UI
+ */
+function disableSnapshotMode() {
+    console.log('[Distributions] Disabling snapshot mode');
+    
+    // Hide snapshot indicator
+    const indicator = document.getElementById('snapshot-indicator');
+    if (indicator) {
+        indicator.classList.remove('active');
+    }
+    
+    // Show hint in timeseries tab
+    const hintEl = document.getElementById('timeseries-snapshot-hint');
+    if (hintEl) hintEl.style.display = 'block';
+    
+    // Disable timeseries controls
+    const runBtn = document.getElementById('run-timeseries-btn');
+    if (runBtn) runBtn.disabled = true;
+    
+    // Clear snapshots list
+    const container = document.getElementById('timeseries-snapshots-list');
+    if (container) {
+        container.innerHTML = '<div style="color: #808080; font-size: 11px; padding: 10px;">Load a snapshot to enable timeseries analysis</div>';
+    }
+}
+
+/**
+ * Load available snapshots for timeseries comparison
+ */
+async function loadAvailableSnapshots() {
+    console.log('[Distributions] Loading available snapshots, context:', currentSnapshotContext);
+    
+    if (!currentSnapshotContext?.baseSqlFile) {
+        // Try to extract from snapshotId
+        if (currentSnapshotId) {
+            const match = currentSnapshotId.match(/^(.+)_block_\d+$/);
+            if (match) {
+                currentSnapshotContext = currentSnapshotContext || {};
+                currentSnapshotContext.baseSqlFile = match[1];
+                console.log('[Distributions] Extracted baseSqlFile from snapshotId:', currentSnapshotContext.baseSqlFile);
+            }
+        }
+    }
+    
+    if (!currentSnapshotContext?.baseSqlFile) {
+        console.warn('[Distributions] No base SQL file available');
+        return;
+    }
+    
+    try {
+        // Correct endpoint: /api/snapshots?base_sql_file=...
+        const url = `/api/snapshots?base_sql_file=${encodeURIComponent(currentSnapshotContext.baseSqlFile)}`;
+        console.log('[Distributions] Fetching snapshots from:', url);
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to load snapshots: ${response.status}`);
+        
+        const data = await response.json();
+        availableSnapshots = data.snapshots || [];
+        
+        console.log('[Distributions] Loaded', availableSnapshots.length, 'snapshots');
+        
+        // Update compare snapshots dropdowns if initialized
+        if (timeseriesInitialized) {
+            populateCompareSnapshots();
+        }
+    } catch (error) {
+        console.error('[Distributions] Error loading snapshots:', error);
+        availableSnapshots = [];
+    }
+}
+
+// =============================================================================
+// TIMESERIES TAB FUNCTIONS (Full Backend Integration)
+// =============================================================================
+
+/**
+ * Initialize the timeseries tab
+ */
+function initializeTimeseriesTab() {
+    console.log('[Distributions] Initializing timeseries tab, isSnapshotMode:', isSnapshotMode);
+    timeseriesInitialized = true;
+    
+    // Setup mode switching
+    setupTimeseriesModeHandlers();
+    
+    // Populate all metric dropdowns
+    populateTimeseriesMetrics();
+    
+    // If in snapshot mode, load snapshots for compare mode
+    if (isSnapshotMode) {
+        // If snapshots already loaded, populate immediately
+        if (availableSnapshots.length > 0) {
+            populateCompareSnapshots();
+        } else {
+            // Load and then populate
+            loadAvailableSnapshots().then(() => {
+                populateCompareSnapshots();
+            });
+        }
+        
+        // Enable controls
+        const runBtn = document.getElementById('run-timeseries-btn');
+        if (runBtn) runBtn.disabled = false;
+        
+        // Hide hint
+        const hintEl = document.getElementById('timeseries-snapshot-hint');
+        if (hintEl) hintEl.style.display = 'none';
+    } else {
+        // Show hint for non-snapshot mode
+        const hintEl = document.getElementById('timeseries-snapshot-hint');
+        if (hintEl) hintEl.style.display = 'block';
+        
+        // Disable controls
+        const runBtn = document.getElementById('run-timeseries-btn');
+        if (runBtn) runBtn.disabled = true;
+    }
+}
+
+/**
+ * Setup mode switching handlers
+ */
+function setupTimeseriesModeHandlers() {
+    const modeSelect = document.getElementById('timeseries-mode');
+    if (!modeSelect) return;
+    
+    modeSelect.addEventListener('change', () => {
+        const mode = modeSelect.value;
+        
+        // Hide all mode options
+        document.querySelectorAll('.mode-options').forEach(el => {
+            el.style.display = 'none';
+        });
+        
+        // Show selected mode options
+        const optionsEl = document.getElementById(`${mode}-options`);
+        if (optionsEl) optionsEl.style.display = 'block';
+        
+        // Update run button text
+        const runBtn = document.getElementById('run-timeseries-btn');
+        if (runBtn) {
+            switch (mode) {
+                case 'metric': runBtn.textContent = 'Run Metric Analysis'; break;
+                case 'network': runBtn.textContent = 'Load Network Summary'; break;
+                case 'compare': runBtn.textContent = 'Compare Distributions'; break;
+                case 'trajectory': runBtn.textContent = 'Track Nodes'; break;
+                case 'temporal': runBtn.textContent = 'Compute Temporal Metric'; break;
+            }
+        }
+        
+        // Show/hide apply button for temporal mode
+        const applyBtn = document.getElementById('apply-temporal-btn');
+        if (applyBtn) {
+            applyBtn.style.display = mode === 'temporal' ? 'inline-block' : 'none';
+        }
+    });
+    
+    // Temporal operation change - show/hide window input
+    const temporalOp = document.getElementById('temporal-operation');
+    if (temporalOp) {
+        temporalOp.addEventListener('change', () => {
+            const op = temporalOp.value;
+            const windowRow = document.getElementById('temporal-window-row');
+            // Some operations need window size
+            const needsWindow = ['moving_average', 'stability', 'volatility'].includes(op);
+            if (windowRow) windowRow.style.display = needsWindow ? 'block' : 'none';
+            
+            // Auto-generate name
+            const metric = document.getElementById('temporal-base-metric')?.value;
+            const nameInput = document.getElementById('temporal-name');
+            if (metric && nameInput && !nameInput.value) {
+                nameInput.value = `${metric}_${op}`;
+            }
+        });
+    }
+}
+
+/**
+ * Populate timeseries metric dropdown
+ */
+function populateTimeseriesMetrics() {
+    const selects = [
+        document.getElementById('timeseries-metric'),
+        document.getElementById('compare-metric'),
+        document.getElementById('trajectory-metric'),
+        document.getElementById('temporal-base-metric')
+    ];
+    
+    selects.forEach(select => {
+        if (!select) return;
+        select.innerHTML = '<option value="">Select metric...</option>';
+        allMetrics.forEach(metric => {
+            const option = document.createElement('option');
+            option.value = metric;
+            option.textContent = metric.replace(/_/g, ' ');
+            select.appendChild(option);
+        });
+    });
+}
+
+/**
+ * Populate compare snapshots dropdowns
+ */
+function populateCompareSnapshots() {
+    const fromSelect = document.getElementById('compare-from-snapshot');
+    const toSelect = document.getElementById('compare-to-snapshot');
+    
+    if (!fromSelect || !toSelect) return;
+    
+    const sorted = [...availableSnapshots].sort((a, b) => a.block_number - b.block_number);
+    
+    [fromSelect, toSelect].forEach(select => {
+        select.innerHTML = '<option value="">Select...</option>';
+        sorted.forEach(snap => {
+            const option = document.createElement('option');
+            option.value = snap.block_number;
+            option.textContent = `${snap.block_number.toLocaleString()} (${new Date(snap.block_timestamp).toLocaleDateString()})`;
+            select.appendChild(option);
+        });
+    });
+    
+    // Pre-select first and last
+    if (sorted.length >= 2) {
+        fromSelect.value = sorted[0].block_number;
+        toSelect.value = sorted[sorted.length - 1].block_number;
+    }
+}
+
+/**
+ * Run timeseries analysis based on selected mode
+ */
+async function runTimeseriesAnalysis() {
+    if (!isSnapshotMode) {
+        alert('Please load a historical snapshot first');
+        return;
+    }
+    
+    const mode = document.getElementById('timeseries-mode')?.value || 'metric';
+    const progressEl = document.getElementById('timeseries-progress');
+    const runBtn = document.getElementById('run-timeseries-btn');
+    
+    try {
+        if (progressEl) progressEl.style.display = 'block';
+        if (runBtn) runBtn.disabled = true;
+        
+        switch (mode) {
+            case 'metric':
+                await runMetricTimeseries();
+                break;
+            case 'network':
+                await runNetworkSummary();
+                break;
+            case 'compare':
+                await runDistributionComparison();
+                break;
+            case 'trajectory':
+                await runNodeTrajectories();
+                break;
+            case 'temporal':
+                await runTemporalMetric();
+                break;
+        }
+        
+        document.getElementById('export-timeseries-btn').disabled = false;
+        
+    } catch (error) {
+        console.error('[Distributions] Analysis error:', error);
+        const errorMsg = error.message || String(error);
+        alert('Analysis Error: ' + errorMsg);
+    } finally {
+        if (progressEl) progressEl.style.display = 'none';
+        if (runBtn) runBtn.disabled = false;
+    }
+}
+
+/**
+ * Run metric timeseries using backend API
+ */
+async function runMetricTimeseries() {
+    const metric = document.getElementById('timeseries-metric')?.value;
+    const aggregation = document.getElementById('timeseries-aggregation')?.value || 'mean';
+    const includeTrend = document.getElementById('include-trend')?.checked ?? true;
+    
+    if (!metric) throw new Error('Please select a metric');
+    
+    const baseSqlFile = currentSnapshotContext?.baseSqlFile;
+    if (!baseSqlFile) throw new Error('No base SQL file available');
+    
+    console.log('[Distributions] Running metric timeseries:', metric, aggregation);
+    
+    const url = `/api/timeseries/${encodeURIComponent(baseSqlFile)}/metrics/${encodeURIComponent(metric)}?aggregation=${aggregation}&include_trend=${includeTrend}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('[Distributions] Timeseries result:', data);
+    
+    timeseriesResult = {
+        mode: 'metric',
+        metric,
+        aggregation,
+        data
+    };
+    
+    displayMetricTimeseries(data);
+}
+
+/**
+ * Display metric timeseries results
+ */
+function displayMetricTimeseries(data) {
+    // Show content
+    document.getElementById('timeseries-empty-state').style.display = 'none';
+    document.getElementById('timeseries-content').style.display = 'block';
+    
+    // Update chart titles
+    document.getElementById('main-chart-title').textContent = 'Value Over Time';
+    document.getElementById('secondary-chart-title').textContent = 'Distribution';
+    document.getElementById('table-title').textContent = 'Snapshot Details';
+    
+    // Update summary stats
+    document.getElementById('ts-metric-name').textContent = data.metric?.replace(/_/g, ' ') || '-';
+    document.getElementById('ts-snapshot-count').textContent = data.data_points?.length || '-';
+    document.getElementById('ts-aggregation').textContent = data.aggregation || '-';
+    
+    // Trend display
+    const trendEl = document.getElementById('ts-trend');
+    if (data.trend) {
+        const direction = data.trend.direction || 'stable';
+        const change = data.trend.percent_change?.toFixed(1) || '0';
+        const icon = direction === 'increasing' ? '↑' : direction === 'decreasing' ? '↓' : '→';
+        trendEl.textContent = `${icon} ${Math.abs(change)}%`;
+        trendEl.className = direction === 'increasing' ? 'trend-up' : 
+                            direction === 'decreasing' ? 'trend-down' : 'trend-stable';
+    } else {
+        trendEl.textContent = '-';
+    }
+    
+    // Show trend panel if available
+    const trendPanel = document.getElementById('trend-panel');
+    if (data.trend && trendPanel) {
+        trendPanel.style.display = 'block';
+        document.getElementById('trend-direction').textContent = data.trend.direction || '-';
+        document.getElementById('trend-slope').textContent = data.trend.slope?.toFixed(6) || '-';
+        document.getElementById('trend-r2').textContent = data.trend.r_squared?.toFixed(4) || '-';
+        document.getElementById('trend-volatility').textContent = data.trend.volatility?.toFixed(4) || '-';
+        document.getElementById('trend-forecast').textContent = data.trend.forecast_next?.toFixed(4) || '-';
+    } else if (trendPanel) {
+        trendPanel.style.display = 'none';
+    }
+    
+    // Render charts
+    renderTimeseriesLineChart(data);
+    renderTimeseriesDistributionChart(data);
+    
+    // Reset table headers
+    const thead = document.getElementById('timeseries-table-head');
+    thead.innerHTML = `<tr>
+        <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #404040;">Block</th>
+        <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #404040;">Date</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Nodes</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Value</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Change</th>
+    </tr>`;
+    
+    // Populate table
+    populateMetricTimeseriesTable(data);
+}
+
+/**
+ * Render timeseries line chart
+ */
+function renderTimeseriesLineChart(data) {
+    const canvas = document.getElementById('timeseries-line-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.line) timeseriesCharts.line.destroy();
+    
+    const points = data.data_points || [];
+    const labels = points.map(p => {
+        if (p.timestamp) return new Date(p.timestamp).toLocaleDateString();
+        return `Block ${p.block_number}`;
+    });
+    const values = points.map(p => p.value);
+    
+    const datasets = [{
+        label: `${data.metric} (${data.aggregation})`,
+        data: values,
+        borderColor: '#4A90E2',
+        backgroundColor: 'rgba(74, 144, 226, 0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4
+    }];
+    
+    // Add trend line if available
+    if (data.trend && data.trend.slope !== undefined) {
+        const trendLine = points.map((_, i) => {
+            return data.trend.intercept + data.trend.slope * i;
+        });
+        datasets.push({
+            label: 'Trend',
+            data: trendLine,
+            borderColor: '#ff7875',
+            borderDash: [5, 5],
+            fill: false,
+            pointRadius: 0
+        });
+    }
+    
+    timeseriesCharts.line = new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { labels: { color: '#e0e0e0' } },
+                zoom: {
+                    zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                    pan: { enabled: true, mode: 'x' }
+                }
+            },
+            scales: {
+                x: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } },
+                y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+            }
+        }
+    });
+}
+
+/**
+ * Render distribution chart
+ */
+function renderTimeseriesDistributionChart(data) {
+    const canvas = document.getElementById('timeseries-box-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.box) timeseriesCharts.box.destroy();
+    
+    const points = data.data_points || [];
+    
+    // Show first, middle, last distributions if available
+    const indices = [0, Math.floor(points.length / 2), points.length - 1];
+    const labels = indices.map(i => points[i]?.block_number?.toLocaleString() || '');
+    
+    timeseriesCharts.box = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Value',
+                data: indices.map(i => points[i]?.value || 0),
+                backgroundColor: ['rgba(74, 144, 226, 0.5)', 'rgba(74, 144, 226, 0.7)', 'rgba(74, 144, 226, 0.9)']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } },
+                y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+            }
+        }
+    });
+}
+
+/**
+ * Populate metric timeseries table
+ */
+function populateMetricTimeseriesTable(data) {
+    const tbody = document.getElementById('timeseries-table-body');
+    if (!tbody) return;
+    
+    const points = data.data_points || [];
+    let prevValue = null;
+    
+    tbody.innerHTML = points.map((p, i) => {
+        const date = p.timestamp ? new Date(p.timestamp).toLocaleDateString() : '-';
+        const value = p.value;
+        
+        let changeText = '-';
+        let changeColor = '#808080';
+        if (prevValue !== null && prevValue !== 0) {
+            const change = ((value - prevValue) / Math.abs(prevValue) * 100).toFixed(1);
+            changeText = change > 0 ? `+${change}%` : `${change}%`;
+            changeColor = change > 0 ? '#52c41a' : change < 0 ? '#ff4d4f' : '#808080';
+        }
+        prevValue = value;
+        
+        return `
+            <tr>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; font-family: monospace;">${p.block_number?.toLocaleString() || '-'}</td>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333;">${date}</td>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; font-family: monospace;">${p.node_count?.toLocaleString() || '-'}</td>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; font-family: monospace;">${value?.toFixed(4) || '-'}</td>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; color: ${changeColor};">${changeText}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+/**
+ * Run network summary timeseries
+ */
+async function runNetworkSummary() {
+    const baseSqlFile = currentSnapshotContext?.baseSqlFile;
+    if (!baseSqlFile) throw new Error('No base SQL file available');
+    
+    const url = `/api/timeseries/${encodeURIComponent(baseSqlFile)}/network-summary`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('[Distributions] Network summary:', data);
+    
+    timeseriesResult = { mode: 'network', data };
+    displayNetworkSummary(data);
+}
+
+/**
+ * Display network summary
+ */
+function displayNetworkSummary(data) {
+    document.getElementById('timeseries-empty-state').style.display = 'none';
+    document.getElementById('timeseries-content').style.display = 'block';
+    document.getElementById('trend-panel').style.display = 'none';
+    
+    // Update chart titles
+    document.getElementById('main-chart-title').textContent = 'Network Growth';
+    document.getElementById('secondary-chart-title').textContent = 'Density';
+    
+    // Update stats
+    const points = data.data_points || [];
+    const latest = points[points.length - 1] || {};
+    const first = points[0] || {};
+    
+    document.getElementById('ts-metric-name').textContent = 'Network';
+    document.getElementById('ts-snapshot-count').textContent = points.length;
+    document.getElementById('ts-aggregation').textContent = 'Summary';
+    
+    // Growth rate
+    if (first.node_count && latest.node_count) {
+        const growth = ((latest.node_count - first.node_count) / first.node_count * 100).toFixed(1);
+        const trendEl = document.getElementById('ts-trend');
+        trendEl.textContent = `${growth > 0 ? '↑' : '↓'} ${Math.abs(growth)}% nodes`;
+        trendEl.className = growth > 0 ? 'trend-up' : 'trend-down';
+    }
+    
+    // Chart - node and edge counts
+    renderNetworkSummaryChart(data);
+    
+    // Table
+    document.getElementById('table-title').textContent = 'Network Statistics';
+    const thead = document.getElementById('timeseries-table-head');
+    thead.innerHTML = `<tr>
+        <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #404040;">Block</th>
+        <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #404040;">Date</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Nodes</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Edges</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Density</th>
+    </tr>`;
+    
+    const tbody = document.getElementById('timeseries-table-body');
+    tbody.innerHTML = points.map(p => `
+        <tr>
+            <td style="padding: 6px 12px; border-bottom: 1px solid #333; font-family: monospace;">${p.block_number?.toLocaleString() || '-'}</td>
+            <td style="padding: 6px 12px; border-bottom: 1px solid #333;">${p.timestamp ? new Date(p.timestamp).toLocaleDateString() : '-'}</td>
+            <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; font-family: monospace;">${p.node_count?.toLocaleString() || '-'}</td>
+            <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; font-family: monospace;">${p.edge_count?.toLocaleString() || '-'}</td>
+            <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; font-family: monospace;">${p.density?.toFixed(6) || '-'}</td>
+        </tr>
+    `).join('');
+}
+
+/**
+ * Render network summary chart
+ */
+function renderNetworkSummaryChart(data) {
+    const canvas = document.getElementById('timeseries-line-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.line) timeseriesCharts.line.destroy();
+    
+    const points = data.data_points || [];
+    const labels = points.map(p => new Date(p.timestamp).toLocaleDateString());
+    
+    timeseriesCharts.line = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Nodes',
+                    data: points.map(p => p.node_count),
+                    borderColor: '#4A90E2',
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Edges',
+                    data: points.map(p => p.edge_count),
+                    borderColor: '#52c41a',
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#e0e0e0' } } },
+            scales: {
+                x: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } },
+                y: { type: 'linear', position: 'left', ticks: { color: '#4A90E2' }, grid: { color: '#2a2a2a' } },
+                y1: { type: 'linear', position: 'right', ticks: { color: '#52c41a' }, grid: { drawOnChartArea: false } }
+            }
+        }
+    });
+    
+    // Density chart in secondary panel
+    renderNetworkDensityChart(data);
+}
+
+/**
+ * Render network density chart
+ */
+function renderNetworkDensityChart(data) {
+    const canvas = document.getElementById('timeseries-box-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.box) timeseriesCharts.box.destroy();
+    
+    const points = data.data_points || [];
+    const labels = points.map(p => new Date(p.timestamp).toLocaleDateString());
+    
+    timeseriesCharts.box = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Density',
+                data: points.map(p => p.density),
+                borderColor: '#ffc53d',
+                backgroundColor: 'rgba(255, 197, 61, 0.1)',
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#e0e0e0' } } },
+            scales: {
+                x: { ticks: { color: '#808080', display: false }, grid: { color: '#2a2a2a' } },
+                y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+            }
+        }
+    });
+}
+
+/**
+ * Run distribution comparison
+ */
+async function runDistributionComparison() {
+    const metric = document.getElementById('compare-metric')?.value;
+    const fromBlock = document.getElementById('compare-from-snapshot')?.value;
+    const toBlock = document.getElementById('compare-to-snapshot')?.value;
+    
+    if (!metric) throw new Error('Please select a metric');
+    if (!fromBlock || !toBlock) throw new Error('Please select both snapshots');
+    
+    const baseSqlFile = currentSnapshotContext?.baseSqlFile;
+    const url = `/api/timeseries/${encodeURIComponent(baseSqlFile)}/compare/${encodeURIComponent(metric)}?from_block=${fromBlock}&to_block=${toBlock}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('[Distributions] Comparison:', data);
+    
+    timeseriesResult = { mode: 'compare', metric, data };
+    displayDistributionComparison(data);
+}
+
+/**
+ * Display distribution comparison
+ */
+function displayDistributionComparison(data) {
+    document.getElementById('timeseries-empty-state').style.display = 'none';
+    document.getElementById('timeseries-content').style.display = 'block';
+    document.getElementById('trend-panel').style.display = 'none';
+    
+    // Update chart titles
+    document.getElementById('main-chart-title').textContent = 'Distribution Comparison';
+    document.getElementById('secondary-chart-title').textContent = 'Shift Summary';
+    document.getElementById('table-title').textContent = 'Statistical Comparison';
+    
+    document.getElementById('ts-metric-name').textContent = data.metric?.replace(/_/g, ' ') || '-';
+    document.getElementById('ts-snapshot-count').textContent = '2';
+    document.getElementById('ts-aggregation').textContent = 'Compare';
+    
+    // Significance - use correct field names
+    const trendEl = document.getElementById('ts-trend');
+    if (data.distributions_differ) {
+        trendEl.textContent = '⚠️ Different';
+        trendEl.className = 'trend-down';
+    } else {
+        trendEl.textContent = '✓ Similar';
+        trendEl.className = 'trend-stable';
+    }
+    
+    // Render comparison charts
+    renderComparisonChart(data);
+    
+    // Show KS test results in table with proper styling
+    const thead = document.getElementById('timeseries-table-head');
+    thead.innerHTML = '<tr><th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #404040;">Statistic</th><th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Value</th></tr>';
+    
+    const tbody = document.getElementById('timeseries-table-body');
+    const rows = [
+        ['KS Statistic', data.ks_statistic?.toFixed(4) || '-'],
+        ['P-Value', data.ks_pvalue?.toExponential(2) || '-'],
+        ['Mean Shift', data.mean_shift?.toFixed(4) || '-'],
+        ['Mean Shift %', (data.mean_shift_percent?.toFixed(2) || '-') + '%'],
+        ['Median Shift', data.median_shift?.toFixed(4) || '-'],
+        ['Std Change', data.std_change?.toFixed(4) || '-'],
+        ['From Count', data.from_count?.toLocaleString() || '-'],
+        ['To Count', data.to_count?.toLocaleString() || '-'],
+        ['Significant', data.distributions_differ ? 'Yes (p<0.05)' : 'No']
+    ];
+    
+    tbody.innerHTML = rows.map(([label, value]) => `
+        <tr>
+            <td style="padding: 6px 12px; border-bottom: 1px solid #333;">${label}</td>
+            <td style="padding: 6px 12px; text-align: right; border-bottom: 1px solid #333; font-family: monospace;">${value}</td>
+        </tr>
+    `).join('');
+}
+
+/**
+ * Render comparison charts
+ */
+function renderComparisonChart(data) {
+    const canvas = document.getElementById('timeseries-line-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.line) timeseriesCharts.line.destroy();
+    
+    // Show histogram comparison if available
+    const fromHist = data.from_histogram || { bins: [], counts: [] };
+    const toHist = data.to_histogram || { bins: [], counts: [] };
+    
+    if (fromHist.bins?.length > 0) {
+        const labels = fromHist.bins.slice(0, -1).map((b, i) => b.toFixed(2));
+        
+        timeseriesCharts.line = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: `Block ${data.from_block}`,
+                        data: fromHist.counts,
+                        backgroundColor: 'rgba(74, 144, 226, 0.5)'
+                    },
+                    {
+                        label: `Block ${data.to_block}`,
+                        data: toHist.counts,
+                        backgroundColor: 'rgba(82, 196, 26, 0.5)'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#e0e0e0' } } },
+                scales: {
+                    x: { ticks: { color: '#808080', maxRotation: 45 }, grid: { color: '#2a2a2a' } },
+                    y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+                }
+            }
+        });
+    }
+    
+    // Shift summary in secondary chart
+    const boxCanvas = document.getElementById('timeseries-box-chart');
+    if (!boxCanvas) return;
+    
+    if (timeseriesCharts.box) timeseriesCharts.box.destroy();
+    
+    timeseriesCharts.box = new Chart(boxCanvas, {
+        type: 'bar',
+        data: {
+            labels: ['Mean Shift', 'Median Shift', 'Std Change'],
+            datasets: [{
+                label: 'Change',
+                data: [
+                    data.mean_shift || 0,
+                    data.median_shift || 0,
+                    data.std_change || 0
+                ],
+                backgroundColor: [
+                    'rgba(74, 144, 226, 0.7)',
+                    'rgba(82, 196, 26, 0.7)',
+                    'rgba(255, 197, 61, 0.7)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } },
+                y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+            }
+        }
+    });
+}
+
+/**
+ * Run node trajectories
+ */
+async function runNodeTrajectories() {
+    const metric = document.getElementById('trajectory-metric')?.value;
+    const nodesInput = document.getElementById('trajectory-nodes')?.value;
+    const includeTrend = document.getElementById('trajectory-trend')?.checked ?? false;
+    
+    if (!metric) throw new Error('Please select a metric');
+    if (!nodesInput) throw new Error('Please enter node IDs');
+    
+    const nodeIds = nodesInput.split(',').map(s => s.trim()).filter(s => s);
+    if (nodeIds.length === 0) throw new Error('No valid node IDs');
+    if (nodeIds.length > 100) throw new Error('Maximum 100 nodes');
+    
+    const baseSqlFile = currentSnapshotContext?.baseSqlFile;
+    const url = `/api/timeseries/${encodeURIComponent(baseSqlFile)}/node-trajectories`;
+    
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            node_ids: nodeIds,
+            metric: metric,
+            include_statistics: true,
+            include_trend: includeTrend
+        })
+    });
+    
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('[Distributions] Trajectories:', data);
+    
+    timeseriesResult = { mode: 'trajectory', metric, nodeIds, data };
+    displayNodeTrajectories(data);
+}
+
+/**
+ * Display node trajectories
+ */
+function displayNodeTrajectories(data) {
+    document.getElementById('timeseries-empty-state').style.display = 'none';
+    document.getElementById('timeseries-content').style.display = 'block';
+    document.getElementById('trend-panel').style.display = 'none';
+    
+    const trajectories = data.trajectories || {};
+    const nodeCount = Object.keys(trajectories).length;
+    
+    document.getElementById('ts-metric-name').textContent = data.metric?.replace(/_/g, ' ') || '-';
+    document.getElementById('ts-snapshot-count').textContent = data.block_numbers?.length || '-';
+    document.getElementById('ts-aggregation').textContent = `${nodeCount} nodes`;
+    document.getElementById('ts-trend').textContent = '-';
+    
+    // Update chart title
+    document.getElementById('main-chart-title').textContent = 'Node Values Over Time';
+    document.getElementById('secondary-chart-title').textContent = 'Final Values';
+    
+    // Multi-line chart
+    renderTrajectoryChart(data);
+    renderTrajectoryBarChart(data);
+    
+    // Trajectory table
+    document.getElementById('table-title').textContent = 'Node Trajectories';
+    const thead = document.getElementById('timeseries-table-head');
+    thead.innerHTML = `<tr>
+        <th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #404040;">Node ID</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Snapshots</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">First Value</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Last Value</th>
+        <th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Change</th>
+    </tr>`;
+    
+    const tbody = document.getElementById('timeseries-table-body');
+    tbody.innerHTML = Object.entries(trajectories).map(([nodeId, traj]) => {
+        const values = traj.values || [];
+        const validValues = values.filter(v => v.value !== null && v.value !== undefined);
+        const first = validValues[0]?.value ?? '-';
+        const last = validValues[validValues.length - 1]?.value ?? '-';
+        let changeText = '-';
+        let changeColor = '#808080';
+        
+        if (typeof first === 'number' && typeof last === 'number' && first !== 0) {
+            const change = ((last - first) / Math.abs(first) * 100).toFixed(1);
+            changeText = change > 0 ? `+${change}%` : `${change}%`;
+            changeColor = change > 0 ? '#52c41a' : change < 0 ? '#ff4d4f' : '#808080';
+        }
+        
+        return `
+            <tr>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; font-family: monospace; font-size: 10px;">${nodeId.slice(0, 16)}...</td>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right;">${validValues.length}</td>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; font-family: monospace;">${typeof first === 'number' ? first.toFixed(4) : first}</td>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; font-family: monospace;">${typeof last === 'number' ? last.toFixed(4) : last}</td>
+                <td style="padding: 6px 12px; border-bottom: 1px solid #333; text-align: right; color: ${changeColor};">${changeText}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+/**
+ * Render trajectory bar chart (final values)
+ */
+function renderTrajectoryBarChart(data) {
+    const canvas = document.getElementById('timeseries-box-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.box) timeseriesCharts.box.destroy();
+    
+    const trajectories = data.trajectories || {};
+    const entries = Object.entries(trajectories);
+    const labels = entries.map(([id]) => id.slice(0, 8));
+    const lastValues = entries.map(([_, traj]) => {
+        const values = traj.values || [];
+        return values[values.length - 1]?.value ?? 0;
+    });
+    
+    timeseriesCharts.box = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Final Value',
+                data: lastValues,
+                backgroundColor: 'rgba(74, 144, 226, 0.7)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } },
+                y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+            }
+        }
+    });
+}
+
+/**
+ * Render trajectory chart
+ */
+function renderTrajectoryChart(data) {
+    const canvas = document.getElementById('timeseries-line-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.line) timeseriesCharts.line.destroy();
+    
+    const trajectories = data.trajectories || {};
+    const colors = ['#4A90E2', '#52c41a', '#ff7875', '#ffc53d', '#722ed1', '#13c2c2'];
+    
+    const datasets = Object.entries(trajectories).map(([nodeId, traj], i) => ({
+        label: nodeId,
+        data: (traj.values || []).map(v => v.value),
+        borderColor: colors[i % colors.length],
+        fill: false,
+        tension: 0.3
+    }));
+    
+    // Get labels from first trajectory
+    const firstTraj = Object.values(trajectories)[0];
+    const labels = (firstTraj?.values || []).map(v => v.block_number?.toLocaleString() || '');
+    
+    timeseriesCharts.line = new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#e0e0e0' } } },
+            scales: {
+                x: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } },
+                y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+            }
+        }
+    });
+}
+
+/**
+ * Run temporal metric computation
+ */
+async function runTemporalMetric() {
+    const baseMetric = document.getElementById('temporal-base-metric')?.value;
+    const operation = document.getElementById('temporal-operation')?.value;
+    const windowSize = parseInt(document.getElementById('temporal-window')?.value) || 5;
+    const name = document.getElementById('temporal-name')?.value;
+    
+    if (!baseMetric) throw new Error('Please select a base metric');
+    if (!name) throw new Error('Please enter a result name');
+    
+    const baseSqlFile = currentSnapshotContext?.baseSqlFile;
+    const targetBlock = currentSnapshotContext?.blockNumber;
+    
+    if (!baseSqlFile || !targetBlock) throw new Error('No snapshot context available');
+    
+    // Build the correct request structure for TemporalCompositeConfig
+    const requestBody = {
+        name: name,
+        base_metric: baseMetric,
+        temporal_config: {
+            operation: operation,
+            window_blocks: windowSize
+        },
+        base_sql_file: baseSqlFile,
+        target_block: targetBlock,
+        save: false // Preview first
+    };
+    
+    console.log('[Distributions] Running temporal metric:', requestBody);
+    
+    const url = `/api/temporal/compute`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
+        const errorMsg = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+        throw new Error(errorMsg);
+    }
+    
+    const data = await response.json();
+    console.log('[Distributions] Temporal metric:', data);
+    
+    timeseriesResult = { mode: 'temporal', data, config: { baseMetric, operation, windowSize, name, baseSqlFile, targetBlock } };
+    displayTemporalMetric(data);
+    
+    // Enable apply button
+    document.getElementById('apply-temporal-btn').disabled = false;
+}
+
+/**
+ * Display temporal metric results
+ */
+function displayTemporalMetric(data) {
+    document.getElementById('timeseries-empty-state').style.display = 'none';
+    document.getElementById('timeseries-content').style.display = 'block';
+    document.getElementById('trend-panel').style.display = 'none';
+    
+    // Update chart titles
+    document.getElementById('main-chart-title').textContent = 'Value Distribution';
+    document.getElementById('secondary-chart-title').textContent = 'Top/Bottom Nodes';
+    document.getElementById('table-title').textContent = data.formula_description || 'Temporal Metric Statistics';
+    
+    const stats = data.statistics || {};
+    
+    // Update stat cards
+    document.getElementById('ts-metric-name').textContent = data.name || '-';
+    document.getElementById('ts-snapshot-count').textContent = data.snapshots_used || data.blocks_used?.length || '-';
+    document.getElementById('ts-aggregation').textContent = data.temporal_operation || '-';
+    document.getElementById('ts-trend').textContent = `μ=${stats.mean?.toFixed(3) || '-'}`;
+    
+    // Statistics table with proper styling
+    const thead = document.getElementById('timeseries-table-head');
+    thead.innerHTML = '<tr><th style="text-align: left; padding: 8px 12px; border-bottom: 1px solid #404040;">Statistic</th><th style="text-align: right; padding: 8px 12px; border-bottom: 1px solid #404040;">Value</th></tr>';
+    
+    const tbody = document.getElementById('timeseries-table-body');
+    const rows = [
+        ['Nodes Computed', stats.count?.toLocaleString() || '-'],
+        ['Mean', stats.mean?.toFixed(6) || '-'],
+        ['Median', stats.median?.toFixed(6) || '-'],
+        ['Std Dev', stats.std?.toFixed(6) || '-'],
+        ['Min', stats.min?.toFixed(6) || '-'],
+        ['Max', stats.max?.toFixed(6) || '-'],
+        ['Q25', stats.q25?.toFixed(6) || '-'],
+        ['Q75', stats.q75?.toFixed(6) || '-']
+    ];
+    
+    tbody.innerHTML = rows.map(([label, value]) => `
+        <tr>
+            <td style="padding: 6px 12px; border-bottom: 1px solid #333;">${label}</td>
+            <td style="padding: 6px 12px; text-align: right; border-bottom: 1px solid #333; font-family: monospace;">${value}</td>
+        </tr>
+    `).join('');
+    
+    // Histogram
+    renderTemporalHistogram(data);
+    renderTemporalTopBottomChart(data);
+}
+
+/**
+ * Render temporal metric histogram
+ */
+function renderTemporalHistogram(data) {
+    const canvas = document.getElementById('timeseries-line-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.line) timeseriesCharts.line.destroy();
+    
+    const bins = data.histogram_bins || [];
+    const counts = data.histogram_counts || [];
+    
+    if (bins.length === 0) {
+        // No histogram data - show placeholder
+        timeseriesCharts.line = new Chart(canvas, {
+            type: 'bar',
+            data: { labels: ['No data'], datasets: [{ data: [0] }] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+        return;
+    }
+    
+    const labels = bins.slice(0, -1).map((b, i) => `${b.toFixed(3)}`);
+    
+    timeseriesCharts.line = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: data.name,
+                data: counts,
+                backgroundColor: 'rgba(74, 144, 226, 0.7)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#e0e0e0' } } },
+            scales: {
+                x: { ticks: { color: '#808080', maxRotation: 45 }, grid: { color: '#2a2a2a' } },
+                y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+            }
+        }
+    });
+}
+
+/**
+ * Render top/bottom nodes chart for temporal metrics
+ */
+function renderTemporalTopBottomChart(data) {
+    const canvas = document.getElementById('timeseries-box-chart');
+    if (!canvas) return;
+    
+    if (timeseriesCharts.box) timeseriesCharts.box.destroy();
+    
+    // Get top and bottom nodes if available
+    const topNodes = data.top_nodes || [];
+    const bottomNodes = data.bottom_nodes || [];
+    
+    if (topNodes.length === 0 && bottomNodes.length === 0) {
+        // Fallback: show statistics as bars
+        const stats = data.statistics || {};
+        timeseriesCharts.box = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: ['Min', 'Mean', 'Max'],
+                datasets: [{
+                    label: 'Value',
+                    data: [stats.min || 0, stats.mean || 0, stats.max || 0],
+                    backgroundColor: ['rgba(255, 77, 79, 0.7)', 'rgba(74, 144, 226, 0.7)', 'rgba(82, 196, 26, 0.7)']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } },
+                    y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+                }
+            }
+        });
+        return;
+    }
+    
+    // Show top 5 and bottom 5
+    const labels = [
+        ...topNodes.slice(0, 5).map(n => n.node_id?.slice(0, 8) || ''),
+        ...bottomNodes.slice(-5).map(n => n.node_id?.slice(0, 8) || '')
+    ];
+    const values = [
+        ...topNodes.slice(0, 5).map(n => n.value),
+        ...bottomNodes.slice(-5).map(n => n.value)
+    ];
+    const colors = [
+        ...Array(Math.min(5, topNodes.length)).fill('rgba(82, 196, 26, 0.7)'),
+        ...Array(Math.min(5, bottomNodes.length)).fill('rgba(255, 77, 79, 0.7)')
+    ];
+    
+    timeseriesCharts.box = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Value',
+                data: values,
+                backgroundColor: colors
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#808080', font: { size: 9 } }, grid: { color: '#2a2a2a' } },
+                y: { ticks: { color: '#808080' }, grid: { color: '#2a2a2a' } }
+            }
+        }
+    });
+}
+
+/**
+ * Export timeseries data to CSV
+ */
+function exportTimeseries() {
+    if (!timeseriesResult) return;
+    
+    let csv = '';
+    const mode = timeseriesResult.mode;
+    
+    if (mode === 'metric' || mode === 'network') {
+        const points = timeseriesResult.data?.data_points || [];
+        const headers = Object.keys(points[0] || {});
+        csv = headers.join(',') + '\n';
+        csv += points.map(p => headers.map(h => p[h] ?? '').join(',')).join('\n');
+    } else if (mode === 'trajectory') {
+        const trajectories = timeseriesResult.data?.trajectories || {};
+        csv = 'node_id,block_number,value\n';
+        Object.entries(trajectories).forEach(([nodeId, traj]) => {
+            (traj.values || []).forEach(v => {
+                csv += `${nodeId},${v.block_number},${v.value}\n`;
+            });
+        });
+    } else if (mode === 'temporal') {
+        const values = timeseriesResult.data?.values || {};
+        csv = 'node_id,value\n';
+        Object.entries(values).forEach(([id, val]) => {
+            csv += `${id},${val}\n`;
+        });
+    }
+    
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `timeseries_${mode}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
