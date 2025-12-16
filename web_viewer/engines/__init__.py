@@ -1,54 +1,74 @@
 """
 Engines Package
 
-Core computation engines for graph analysis:
-- GraphMetrics: Comprehensive graph metrics computation
-- AnomalyEngine: Anomaly detection with multiple algorithms
-- CompositeMetricEngine: Composite metric creation
-- MetricProfiler: Automatic metric analysis and configuration
+Computation engines for graph metrics, anomaly detection, and analysis.
 """
 
+# Graph metrics
 from .graph_metrics import GraphMetrics, METRIC_CATEGORIES, METRIC_PRESETS
 
+# Anomaly detection engine and config
+from .anomaly_engine import AnomalyEngine
+from .anomaly_config import (
+    MetricConfig,
+    MetricTransform,
+    AlgorithmConfig,
+    NaNStrategy,
+    GlobalScaling,
+    ScoreNormalization,
+    ThresholdMethod,
+    AggregationMethod,
+    TailSide,
+)
+
+# Metric profiler
+from .metric_profiler import MetricProfiler, MetricProfile
+
+# Composite metric engine
+from .composite_engine import CompositeMetricEngine
+
+# Preprocessing
+from .preprocessing import Preprocessor, ChunkedPreprocessor
+
+# Result builder
+from .result_builder import ResultBuilder
+
+# Timeseries engine
+from .timeseries_engine import TimeseriesEngine, timeseries_engine
+
+# Temporal composite engine
+from .temporal_composite_engine import TemporalCompositeEngine, temporal_composite_engine
+
 __all__ = [
+    # Graph metrics
     "GraphMetrics",
     "METRIC_CATEGORIES",
     "METRIC_PRESETS",
+    # Anomaly
+    "AnomalyEngine",
+    "MetricConfig",
+    "MetricTransform",
+    "AlgorithmConfig",
+    "NaNStrategy",
+    "GlobalScaling",
+    "ScoreNormalization",
+    "ThresholdMethod",
+    "AggregationMethod",
+    "TailSide",
+    # Profiler
+    "MetricProfiler",
+    "MetricProfile",
+    # Composite
+    "CompositeMetricEngine",
+    # Preprocessing
+    "Preprocessor",
+    "ChunkedPreprocessor",
+    # Result builder
+    "ResultBuilder",
+    # Timeseries
+    "TimeseriesEngine",
+    "timeseries_engine",
+    # Temporal composite
+    "TemporalCompositeEngine",
+    "temporal_composite_engine",
 ]
-
-# Conditionally export anomaly-related classes
-try:
-    from .anomaly_config import (
-        MetricConfig,
-        MetricTransform,
-        AlgorithmConfig,
-        ThresholdMethod,
-        NaNStrategy,
-        ScoreNormalization,
-        GlobalScaling,
-    )
-    from .anomaly_engine import AnomalyEngine
-    from .result_builder import AnomalyResult, GroupAnomalyStats, ThresholdInfo
-    from .metric_profiler import MetricProfiler, MetricProfile
-    from .preprocessing import Preprocessor
-    from .composite_engine import CompositeMetricEngine
-    
-    __all__.extend([
-        "MetricConfig",
-        "MetricTransform", 
-        "AlgorithmConfig",
-        "ThresholdMethod",
-        "NaNStrategy",
-        "ScoreNormalization",
-        "GlobalScaling",
-        "AnomalyEngine",
-        "AnomalyResult",
-        "GroupAnomalyStats",
-        "ThresholdInfo",
-        "MetricProfiler",
-        "MetricProfile",
-        "Preprocessor",
-        "CompositeMetricEngine",
-    ])
-except ImportError as e:
-    print(f"[WARNING] Some anomaly detection features unavailable: {e}")

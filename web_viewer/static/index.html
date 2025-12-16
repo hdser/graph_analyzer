@@ -108,6 +108,185 @@
                     </div>
                 </div>
 
+                <!-- Historical Snapshots Section -->
+                <div class="section collapsible" id="snapshots-section">
+                    <div class="collapsible-header">
+                        <h3>Historical Snapshots</h3>
+                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                    </div>
+                    <div class="style-subsection">
+                        <!-- Status indicator -->
+                        <div id="snapshot-status" class="snapshot-status-indicator">Live View</div>
+                        
+                        <!-- Snapshot selection -->
+                        <div class="style-row">
+                            <label>Available Snapshots</label>
+                            <select id="snapshot-select" class="snapshot-dropdown">
+                                <option value="">Select snapshot...</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Action buttons -->
+                        <div class="button-group snapshot-actions">
+                            <button id="load-snapshot-btn" class="primary-btn" disabled>
+                                Load Snapshot
+                            </button>
+                            <button id="return-live-btn" class="secondary-btn" style="display: none;">
+                                Return to Live
+                            </button>
+                        </div>
+                        
+                        <!-- Compare snapshots subsection -->
+                        <div class="snapshot-compare-subsection">
+                            <div class="subsection-header collapsible-sub" data-target="snapshot-compare-content">
+                                <span>Compare Snapshots</span>
+                                <span class="collapse-icon-small">▼</span>
+                            </div>
+                            
+                            <div id="snapshot-compare-content" class="subsection-content" style="display: none;">
+                                <div class="style-row">
+                                    <label>From (Earlier)</label>
+                                    <select id="compare-from-select" class="snapshot-dropdown">
+                                        <option value="">Select snapshot...</option>
+                                    </select>
+                                </div>
+                                <div class="style-row">
+                                    <label>To (Later)</label>
+                                    <select id="compare-to-select" class="snapshot-dropdown">
+                                        <option value="">Select snapshot...</option>
+                                    </select>
+                                </div>
+                                <div class="button-group">
+                                    <button id="compare-snapshots-btn" class="primary-btn" disabled>
+                                        Compare
+                                    </button>
+                                    <button id="exit-compare-btn" class="secondary-btn" style="display: none;">
+                                        Exit Compare
+                                    </button>
+                                </div>
+                                <!-- Comparison results summary -->
+                                <div id="compare-results" class="compare-results" style="display: none;">
+                                    <div class="compare-stat added">
+                                        <span class="compare-label">Added:</span>
+                                        <span id="compare-added-count">0</span> nodes
+                                    </div>
+                                    <div class="compare-stat removed">
+                                        <span class="compare-label">Removed:</span>
+                                        <span id="compare-removed-count">0</span> nodes
+                                    </div>
+                                    <div class="compare-stat retained">
+                                        <span class="compare-label">Retained:</span>
+                                        <span id="compare-retained-count">0</span> nodes
+                                    </div>
+                                    <div class="compare-legend">
+                                        <span class="legend-item"><span class="legend-color added"></span> Added</span>
+                                        <span class="legend-item"><span class="legend-color removed"></span> Removed</span>
+                                        <span class="legend-item"><span class="legend-color retained"></span> Retained</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Animation subsection -->
+                        <div class="snapshot-animation-subsection">
+                            <div class="subsection-header collapsible-sub" data-target="snapshot-animation-content">
+                                <span>Timeline Animation</span>
+                                <span class="collapse-icon-small">▼</span>
+                            </div>
+                            
+                            <div id="snapshot-animation-content" class="subsection-content" style="display: none;">
+                                <div class="animation-controls">
+                                    <div class="animation-buttons">
+                                        <button id="anim-prev-btn" class="anim-btn" title="Previous">⏮</button>
+                                        <button id="anim-play-btn" class="anim-btn play" title="Play/Pause">▶</button>
+                                        <button id="anim-next-btn" class="anim-btn" title="Next">⏭</button>
+                                    </div>
+                                    <div class="animation-speed">
+                                        <label>Speed</label>
+                                        <input type="range" id="anim-speed" min="0.5" max="5" step="0.5" value="1">
+                                        <span id="anim-speed-label">1x</span>
+                                    </div>
+                                </div>
+                                <div class="animation-timeline">
+                                    <input type="range" id="anim-timeline" min="0" max="100" value="0" class="timeline-slider">
+                                    <div class="timeline-labels">
+                                        <span id="anim-current-label">-</span>
+                                        <span id="anim-total-label">-</span>
+                                    </div>
+                                </div>
+                                <div class="animation-info">
+                                    <div id="anim-block-info">Block: -</div>
+                                    <div id="anim-date-info">Date: -</div>
+                                </div>
+                                <div class="style-row">
+                                    <label title="Include edges in animation (may increase load time)">
+                                        <input type="checkbox" id="anim-include-edges"> Include Edges
+                                    </label>
+                                </div>
+                                <button id="load-animation-btn" class="primary-btn">
+                                    Start Animation Mode
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Create snapshot section (collapsible) -->
+                        <div class="snapshot-create-subsection">
+                            <div class="subsection-header collapsible-sub" data-target="snapshot-create-content">
+                                <span>Create Snapshot</span>
+                                <span class="collapse-icon-small">▼</span>
+                            </div>
+                            
+                            <div id="snapshot-create-content" class="subsection-content">
+                                <div class="style-row">
+                                    <label>Block Number</label>
+                                    <div class="input-with-button">
+                                        <input type="number" id="snapshot-block-input" 
+                                               class="block-input" placeholder="e.g., 12345678">
+                                        <button id="suggest-blocks-btn" class="mini-icon-btn" title="Suggest block">
+                                            💡
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="style-row">
+                                    <button id="create-snapshot-btn" class="secondary-btn">
+                                        Create Snapshot
+                                    </button>
+                                </div>
+                                
+                                <!-- Batch creation -->
+                                <div class="batch-section">
+                                    <div class="style-row">
+                                        <label>Batch Create</label>
+                                    </div>
+                                    <div class="style-row batch-options">
+                                        <select id="snapshot-interval" class="batch-select">
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                        </select>
+                                        <input type="number" id="snapshot-count" value="30" min="1" max="90" 
+                                               class="batch-count" title="Number of snapshots">
+                                    </div>
+                                    <div class="style-row">
+                                        <button id="batch-snapshots-btn" class="secondary-btn">
+                                            Create Batch
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Progress indicator -->
+                        <div id="snapshot-progress" class="snapshot-progress-container" style="display: none;">
+                            <div class="progress-bar-wrapper">
+                                <div id="snapshot-progress-bar" class="snapshot-progress-bar"></div>
+                            </div>
+                            <div id="snapshot-progress-text" class="snapshot-progress-text"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="section collapsible" id="metrics-section">
                     <div class="collapsible-header">
                         <h3>Metrics Analysis</h3>
@@ -413,6 +592,10 @@
     <script src="/static/js/search.js"></script>
     <script src="/static/js/export.js"></script>
     <script src="/static/js/data-explorer.js"></script>
+    <script src="/static/js/snapshots.js"></script>
+    <script src="/static/js/snapshot-analysis.js"></script>
+    <script src="/static/js/timeseries.js"></script>
+    <script src="/static/js/temporal-composite.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

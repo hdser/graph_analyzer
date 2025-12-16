@@ -52,6 +52,48 @@
             color: #808080;
         }
 
+        /* Snapshot indicator */
+        .snapshot-indicator {
+            display: none;
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+            border: 1px solid #4A90E2;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-top: 10px;
+        }
+
+        .snapshot-indicator.active {
+            display: block;
+        }
+
+        .snapshot-indicator .snapshot-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #4A90E2;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .snapshot-indicator .snapshot-badge::before {
+            content: "📸";
+            font-size: 12px;
+        }
+
+        .snapshot-indicator .snapshot-details {
+            font-size: 11px;
+            color: #a0c4e8;
+            line-height: 1.5;
+        }
+
+        .snapshot-indicator .snapshot-block {
+            font-family: monospace;
+            color: #7fbaeb;
+        }
+
         .filter-section {
             padding: 15px 20px;
             border-bottom: 1px solid #2a2a2a;
@@ -135,8 +177,8 @@
             white-space: nowrap;
         }
 
-        /* Config panels (scatter, anomaly, pca, composite) */
-        .scatter-config, .anomaly-config, .pca-config, .composite-config {
+        /* Config panels (scatter, anomaly, pca, composite, timeseries) */
+        .scatter-config, .anomaly-config, .pca-config, .composite-config, .timeseries-config {
             padding: 15px;
             display: none;
             flex-direction: column;
@@ -144,11 +186,11 @@
             overflow-y: auto;
         }
 
-        .scatter-config.active, .anomaly-config.active, .pca-config.active, .composite-config.active {
+        .scatter-config.active, .anomaly-config.active, .pca-config.active, .composite-config.active, .timeseries-config.active {
             display: flex;
         }
 
-        .scatter-config h4, .anomaly-config h4, .pca-config h4, .composite-config h4 {
+        .scatter-config h4, .anomaly-config h4, .pca-config h4, .composite-config h4, .timeseries-config h4 {
             font-size: 12px;
             color: #4A90E2;
             margin-bottom: 12px;
@@ -994,6 +1036,183 @@
             text-align: center;
             color: #808080;
         }
+
+        /* Timeseries area */
+        .timeseries-area {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        .timeseries-area.active {
+            display: flex;
+        }
+
+        .timeseries-results-card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .timeseries-body {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .timeseries-empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #808080;
+        }
+
+        .timeseries-empty-state h3 {
+            color: #e0e0e0;
+            margin-bottom: 10px;
+        }
+
+        .timeseries-charts-row {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .timeseries-chart-panel {
+            flex: 1;
+            background: #0a0a0a;
+            border-radius: 6px;
+            padding: 15px;
+            min-height: 300px;
+        }
+
+        .timeseries-chart-panel h4 {
+            font-size: 12px;
+            color: #808080;
+            margin-bottom: 10px;
+        }
+
+        .timeseries-chart-wrapper {
+            height: 250px;
+            position: relative;
+        }
+
+        .snapshot-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+
+        .snapshot-list-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .snapshot-list-item:hover {
+            border-color: #4A90E2;
+        }
+
+        .snapshot-list-item.selected {
+            background: #1e3a5f;
+            border-color: #4A90E2;
+        }
+
+        .snapshot-list-item input[type="checkbox"] {
+            accent-color: #4A90E2;
+        }
+
+        .snapshot-block-number {
+            font-family: monospace;
+            color: #4A90E2;
+        }
+
+        .snapshot-date {
+            color: #808080;
+            font-size: 11px;
+        }
+
+        /* Mode options for timeseries */
+        .mode-options {
+            border-top: 1px solid #2a2a2a;
+            margin-top: 10px;
+            padding-top: 10px;
+        }
+
+        /* Trend indicators */
+        .trend-up { color: #52c41a; }
+        .trend-down { color: #ff4d4f; }
+        .trend-stable { color: #808080; }
+
+        /* Stats grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .stat-card {
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .stat-card .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #4A90E2;
+        }
+
+        .stat-card .stat-label {
+            font-size: 10px;
+            color: #808080;
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+
+        /* Trend analysis panel */
+        .trend-panel {
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .trend-panel h4 {
+            color: #4A90E2;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+
+        .trend-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #1a1a1a;
+            font-size: 12px;
+        }
+
+        .trend-row:last-child {
+            border-bottom: none;
+        }
     </style>
 </head>
 <body>
@@ -1002,6 +1221,15 @@
             <div class="sidebar-header">
                 <h2>Distribution Analysis</h2>
                 <p id="node-info">Waiting for data...</p>
+                
+                <!-- Snapshot mode indicator -->
+                <div class="snapshot-indicator" id="snapshot-indicator">
+                    <div class="snapshot-badge">Snapshot Mode</div>
+                    <div class="snapshot-details">
+                        Block: <span class="snapshot-block" id="snapshot-block-display">-</span><br>
+                        <span id="snapshot-date-display">-</span>
+                    </div>
+                </div>
             </div>
             
             <div class="filter-section">
@@ -1017,6 +1245,7 @@
                 <button class="view-tab" data-view="pca">PCA</button>
                 <button class="view-tab" data-view="anomaly">Anomaly</button>
                 <button class="view-tab" data-view="composite">Composite</button>
+                <button class="view-tab" data-view="timeseries">Timeseries</button>
             </div>
             
             <!-- Histogram metrics list -->
@@ -1164,7 +1393,7 @@
                 <div class="config-row">
                     <label>Operation</label>
                     <select id="dist-composite-operation">
-                        <option value="multiply">Multiply (M1 × M2)</option>
+                        <option value="multiply">Multiply (M1 Ã— M2)</option>
                         <option value="add">Add (M1 + M2)</option>
                         <option value="subtract">Subtract (M1 - M2)</option>
                         <option value="divide">Divide (M1 / M2)</option>
@@ -1213,6 +1442,171 @@
                 
                 <div id="composite-progress" style="display: none; margin-top: 10px; font-size: 11px; color: #808080;">
                     Computing preview...
+                </div>
+            </div>
+
+            <!-- Timeseries config (snapshot mode only) -->
+            <div class="timeseries-config" id="timeseries-config">
+                <h4>Analysis Mode</h4>
+                <div class="config-row">
+                    <select id="timeseries-mode">
+                        <option value="metric">Metric Timeseries</option>
+                        <option value="network">Network Summary</option>
+                        <option value="compare">Compare Distributions</option>
+                        <option value="trajectory">Node Trajectories</option>
+                        <option value="temporal">Temporal Metrics</option>
+                    </select>
+                </div>
+                
+                <!-- Metric Timeseries Options -->
+                <div id="metric-options" class="mode-options">
+                    <h4 style="margin-top: 12px;">Metric Timeseries</h4>
+                    <p style="font-size: 11px; color: #808080; margin-bottom: 10px;">
+                        Track how a metric changes over time with trend analysis.
+                    </p>
+                    
+                    <div class="config-row">
+                        <label>Metric</label>
+                        <select id="timeseries-metric">
+                            <option value="">Select metric...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="config-row">
+                        <label>Aggregation</label>
+                        <select id="timeseries-aggregation">
+                            <option value="mean">Mean</option>
+                            <option value="median">Median</option>
+                            <option value="sum">Sum</option>
+                            <option value="min">Minimum</option>
+                            <option value="max">Maximum</option>
+                            <option value="std">Std Deviation</option>
+                            <option value="p25">25th Percentile</option>
+                            <option value="p75">75th Percentile</option>
+                            <option value="p95">95th Percentile</option>
+                        </select>
+                    </div>
+                    
+                    <div class="config-row">
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="include-trend" checked>
+                            Include Trend Analysis
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Network Summary Options -->
+                <div id="network-options" class="mode-options" style="display: none;">
+                    <h4 style="margin-top: 12px;">Network Summary</h4>
+                    <p style="font-size: 11px; color: #808080; margin-bottom: 10px;">
+                        Track network-level statistics: nodes, edges, density, growth rates.
+                    </p>
+                </div>
+                
+                <!-- Compare Distributions Options -->
+                <div id="compare-options" class="mode-options" style="display: none;">
+                    <h4 style="margin-top: 12px;">Compare Distributions</h4>
+                    <p style="font-size: 11px; color: #808080; margin-bottom: 10px;">
+                        Compare metric distributions between two snapshots.
+                    </p>
+                    
+                    <div class="config-row">
+                        <label>Metric</label>
+                        <select id="compare-metric">
+                            <option value="">Select metric...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="config-row">
+                        <label>From Snapshot</label>
+                        <select id="compare-from-snapshot">
+                            <option value="">Select...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="config-row">
+                        <label>To Snapshot</label>
+                        <select id="compare-to-snapshot">
+                            <option value="">Select...</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Node Trajectories Options -->
+                <div id="trajectory-options" class="mode-options" style="display: none;">
+                    <h4 style="margin-top: 12px;">Node Trajectories</h4>
+                    <p style="font-size: 11px; color: #808080; margin-bottom: 10px;">
+                        Track how specific nodes evolve over time.
+                    </p>
+                    
+                    <div class="config-row">
+                        <label>Metric</label>
+                        <select id="trajectory-metric">
+                            <option value="">Select metric...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="config-row">
+                        <label>Node IDs (comma-separated)</label>
+                        <input type="text" id="trajectory-nodes" placeholder="node1, node2, node3">
+                    </div>
+                    
+                    <div class="config-row">
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="trajectory-trend">
+                            Include Trend Per Node
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Temporal Metrics Options -->
+                <div id="temporal-options" class="mode-options" style="display: none;">
+                    <h4 style="margin-top: 12px;">Temporal Metrics</h4>
+                    <p style="font-size: 11px; color: #808080; margin-bottom: 10px;">
+                        Create metrics based on how values change over time.
+                    </p>
+                    
+                    <div class="config-row">
+                        <label>Base Metric</label>
+                        <select id="temporal-base-metric">
+                            <option value="">Select metric...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="config-row">
+                        <label>Operation</label>
+                        <select id="temporal-operation">
+                            <option value="velocity">Velocity (Rate of Change)</option>
+                            <option value="acceleration">Acceleration (2nd Derivative)</option>
+                            <option value="stability">Stability (Consistency)</option>
+                            <option value="volatility">Volatility (Variation)</option>
+                            <option value="momentum">Momentum (Trend Strength)</option>
+                            <option value="trend_strength">Trend Strength (R² of fit)</option>
+                            <option value="age">Age (Blocks since first seen)</option>
+                            <option value="tenure_ratio">Tenure Ratio (Presence %)</option>
+                            <option value="z_score_temporal">Z-Score (vs historical self)</option>
+                            <option value="percentile_rank">Percentile Rank (over time)</option>
+                            <option value="growth_score">Growth Score (composite)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="config-row" id="temporal-window-row">
+                        <label>Window Size (snapshots)</label>
+                        <input type="number" id="temporal-window" value="5" min="2" max="20">
+                    </div>
+                    
+                    <div class="config-row">
+                        <label>Result Name</label>
+                        <input type="text" id="temporal-name" placeholder="e.g., pagerank_velocity">
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary" id="run-timeseries-btn" style="width:100%; margin-top:15px;">
+                    Run Analysis
+                </button>
+                
+                <div id="timeseries-progress" style="display: none; margin-top: 10px; font-size: 11px; color: #808080;">
+                    Loading data...
                 </div>
             </div>
         </div>
@@ -1267,7 +1661,7 @@
                             <span class="scatter-stat-value" id="scatter-correlation">-</span>
                         </div>
                         <div class="scatter-stat">
-                            <span class="scatter-stat-label">R²:</span>
+                            <span class="scatter-stat-label">RÂ²:</span>
                             <span class="scatter-stat-value" id="scatter-r2">-</span>
                         </div>
                     </div>
@@ -1467,9 +1861,125 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Timeseries view (snapshot mode only) -->
+            <div class="timeseries-area" id="timeseries-area">
+                <div class="timeseries-results-card">
+                    <div class="chart-header">
+                        <span class="chart-title" id="timeseries-results-title">Timeseries Analysis</span>
+                        <div class="timeseries-actions">
+                            <button class="btn btn-small" id="apply-temporal-btn" disabled style="display: none;">Apply to Graph</button>
+                            <button class="btn btn-small" id="export-timeseries-btn" disabled>Export CSV</button>
+                        </div>
+                    </div>
+                    
+                    <div class="timeseries-body">
+                        <div class="timeseries-empty-state" id="timeseries-empty-state">
+                            <h3>Analyze Metrics Over Time</h3>
+                            <p id="timeseries-empty-message">Select an analysis mode and configure options in the sidebar, then click "Run Analysis".</p>
+                            <p id="timeseries-snapshot-hint" style="margin-top: 10px; font-size: 12px; color: #606060; display: none;">
+                                💡 Load a historical snapshot first to enable timeseries analysis.
+                            </p>
+                            <div style="margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto;">
+                                <p style="font-size: 12px; color: #808080; margin-bottom: 10px;"><strong>Available Analysis Modes:</strong></p>
+                                <ul style="font-size: 11px; color: #606060; line-height: 1.8; padding-left: 20px;">
+                                    <li><strong>Metric Timeseries</strong> - Track aggregated metric values with trend analysis</li>
+                                    <li><strong>Network Summary</strong> - Node/edge counts, density, growth rates</li>
+                                    <li><strong>Compare Distributions</strong> - Statistical comparison between snapshots</li>
+                                    <li><strong>Node Trajectories</strong> - Track how specific nodes evolve</li>
+                                    <li><strong>Temporal Metrics</strong> - Create velocity, stability, momentum metrics</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="timeseries-content" id="timeseries-content" style="display: none;">
+                            <!-- Summary stats -->
+                            <div class="stats-grid" id="timeseries-stats">
+                                <div class="stat-card">
+                                    <div class="stat-value" id="ts-metric-name">-</div>
+                                    <div class="stat-label">Metric</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-value" id="ts-snapshot-count">-</div>
+                                    <div class="stat-label">Snapshots</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-value" id="ts-aggregation">-</div>
+                                    <div class="stat-label">Aggregation</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-value" id="ts-trend">-</div>
+                                    <div class="stat-label">Trend</div>
+                                </div>
+                            </div>
+
+                            <!-- Trend analysis panel -->
+                            <div class="trend-panel" id="trend-panel" style="display: none;">
+                                <h4>📈 Trend Analysis</h4>
+                                <div class="trend-row">
+                                    <span>Direction</span>
+                                    <span id="trend-direction">-</span>
+                                </div>
+                                <div class="trend-row">
+                                    <span>Slope</span>
+                                    <span id="trend-slope">-</span>
+                                </div>
+                                <div class="trend-row">
+                                    <span>R² Score</span>
+                                    <span id="trend-r2">-</span>
+                                </div>
+                                <div class="trend-row">
+                                    <span>Volatility</span>
+                                    <span id="trend-volatility">-</span>
+                                </div>
+                                <div class="trend-row">
+                                    <span>Forecast (next)</span>
+                                    <span id="trend-forecast">-</span>
+                                </div>
+                            </div>
+
+                            <!-- Charts -->
+                            <div class="timeseries-charts-row">
+                                <div class="timeseries-chart-panel" style="flex: 2;">
+                                    <h4 id="main-chart-title">Value Over Time</h4>
+                                    <div class="timeseries-chart-wrapper">
+                                        <canvas id="timeseries-line-chart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="timeseries-chart-panel" style="flex: 1;">
+                                    <h4 id="secondary-chart-title">Distribution</h4>
+                                    <div class="timeseries-chart-wrapper">
+                                        <canvas id="timeseries-box-chart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Details table -->
+                            <div class="timeseries-chart-panel" style="margin-top: 20px;">
+                                <h4 id="table-title">Snapshot Details</h4>
+                                <div class="timeseries-table-container" style="max-height: 300px; overflow-y: auto;">
+                                    <table id="timeseries-table" style="width: 100%; font-size: 12px;">
+                                        <thead id="timeseries-table-head">
+                                            <tr>
+                                                <th>Block</th>
+                                                <th>Date</th>
+                                                <th>Nodes</th>
+                                                <th>Value</th>
+                                                <th>Change</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="timeseries-table-body">
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <script src="js/distributions-popup.js"></script>
+    <script src="js/distributions-popup.js?v=8"></script>
 </body>
 </html>

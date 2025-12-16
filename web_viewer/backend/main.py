@@ -20,6 +20,10 @@ from .routers import (
     anomaly_router,
     composite_router,
     auto_reload_router,
+    snapshots_router,
+    snapshot_analysis_router,
+    timeseries_router,
+    temporal_composite_router,
 )
 
 
@@ -114,7 +118,7 @@ async def notify_startup_subscribers():
 app = FastAPI(
     title="Graph Analyzer Web Viewer",
     description="Web-based graph visualization and analysis dashboard",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -133,11 +137,16 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+# Register routers
 app.include_router(network_router)
 app.include_router(metrics_router)
 app.include_router(anomaly_router)
 app.include_router(composite_router)
 app.include_router(auto_reload_router)
+app.include_router(snapshots_router)
+app.include_router(snapshot_analysis_router)
+app.include_router(timeseries_router)
+app.include_router(temporal_composite_router)
 
 
 @app.get("/")
@@ -181,7 +190,7 @@ async def health_check():
     
     return {
         "status": "healthy",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "mode": "production" if settings.HIDE_DATA_SOURCE_UI else "admin",
         "data_status": loading_status,
         "graphs_loaded": graphs_loaded,

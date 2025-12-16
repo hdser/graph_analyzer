@@ -132,9 +132,9 @@ const CytoscapeManager = {
             {
                 selector: 'node',
                 style: {
-                    'background-color': '#c8c8c8ff',
-                    'width': 10,
-                    'height': 10,
+                    'background-color': '#c8c8c8',
+                    'width': 13,
+                    'height': 13,
                     'label': '',
                     'border-width': 0
                 }
@@ -142,7 +142,7 @@ const CytoscapeManager = {
             {
                 selector: 'edge',
                 style: {
-                    'line-color': '#f0f0f0ff',
+                    'line-color': '#f0f0f0',
                     'width': 1,
                     'opacity': 0.3,
                     'curve-style': 'straight',

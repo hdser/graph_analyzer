@@ -1,6 +1,9 @@
 /**
  * Distributions Communication Module
  * Communication with distributions popup window
+ * 
+ * UPDATED: Now snapshot-aware - when viewing a snapshot, sends snapshot data
+ * to the analysis popup instead of live network data.
  */
 
 const DistributionsComm = {
@@ -36,6 +39,9 @@ const DistributionsComm = {
             } else if (event.data.type === 'COMPOSITE_CREATED') {
                 // Handle composite metric created
                 self.handleCompositeCreated(event.data.data);
+            } else if (event.data.type === 'TEMPORAL_APPLIED') {
+                // Handle temporal metric applied
+                self.handleTemporalApplied(event.data.data);
             } else if (event.data.type === 'CLEAR_SELECTION') {
                 // Clear all selections in main graph
                 console.log('[DistributionsComm] Received CLEAR_SELECTION message');
@@ -68,6 +74,28 @@ const DistributionsComm = {
         };
         
         console.log('[DistributionsComm] Setup complete, global functions exposed');
+    },
+
+    /**
+     * Check if we're currently viewing a snapshot
+     * @returns {string|null} Snapshot ID or null if viewing live network
+     */
+    getCurrentSnapshotId() {
+        if (typeof Snapshots !== 'undefined' && Snapshots.getCurrentSnapshotId) {
+            return Snapshots.getCurrentSnapshotId();
+        }
+        return null;
+    },
+
+    /**
+     * Get snapshot info if viewing a snapshot
+     * @returns {Object|null} Snapshot metadata or null
+     */
+    getCurrentSnapshotInfo() {
+        if (typeof Snapshots !== 'undefined' && Snapshots.getCurrentSnapshot) {
+            return Snapshots.getCurrentSnapshot();
+        }
+        return null;
     },
 
     /**
@@ -112,11 +140,16 @@ const DistributionsComm = {
 
     /**
      * Send node data to distributions window
+     * Now snapshot-aware: sends snapshot info if viewing a snapshot
      */
     sendData() {
         if (!State.distributionsWindow || State.distributionsWindow.closed || !State.cy) return;
         
-        // Collect node data
+        // Check if we're viewing a snapshot
+        const snapshotId = this.getCurrentSnapshotId();
+        const snapshotInfo = this.getCurrentSnapshotInfo();
+        
+        // Collect node data from current Cytoscape view (works for both live and snapshot)
         const nodes = [];
         State.cy.nodes().forEach(node => {
             const data = node.data();
@@ -135,14 +168,49 @@ const DistributionsComm = {
         // Get selected node IDs
         const selectedIds = State.cy.nodes(':selected').map(n => n.id());
         
+        // Build message payload
+        const payload = {
+            nodes,
+            selectedIds,
+            availableConfig: State.availableConfig,
+            // Snapshot context
+            isSnapshot: !!snapshotId,
+            snapshotId: snapshotId,
+            snapshotInfo: snapshotInfo
+        };
+        
+        console.log('[DistributionsComm] Building payload, snapshotId:', snapshotId, 'isSnapshot:', payload.isSnapshot);
+        
+        // If we're viewing a snapshot, add additional context
+        if (snapshotId && snapshotInfo) {
+            // Extract base_sql_file from snapshot_id if not in info
+            // Format: {base_sql_file}_block_{number}
+            let baseSqlFile = snapshotInfo.base_sql_file;
+            if (!baseSqlFile && snapshotId) {
+                const match = snapshotId.match(/^(.+)_block_\d+$/);
+                if (match) {
+                    baseSqlFile = match[1];
+                }
+            }
+            
+            payload.snapshotContext = {
+                blockNumber: snapshotInfo.block_number,
+                blockTimestamp: snapshotInfo.block_timestamp,
+                baseSqlFile: baseSqlFile,
+                nodeCount: snapshotInfo.node_count,
+                edgeCount: snapshotInfo.edge_count,
+                metricsComputed: snapshotInfo.metrics_computed || [],
+                label: snapshotInfo.label
+            };
+            console.log('[DistributionsComm] Sending snapshot data:', snapshotId);
+        } else {
+            console.log('[DistributionsComm] Sending live network data');
+        }
+        
         // Send message
         State.distributionsWindow.postMessage({
             type: 'DISTRIBUTION_DATA',
-            data: {
-                nodes,
-                selectedIds,
-                availableConfig: State.availableConfig
-            }
+            data: payload
         }, '*');
     },
 
@@ -475,6 +543,43 @@ const DistributionsComm = {
         }
         
         updateStatus(`Created composite: ${metricName}`, 'success');
+    },
+
+    /**
+     * Handle temporal metric being applied
+     */
+    handleTemporalApplied(data) {
+        if (!data || !data.node_updates) return;
+        
+        const metricName = data.metric_name;
+        console.log(`[DistributionsComm] Temporal metric applied: ${metricName}`);
+        
+        // Update node data in Cytoscape
+        let updatedCount = 0;
+        data.node_updates.forEach(update => {
+            const node = State.cy?.getElementById(update.id);
+            if (node && !node.empty()) {
+                Object.keys(update).forEach(key => {
+                    if (key !== 'id') {
+                        node.data(key, update[key]);
+                        updatedCount++;
+                    }
+                });
+            }
+        });
+        
+        console.log(`[DistributionsComm] Updated ${updatedCount} node attributes`);
+        
+        // Refresh distributions data
+        this.sendData();
+        
+        // Update metric dropdowns
+        if (typeof Metrics !== 'undefined' && Metrics.populateDropdowns && State.cy) {
+            const nodes = State.cy.nodes().map(n => ({ data: n.data() }));
+            Metrics.populateDropdowns(nodes, null);
+        }
+        
+        updateStatus(`Applied temporal metric: ${metricName}`, 'success');
     },
 
     /**
