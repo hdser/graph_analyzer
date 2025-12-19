@@ -17,10 +17,10 @@
     "onion_layer"
   ],
   "metrics_mode": "standard",
-  "layout_source": "computed",
-  "layout_unknown_nodes": 2,
-  "created_at": "2025-12-10T16:24:25.256854",
-  "computation_time_seconds": 220.77277898788452,
+  "layout_source": "master",
+  "layout_unknown_nodes": 0,
+  "created_at": "2025-12-17T00:58:39.021773",
+  "computation_time_seconds": 75.72117614746094,
   "files": {
     "edges": "edges.parquet",
     "layout": "layout.parquet",
@@ -28,7 +28,7 @@
   },
   "checksums": {
     "edges": "sha256:ccb8a4155b80998d03dce5ce8dadf6697307629674c3eb2e0edfc59f663fcbd3",
-    "layout": "sha256:6beb98d8a7a9cf444563c7b13a6780f342f985b2502578c16892cb966df0f68f",
+    "layout": "sha256:b71abccf0d35808ee2a9ee475359882706b5d9518d61f67932b0da4d19ea6741",
     "metrics": "sha256:75a1aaff165b86acf323b77ea42afc6f497550dfd26c8a28c48a9442977ad251"
   }
 }

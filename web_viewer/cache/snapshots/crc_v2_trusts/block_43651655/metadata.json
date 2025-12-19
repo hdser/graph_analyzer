@@ -1,0 +1,34 @@
+{
+  "snapshot_id": "crc_v2_trusts_block_43651655",
+  "base_sql_file": "crc_v2_trusts",
+  "block_number": 43651655,
+  "block_timestamp": "2025-12-15T00:00:00",
+  "label": "2025-12-15 (Monday)",
+  "node_count": 13072,
+  "edge_count": 263566,
+  "metrics_computed": [
+    "in_degree",
+    "out_degree",
+    "total_degree",
+    "degree_imbalance",
+    "community_id",
+    "community_size",
+    "core_number",
+    "onion_layer"
+  ],
+  "metrics_mode": "standard",
+  "layout_source": "master",
+  "layout_unknown_nodes": 0,
+  "created_at": "2025-12-16T15:51:06.622375",
+  "computation_time_seconds": 84.66380381584167,
+  "files": {
+    "edges": "edges.parquet",
+    "layout": "layout.parquet",
+    "metrics": "metrics.parquet"
+  },
+  "checksums": {
+    "edges": "sha256:717bd86c996782e0a165eb6e7bb0af82386549a57d3af50b696d905229e3ed30",
+    "layout": "sha256:f75b23ca16a3926ac41e36cfa62304591414cb2f4d7d70dbf51a4c04106c28ea",
+    "metrics": "sha256:d0d4b133d6867b1e661eb2a05df0e6e63b24d1aedb2ef391dd756e31f98f70e7"
+  }
+}

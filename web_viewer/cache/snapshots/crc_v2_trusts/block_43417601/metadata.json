@@ -19,8 +19,8 @@
   "metrics_mode": "standard",
   "layout_source": "master",
   "layout_unknown_nodes": 0,
-  "created_at": "2025-12-10T10:08:13.593430",
-  "computation_time_seconds": 192.41837191581726,
+  "created_at": "2025-12-16T15:31:55.830710",
+  "computation_time_seconds": 77.36461806297302,
   "files": {
     "edges": "edges.parquet",
     "layout": "layout.parquet",
@@ -28,7 +28,7 @@
   },
   "checksums": {
     "edges": "sha256:a5c1a1bd572759b9e7536649d97e6f9ea7ff408ca227d6eb80090f4be7e89e38",
-    "layout": "sha256:0043ca34ac213db8ee479854852f958b174ef8a6b153ec4083eb4ba0ab1476bb",
+    "layout": "sha256:b57f726c82ed9f5f7d8b7e35f163f1a9c9b8e207c9f420b06f57eb9fd3370657",
     "metrics": "sha256:df7be49f4a3c5c454a13db648c022960db141167bf46f0708f563affa3047b2f"
   }
 }

@@ -367,10 +367,24 @@ class SnapshotService:
         """
         engine = self._get_db_engine()
         
-        # Build date range
-        end_date = request.end_date or datetime.utcnow().date()
-        start_date = request.start_date or (end_date - timedelta(days=30))
+        # Apply count limit from settings
         count = min(request.count or 30, settings.SNAPSHOT_MAX_SUGGESTIONS)
+        
+        # Build date range - calculate start_date based on count and interval if not provided
+        end_date = request.end_date or datetime.utcnow().date()
+        
+        if request.start_date:
+            start_date = request.start_date
+        else:
+            # Calculate start_date based on count and interval
+            # Add buffer to ensure we get enough periods
+            interval_days = {
+                'daily': 1,
+                'weekly': 7,
+                'monthly': 30
+            }
+            days_needed = count * interval_days.get(request.interval, 1) + 7  # +7 buffer
+            start_date = end_date - timedelta(days=days_needed)
         
         # Map interval to PostgreSQL date_trunc argument
         interval_map = {

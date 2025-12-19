@@ -1,0 +1,34 @@
+{
+  "snapshot_id": "crc_v2_flows_block_42914999",
+  "base_sql_file": "crc_v2_flows",
+  "block_number": 42914999,
+  "block_timestamp": "2025-11-01T00:00:00",
+  "label": "2025-11-01 (Saturday)",
+  "node_count": 3513,
+  "edge_count": 238039,
+  "metrics_computed": [
+    "in_degree",
+    "out_degree",
+    "total_degree",
+    "degree_imbalance",
+    "community_id",
+    "community_size",
+    "core_number",
+    "onion_layer"
+  ],
+  "metrics_mode": "standard",
+  "layout_source": "master",
+  "layout_unknown_nodes": 0,
+  "created_at": "2025-12-17T00:13:04.841197",
+  "computation_time_seconds": 73.17302823066711,
+  "files": {
+    "edges": "edges.parquet",
+    "layout": "layout.parquet",
+    "metrics": "metrics.parquet"
+  },
+  "checksums": {
+    "edges": "sha256:a1521df6fd0780a0ab5790c06870014759583fe8bd3e5ab4db34399005710f02",
+    "layout": "sha256:9636b424d052fe4e7d5a9f3fb9093c56838c98e05827c1a50f00398b2fcdd771",
+    "metrics": "sha256:24e2bd4144c8931988a45d37b8bba3f80f5cc9241f64277e66321a68a6078195"
+  }
+}
