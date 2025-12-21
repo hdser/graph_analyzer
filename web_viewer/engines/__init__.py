@@ -1,14 +1,31 @@
 """
 Engines Package
 
-Computation engines for graph metrics, anomaly detection, and analysis.
+Main package for graph analysis engines including:
+- Anomaly detection
+- Composite metrics
+- Graph metrics computation
+- Timeseries analysis
+- Temporal composite analysis
 """
 
-# Graph metrics
-from .graph_metrics import GraphMetrics, METRIC_CATEGORIES, METRIC_PRESETS
+# Metrics engine (new modular system)
+from .metrics import (
+    MetricEngine,
+    MetricComputer,
+    MetricResolver,
+    METRIC_REGISTRY,
+    METRIC_CATEGORIES,
+    METRIC_PRESETS,
+    list_all_metrics,
+    list_categories,
+    list_presets,
+    get_metric,
+    get_category_metrics,
+    get_preset_metrics,
+)
 
-# Anomaly detection engine and config
-from .anomaly_engine import AnomalyEngine
+# Anomaly detection configuration
 from .anomaly_config import (
     MetricConfig,
     MetricTransform,
@@ -19,33 +36,49 @@ from .anomaly_config import (
     ThresholdMethod,
     AggregationMethod,
     TailSide,
+    ANOMALY_PRESETS,
 )
+
+# Anomaly detection engine
+from .anomaly_engine import AnomalyEngine
+
+# Composite metrics engine
+from .composite_engine import CompositeMetricEngine
 
 # Metric profiler
 from .metric_profiler import MetricProfiler, MetricProfile
 
-# Composite metric engine
-from .composite_engine import CompositeMetricEngine
-
 # Preprocessing
 from .preprocessing import Preprocessor, ChunkedPreprocessor
 
-# Result builder
-from .result_builder import ResultBuilder
+# Result building
+from .result_builder import AnomalyResult, ResultBuilder, GroupAnomalyStats
+
+# Parallel processing
+from .parallel import ParallelExecutor, get_optimal_workers
 
 # Timeseries engine
-from .timeseries_engine import TimeseriesEngine, timeseries_engine
+from .timeseries_engine import TimeseriesEngine
 
 # Temporal composite engine
-from .temporal_composite_engine import TemporalCompositeEngine, temporal_composite_engine
+from .temporal_composite_engine import TemporalCompositeEngine
+
 
 __all__ = [
-    # Graph metrics
-    "GraphMetrics",
+    # Metrics
+    "MetricEngine",
+    "MetricComputer",
+    "MetricResolver",
+    "METRIC_REGISTRY",
     "METRIC_CATEGORIES",
     "METRIC_PRESETS",
-    # Anomaly
-    "AnomalyEngine",
+    "list_all_metrics",
+    "list_categories",
+    "list_presets",
+    "get_metric",
+    "get_category_metrics",
+    "get_preset_metrics",
+    # Anomaly config
     "MetricConfig",
     "MetricTransform",
     "AlgorithmConfig",
@@ -55,20 +88,22 @@ __all__ = [
     "ThresholdMethod",
     "AggregationMethod",
     "TailSide",
-    # Profiler
+    "ANOMALY_PRESETS",
+    # Engines
+    "AnomalyEngine",
+    "CompositeMetricEngine",
     "MetricProfiler",
     "MetricProfile",
-    # Composite
-    "CompositeMetricEngine",
+    "TimeseriesEngine",
+    "TemporalCompositeEngine",
     # Preprocessing
     "Preprocessor",
     "ChunkedPreprocessor",
-    # Result builder
+    # Results
+    "AnomalyResult",
     "ResultBuilder",
-    # Timeseries
-    "TimeseriesEngine",
-    "timeseries_engine",
-    # Temporal composite
-    "TemporalCompositeEngine",
-    "temporal_composite_engine",
+    "GroupAnomalyStats",
+    # Parallel
+    "ParallelExecutor",
+    "get_optimal_workers",
 ]

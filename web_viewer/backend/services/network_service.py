@@ -28,7 +28,7 @@ from .auto_reload_service import AutoReloadManager
 from .api_properties_service import api_properties_service
 from ..utils.helpers import clean_numpy_types
 
-from engines.graph_metrics import GraphMetrics, METRIC_PRESETS
+from engines.metrics import MetricEngine, METRIC_CATEGORIES, METRIC_PRESETS
 
 if HAS_ANOMALY:
     from engines.anomaly_engine import AnomalyEngine
@@ -513,11 +513,39 @@ class NetworkService:
         
         Args:
             edge_layers: Edge layer DataFrames
-            metrics_mode: Metrics computation mode
+            metrics_mode: Metrics computation mode - can be:
+                - A preset name: "basic", "essential", "moderate", "comprehensive", "all"
+                - A single category: "centrality", "topology", etc.
+                - Comma-separated categories: "centrality,topology,clustering"
             
         Returns:
             Dictionary of metrics DataFrames keyed by version
         """
+        # Parse metrics_mode to determine preset vs categories
+        metrics_mode = metrics_mode.lower().strip() if metrics_mode else "basic"
+        
+        preset = None
+        categories = None
+        
+        if metrics_mode in METRIC_PRESETS:
+            preset = metrics_mode
+            print(f"[METRICS] Using preset: {preset}")
+        elif ',' in metrics_mode:
+            categories = [c.strip() for c in metrics_mode.split(',') if c.strip()]
+            valid_cats = [c for c in categories if c in METRIC_CATEGORIES]
+            if valid_cats:
+                categories = valid_cats
+                print(f"[METRICS] Using categories: {categories}")
+            else:
+                preset = "basic"
+                print(f"[METRICS] Invalid categories '{metrics_mode}', using preset: basic")
+        elif metrics_mode in METRIC_CATEGORIES:
+            categories = [metrics_mode]
+            print(f"[METRICS] Using single category: {categories}")
+        else:
+            preset = "basic"
+            print(f"[METRICS] Unknown mode '{metrics_mode}', using preset: basic")
+        
         # Group layers by version
         version_layers: Dict[str, Dict[str, pd.DataFrame]] = {}
         
@@ -571,14 +599,14 @@ class NetworkService:
                 # Add edges efficiently
                 G.add_edges_from(df[[src_col, tgt_col]].itertuples(index=False, name=None))
             
-            # Compute metrics - GraphMetrics takes metrics_mode in __init__
-            gm = GraphMetrics(G, n_jobs=settings.N_JOBS, metrics_mode=metrics_mode)
-            
-            # compute_all() returns DataFrame with 'avatar' column already set
-            metrics_df = gm.compute_all()
+            # Compute metrics using MetricEngine
+            engine = MetricEngine(G, n_jobs=settings.N_JOBS)
+            metrics_df = engine.compute(preset=preset, categories=categories)
             
             metrics_dfs[version] = metrics_df
             print(f"[METRICS] Computed {len(metrics_df.columns)-1} metrics for {len(metrics_df)} nodes in {version}")
+        
+        return metrics_dfs
         
         return metrics_dfs
     
@@ -644,7 +672,12 @@ class NetworkService:
         api_properties_loaded: Dict[str, List[str]] = {}
         api_properties_source: Optional[str] = None
         
-        if config.load_api_properties:
+        # Use getattr for backward compatibility with LoadConfig without api fields
+        load_api_props = getattr(config, 'load_api_properties', True)
+        api_providers = getattr(config, 'api_properties_providers', None)
+        skip_api_cache = getattr(config, 'skip_api_cache', False)
+        
+        if load_api_props:
             # Get all versions from edge layers
             versions = set()
             for layer_id in edge_layers.keys():
@@ -653,8 +686,8 @@ class NetworkService:
             for version in versions:
                 api_df, provider_cols, api_source = self.load_api_properties(
                     version=version,
-                    providers=config.api_properties_providers,
-                    skip_cache=config.skip_api_cache
+                    providers=api_providers,
+                    skip_cache=skip_api_cache
                 )
                 
                 if not api_df.empty:

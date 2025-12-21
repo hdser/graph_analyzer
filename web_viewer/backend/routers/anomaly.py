@@ -231,26 +231,51 @@ async def get_algorithms():
     
     result = {}
     for name, info in algorithms.items():
-        result[name] = AlgorithmInfoResponse(
-            name=info.name,
-            display_name=info.display_name,
-            description=info.description,
-            complexity=info.complexity,
-            multivariate=info.supports_multivariate,
-            requires_sklearn=info.requires_sklearn,
-            parameters={
-                pname: {
-                    "name": spec.name,
-                    "type": spec.param_type,
-                    "default": spec.default,
-                    "min": spec.min_value,
-                    "max": spec.max_value,
-                    "choices": spec.choices,
-                    "description": spec.description,
+        # Handle both dict and AlgorithmInfo object formats
+        if isinstance(info, dict):
+            # New format: info is already a dict
+            result[name] = AlgorithmInfoResponse(
+                name=info.get("name", name),
+                display_name=info.get("display_name", name),
+                description=info.get("description", ""),
+                complexity=info.get("complexity", "O(n)"),
+                multivariate=info.get("supports_multivariate", True),
+                requires_sklearn=info.get("requires_sklearn", False),
+                parameters={
+                    pname: {
+                        "name": pname,
+                        "type": "float",
+                        "default": pval,
+                        "min": None,
+                        "max": None,
+                        "choices": None,
+                        "description": info.get("param_descriptions", {}).get(pname, ""),
+                    }
+                    for pname, pval in info.get("default_params", {}).items()
                 }
-                for pname, spec in info.parameters.items()
-            }
-        )
+            )
+        else:
+            # Old format: info is AlgorithmInfo object
+            result[name] = AlgorithmInfoResponse(
+                name=info.name,
+                display_name=info.display_name,
+                description=info.description,
+                complexity=info.complexity,
+                multivariate=info.supports_multivariate,
+                requires_sklearn=info.requires_sklearn,
+                parameters={
+                    pname: {
+                        "name": spec.name,
+                        "type": spec.param_type,
+                        "default": spec.default,
+                        "min": spec.min_value,
+                        "max": spec.max_value,
+                        "choices": spec.choices,
+                        "description": spec.description,
+                    }
+                    for pname, spec in info.parameters.items()
+                }
+            )
     
     return result
 

@@ -22,7 +22,7 @@ from ..services.network_service import network_service
 from ..services.api_properties_service import api_properties_service
 from ..config import settings, HAS_ANOMALY, HAS_SSE
 
-from engines.graph_metrics import METRIC_CATEGORIES, METRIC_PRESETS
+from engines.metrics import METRIC_CATEGORIES, METRIC_PRESETS
 
 if HAS_ANOMALY:
     from engines.anomaly_engine import AnomalyEngine
@@ -41,12 +41,37 @@ class NeighborRequest(BaseModel):
 @router.get("/config")
 async def get_config():
     """Get application configuration including available SQL files and features."""
+    # Format presets for frontend - extract metrics list from each preset
+    formatted_presets = {}
+    for preset_name, preset_data in METRIC_PRESETS.items():
+        if isinstance(preset_data, dict):
+            # New format: {'description': '...', 'categories': [...], 'metrics': [...]}
+            metrics_list = preset_data.get('metrics', [])
+            # Also expand categories to their metrics
+            for cat in preset_data.get('categories', []):
+                if cat in METRIC_CATEGORIES:
+                    cat_data = METRIC_CATEGORIES[cat]
+                    if isinstance(cat_data, dict):
+                        metrics_list.extend(cat_data.get('metrics', []))
+            formatted_presets[preset_name] = list(set(metrics_list))
+        else:
+            # Old format: direct list
+            formatted_presets[preset_name] = list(preset_data)
+    
+    # Format categories for frontend - extract description string
+    formatted_categories = {}
+    for cat_name, cat_data in METRIC_CATEGORIES.items():
+        if isinstance(cat_data, dict):
+            formatted_categories[cat_name] = cat_data.get('description', cat_name)
+        else:
+            formatted_categories[cat_name] = str(cat_data)
+    
     config = {
         "sql_files": network_service.available_sql_files,
         "node_properties_files": network_service.available_node_properties_files,
         "metric_modes": {
-            "presets": {k: list(v) for k, v in METRIC_PRESETS.items()},
-            "categories": {k: v for k, v in METRIC_CATEGORIES.items()}
+            "presets": formatted_presets,
+            "categories": formatted_categories
         },
         "cytoscape_desktop_available": network_service.cytoscape_available,
         "cached_layouts": network_service.list_cached_layouts(),

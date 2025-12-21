@@ -1,131 +1,179 @@
 """
-Anomaly Detection Algorithms
+Anomaly Detection Algorithms Package
 
-Registry and exports for all anomaly detection algorithms.
+Provides various anomaly detection algorithms for use with the AnomalyEngine.
+
+Available Algorithms:
+- zscore: Z-Score based detection (statistical)
+- modified_zscore: Modified Z-Score using MAD (statistical)
+- iqr: Interquartile Range based detection (statistical)
+- mahalanobis: Mahalanobis distance based detection (distance)
+- isolation_forest: Isolation Forest (machine learning, requires sklearn)
+- lof: Local Outlier Factor (density, requires sklearn)
+- dbscan: DBSCAN clustering (density, requires sklearn)
+- ocsvm: One-Class SVM (machine learning, requires sklearn)
+- elliptic_envelope: Elliptic Envelope (statistical, requires sklearn)
 """
 
-from typing import Dict, Type, Any, Optional
-import warnings
+from typing import Dict, Any, Optional, Type
 
 from .base import (
-    AnomalyAlgorithmBase,
-    ParameterSpec,
+    BaseAnomalyAlgorithm,
     AlgorithmInfo,
+    AlgorithmType,
     AlgorithmOutput,
+    ParameterSpec,
 )
-from .statistical import ZScoreAlgorithm, IQRAlgorithm
-from .distance_based import MahalanobisAlgorithm
+from .statistical import (
+    ZScoreAlgorithm,
+    IQRAlgorithm,
+    MahalanobisAlgorithm,
+    ModifiedZScoreAlgorithm,
+)
 
-# Check sklearn availability
+# Check for sklearn
 try:
-    from sklearn.ensemble import IsolationForest
-    HAS_SKLEARN = True
-except ImportError:
-    HAS_SKLEARN = False
-    warnings.warn("scikit-learn not installed. ML-based algorithms unavailable.")
-
-# Import ML algorithms only if sklearn available
-if HAS_SKLEARN:
-    from .ml_based import (
+    from .sklearn_algorithms import (
         IsolationForestAlgorithm,
         LOFAlgorithm,
         DBSCANAlgorithm,
-        PCAReconstructionAlgorithm,
         OneClassSVMAlgorithm,
+        EllipticEnvelopeAlgorithm,
+        HAS_SKLEARN,
     )
+except ImportError:
+    HAS_SKLEARN = False
+    IsolationForestAlgorithm = None
+    LOFAlgorithm = None
+    DBSCANAlgorithm = None
+    OneClassSVMAlgorithm = None
+    EllipticEnvelopeAlgorithm = None
 
 
 # Algorithm registry
-ALGORITHM_REGISTRY: Dict[str, Type[AnomalyAlgorithmBase]] = {
+ALGORITHM_REGISTRY: Dict[str, Type[BaseAnomalyAlgorithm]] = {
+    # Statistical (always available)
     "zscore": ZScoreAlgorithm,
+    "modified_zscore": ModifiedZScoreAlgorithm,
     "iqr": IQRAlgorithm,
     "mahalanobis": MahalanobisAlgorithm,
 }
 
+# Add sklearn algorithms if available
 if HAS_SKLEARN:
     ALGORITHM_REGISTRY.update({
         "isolation_forest": IsolationForestAlgorithm,
         "lof": LOFAlgorithm,
         "dbscan": DBSCANAlgorithm,
-        "pca_reconstruction": PCAReconstructionAlgorithm,
-        "one_class_svm": OneClassSVMAlgorithm,
+        "ocsvm": OneClassSVMAlgorithm,
+        "elliptic_envelope": EllipticEnvelopeAlgorithm,
     })
 
 
-def get_algorithm(name: str) -> AnomalyAlgorithmBase:
+def get_algorithm(name: str, **kwargs) -> BaseAnomalyAlgorithm:
     """
-    Get algorithm instance by name.
+    Get an algorithm instance by name.
     
     Args:
         name: Algorithm name
+        **kwargs: Algorithm parameters
         
     Returns:
         Algorithm instance
         
     Raises:
         ValueError: If algorithm not found
+        ImportError: If sklearn not available
     """
-    if name not in ALGORITHM_REGISTRY:
+    name_lower = name.lower()
+    
+    if name_lower not in ALGORITHM_REGISTRY:
         available = list(ALGORITHM_REGISTRY.keys())
         raise ValueError(f"Unknown algorithm: {name}. Available: {available}")
     
-    return ALGORITHM_REGISTRY[name]()
+    algo_class = ALGORITHM_REGISTRY[name_lower]
+    
+    if algo_class is None:
+        raise ImportError(f"Algorithm {name} requires sklearn which is not installed")
+    
+    return algo_class(**kwargs)
 
 
-def list_algorithms() -> Dict[str, AlgorithmInfo]:
+def list_algorithms() -> Dict[str, Any]:
     """
     List all available algorithms with their info.
     
     Returns:
-        Dictionary mapping algorithm name to info
+        Dictionary mapping algorithm names to AlgorithmInfo dicts
     """
-    return {
-        name: algo_class.get_info()
-        for name, algo_class in ALGORITHM_REGISTRY.items()
-    }
+    result = {}
+    
+    for name, algo_class in ALGORITHM_REGISTRY.items():
+        if algo_class is None:
+            continue
+        
+        info = algo_class().get_info()
+        # Convert to dict for JSON serialization
+        result[name] = {
+            "name": info.name,
+            "display_name": info.display_name,
+            "description": info.description,
+            "algorithm_type": info.algorithm_type.value,
+            "requires_sklearn": info.requires_sklearn,
+            "supports_multivariate": info.supports_multivariate,
+            "complexity": info.complexity,
+            "max_recommended_nodes": info.max_recommended_nodes,
+            "default_params": info.default_params,
+            "param_descriptions": info.param_descriptions,
+        }
+    
+    return result
 
 
-def get_algorithm_info(name: str) -> AlgorithmInfo:
+def get_algorithm_info(name: str) -> Optional[AlgorithmInfo]:
     """
-    Get detailed info for a specific algorithm.
+    Get information about a specific algorithm.
     
     Args:
         name: Algorithm name
         
     Returns:
-        Algorithm info
+        AlgorithmInfo or None if not found
     """
-    if name not in ALGORITHM_REGISTRY:
-        raise ValueError(f"Unknown algorithm: {name}")
+    name_lower = name.lower()
     
-    return ALGORITHM_REGISTRY[name].get_info()
+    if name_lower not in ALGORITHM_REGISTRY:
+        return None
+    
+    algo_class = ALGORITHM_REGISTRY[name_lower]
+    if algo_class is None:
+        return None
+    
+    return algo_class().get_info()
 
 
 __all__ = [
     # Base classes
-    "AnomalyAlgorithmBase",
-    "ParameterSpec",
+    "BaseAnomalyAlgorithm",
     "AlgorithmInfo",
+    "AlgorithmType",
     "AlgorithmOutput",
-    # Registry functions
-    "get_algorithm",
-    "list_algorithms",
-    "get_algorithm_info",
-    "ALGORITHM_REGISTRY",
-    "HAS_SKLEARN",
+    "ParameterSpec",
     # Statistical algorithms
     "ZScoreAlgorithm",
     "IQRAlgorithm",
-    # Distance-based algorithms
     "MahalanobisAlgorithm",
+    "ModifiedZScoreAlgorithm",
+    # Sklearn algorithms (may be None)
+    "IsolationForestAlgorithm",
+    "LOFAlgorithm",
+    "DBSCANAlgorithm",
+    "OneClassSVMAlgorithm",
+    "EllipticEnvelopeAlgorithm",
+    # Registry and functions
+    "ALGORITHM_REGISTRY",
+    "HAS_SKLEARN",
+    "get_algorithm",
+    "list_algorithms",
+    "get_algorithm_info",
 ]
-
-if HAS_SKLEARN:
-    __all__.extend([
-        # ML-based algorithms
-        "IsolationForestAlgorithm",
-        "LOFAlgorithm",
-        "DBSCANAlgorithm",
-        "PCAReconstructionAlgorithm",
-        "OneClassSVMAlgorithm",
-    ])
