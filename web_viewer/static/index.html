@@ -9,10 +9,11 @@
 </head>
 <body>
     <div class="container">
-        <div class="sidebar">
+        <div class="sidebar" id="sidebar">
             <div class="app-header">
                 <span class="app-logo" data-icon="appLogo"></span>
                 <span class="app-title">Network <span style="color: #d33a47;">Analyzer</span></span>
+                <button id="sidebar-toggle" class="sidebar-toggle" data-icon="chevronLeft" title="Toggle sidebar"></button>
             </div>
             <div class="sidebar-content">
                 
@@ -140,7 +141,7 @@
                         <div class="snapshot-compare-subsection">
                             <div class="subsection-header collapsible-sub" data-target="snapshot-compare-content">
                                 <span>Compare Snapshots</span>
-                                <span class="collapse-icon-small">▼</span>
+                                <span class="collapse-icon-small" data-icon="chevronDown"></span>
                             </div>
                             
                             <div id="snapshot-compare-content" class="subsection-content" style="display: none;">
@@ -191,15 +192,15 @@
                         <div class="snapshot-animation-subsection">
                             <div class="subsection-header collapsible-sub" data-target="snapshot-animation-content">
                                 <span>Timeline Animation</span>
-                                <span class="collapse-icon-small">▼</span>
+                                <span class="collapse-icon-small" data-icon="chevronDown"></span>
                             </div>
                             
                             <div id="snapshot-animation-content" class="subsection-content" style="display: none;">
                                 <div class="animation-controls">
                                     <div class="animation-buttons">
-                                        <button id="anim-prev-btn" class="anim-btn" title="Previous">⏮</button>
-                                        <button id="anim-play-btn" class="anim-btn play" title="Play/Pause">▶</button>
-                                        <button id="anim-next-btn" class="anim-btn" title="Next">⏭</button>
+                                        <button id="anim-prev-btn" class="anim-btn" title="Previous" data-icon="arrowLeft"></button>
+                                        <button id="anim-play-btn" class="anim-btn play" title="Play/Pause" data-icon="play"></button>
+                                        <button id="anim-next-btn" class="anim-btn" title="Next" data-icon="arrowRight"></button>
                                     </div>
                                     <div class="animation-speed">
                                         <label>Speed</label>
@@ -233,7 +234,7 @@
                         <div class="snapshot-create-subsection">
                             <div class="subsection-header collapsible-sub" data-target="snapshot-create-content">
                                 <span>Create Snapshot</span>
-                                <span class="collapse-icon-small">▼</span>
+                                <span class="collapse-icon-small" data-icon="chevronDown"></span>
                             </div>
                             
                             <div id="snapshot-create-content" class="subsection-content">
@@ -241,9 +242,10 @@
                                     <label>Block Number</label>
                                     <div class="input-with-button">
                                         <input type="number" id="snapshot-block-input" 
-                                               class="block-input" placeholder="e.g., 12345678">
+                                               class="block-input" placeholder="e.g., 12345678"
+                                               style="width: auto !important; min-width: 170px; font-size: 14px; padding: 8px; height: 38px;">
                                         <button id="suggest-blocks-btn" class="mini-icon-btn" title="Suggest block">
-                                            💡
+                                            <span data-icon="refresh"></span>
                                         </button>
                                     </div>
                                 </div>
@@ -289,26 +291,44 @@
 
                 <div class="section collapsible" id="metrics-section">
                     <div class="collapsible-header">
-                        <h3>Metrics Analysis</h3>
+                        <h3>Metrics</h3>
                         <span class="collapse-icon" data-icon="chevronDown"></span>
                     </div>
                     <div class="style-subsection">
-                        <div class="style-row">
-                            <label>Target Graph</label>
-                            <select id="metrics-graph"></select>
+                        <!-- Target Selection (always visible) -->
+                        <div class="style-row" style="margin-bottom: 16px;">
+                            <label>Target:</label>
+                            <select id="metrics-graph" style="flex: 1;">
+                                <option value="">Auto (first selected)</option>
+                            </select>
                         </div>
                         
-                        <div class="style-row">
-                            <label style="font-size: 11px; color: #808080; width: 100%;">Select Categories:</label>
+                        <!-- Metrics Selection -->
+                        <div id="metrics-custom-mode">
+                            <div class="style-row">
+                                <input type="text" id="metrics-search" placeholder="Search metrics..." style="width: 100%; padding: 6px; background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; border-radius: 3px;">
+                            </div>
+                            <div id="metrics-tree" style="max-height: 300px; overflow-y: auto; margin-top: 8px;"></div>
                         </div>
-                        <div id="custom-metrics" class="checkbox-group"></div>
                         
-                        <button id="metrics-btn" class="primary-btn" disabled>Run Metrics</button>
-                        <div id="metrics-status" style="text-align:center; font-size:11px; color:#808080; display:none">Calculating...</div>
+                        <!-- Actions -->
+                        <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+                            <span id="metrics-selection-count" style="color: #888; font-size: 12px;">0 selected</span>
+                            <button id="compute-metrics-btn" class="primary-btn" disabled>Compute</button>
+                        </div>
                         
-                        <button id="distributions-btn" class="secondary-btn" title="Open distribution analysis in new window">
-                            Analyze Distributions
-                        </button>
+                        <button id="distributions-btn" class="secondary-btn" style="width: 100%; margin-top: 10px;">Distributions</button>
+                    </div>
+                </div>
+
+                <!-- Parameter Modal -->
+                <div id="parameter-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center;">
+                    <div style="background: #1a1a1a; border: 1px solid #4A90E2; border-radius: 8px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                            <h3 style="margin: 0;">Parameters</h3>
+                            <button class="parameter-modal-close" style="background: none; border: none; color: #888; font-size: 24px; cursor: pointer;">&times;</button>
+                        </div>
+                        <div id="parameter-modal-content"></div>
                     </div>
                 </div>
 
@@ -331,8 +351,8 @@
                                 <option value="gt">&gt;</option>
                                 <option value="lt">&lt;</option>
                                 <option value="eq">=</option>
-                                <option value="gte">≥</option>
-                                <option value="lte">≤</option>
+                                <option value="gte">&gt;=</option>
+                                <option value="lte">&lt;=</option>
                             </select>
                             <input type="number" id="filter-value" placeholder="Value" style="flex:1;">
                         </div>
@@ -358,6 +378,20 @@
                         </div>
                         <div class="style-row">
                             <button id="reset-filter-btn" class="secondary-btn" style="margin-top:5px;">Reset Selection</button>
+                       </div>
+                       
+                       <!-- Node Visibility Controls -->
+                       <div style="border-top: 1px solid #3a3a3a; margin-top: 12px; padding-top: 12px;">
+                           <h4 style="font-size: 12px; color: #888; margin-bottom: 8px;">Selected Nodes Visibility</h4>
+                           <div class="style-row">
+                               <button id="show-only-selected-btn" class="secondary-btn" title="Hide all non-selected nodes">Show Only Selected</button>
+                           </div>
+                           <div class="style-row">
+                               <button id="hide-selected-btn" class="secondary-btn" style="margin-top:5px;" title="Hide selected nodes, show others">Hide Selected</button>
+                           </div>
+                           <div class="style-row">
+                               <button id="show-all-nodes-btn" class="secondary-btn" style="margin-top:5px;" title="Show all nodes">Show All</button>
+                           </div>
                        </div>
                     </div>
                 </div>
@@ -435,8 +469,8 @@
                     <span id="edges-progress"></span>
                 </div>
                 <div class="toolbar-actions">
-                    <button id="fit-btn">Fit</button>
-                    <button id="center-btn">Center</button>
+                    <button id="fit-btn" data-icon="fit">Fit</button>
+                    <button id="center-btn" data-icon="center">Center</button>
                     <button id="load-edges-btn" title="Incrementally load edges for large graphs">Load edges</button>
                     <button id="data-explorer-btn" title="Explore all node data">Data Explorer</button>
                 </div>
@@ -470,9 +504,9 @@
                 
                 <!-- Navigation -->
                 <div class="nav-bar">
-                    <button class="nav-btn nav-back-btn" disabled>← Back</button>
-                    <button class="nav-btn nav-in-btn" title="Select incoming neighbors">← In</button>
-                    <button class="nav-btn nav-out-btn" title="Select outgoing neighbors">Out →</button>
+                    <button class="nav-btn nav-back-btn" disabled>&larr; Back</button>
+                    <button class="nav-btn nav-in-btn" title="Select incoming neighbors">&larr; In</button>
+                    <button class="nav-btn nav-out-btn" title="Select outgoing neighbors">Out &rarr;</button>
                     <button id="neighbor-toggle-btn" class="nav-btn" title="Highlight neighbors">Highlight</button>
                 </div>
                 
@@ -513,7 +547,7 @@
                     <h3>Multiple Selection</h3>
                     <div class="multi-actions">
                         <button id="copy-selected-btn" class="icon-btn" title="Copy selected data" data-icon="copy"></button>
-                        <button id="export-csv-btn" class="icon-btn" title="Export to CSV" data-icon="save"></button>
+                        <button id="export-csv-btn" class="icon-btn" title="Export to CSV" data-icon="download"></button>
                     </div>
                 </div>
                 
@@ -534,10 +568,10 @@
                 
                 <!-- Navigation -->
                 <div class="nav-bar">
-                    <button class="nav-btn nav-back-btn" disabled>← Back</button>
+                    <button class="nav-btn nav-back-btn" disabled>&larr; Back</button>
                     <button class="nav-btn nav-origin-btn" title="Reset to origin">Origin</button>
-                    <button class="nav-btn nav-in-btn" title="Add incoming neighbors">← In</button>
-                    <button class="nav-btn nav-out-btn" title="Add outgoing neighbors">Out →</button>
+                    <button class="nav-btn nav-in-btn" title="Add incoming neighbors">&larr; In</button>
+                    <button class="nav-btn nav-out-btn" title="Add outgoing neighbors">Out &rarr;</button>
                 </div>
                 
                 <!-- Scrollable content area -->
@@ -568,7 +602,7 @@
         <div class="tokens-modal">
             <div class="tokens-modal-header">
                 <h3>Tokens (<span id="modal-token-count">0</span>)</h3>
-                <button class="tokens-modal-close" onclick="InfoPanel.closeTokensModal()">×</button>
+                <button class="tokens-modal-close" onclick="InfoPanel.closeTokensModal()">&times;</button>
             </div>
             <div class="tokens-modal-body">
                 <div class="tokens-list" id="tokens-list"></div>

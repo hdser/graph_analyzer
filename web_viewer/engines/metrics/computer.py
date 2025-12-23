@@ -49,6 +49,7 @@ class MetricComputer:
         self,
         G: nx.DiGraph,
         definitions: List[MetricDefinition],
+        metric_parameters: Optional[Dict[str, Dict[str, Any]]] = None,
         converters: List[str] = None,
         **kwargs
     ) -> pd.DataFrame:
@@ -58,6 +59,7 @@ class MetricComputer:
         Args:
             G: NetworkX directed graph
             definitions: List of MetricDefinition objects to compute
+            metric_parameters: Per-metric parameter overrides {metric_name: {param: value}}
             converters: List of trusted seed nodes (for trust algorithms)
             **kwargs: Additional parameters passed to algorithms
             
@@ -102,6 +104,9 @@ class MetricComputer:
                 skipped_count += 1
                 continue
             
+            # Get parameters for this metric
+            params = metric_parameters.get(defn.name, {}) if metric_parameters else {}
+            
             # Compute metric
             try:
                 logger.debug(f"[{i}/{len(definitions)}] Computing {defn.name}...")
@@ -113,6 +118,7 @@ class MetricComputer:
                     n_jobs=self.n_jobs,
                     converters=converters,
                     computed_metrics=metrics,  # Pass already computed metrics for dependencies
+                    parameters=params,  # NEW: Pass metric-specific parameters
                     **kwargs
                 )
                 
@@ -123,10 +129,10 @@ class MetricComputer:
                 
                 elapsed = time.time() - metric_start
                 computed_count += 1
-                logger.debug(f"  ✓ {defn.name} computed in {elapsed:.2f}s")
+                logger.debug(f"  âœ“ {defn.name} computed in {elapsed:.2f}s")
                 
             except Exception as e:
-                logger.warning(f"  ✗ {defn.name} failed: {e}")
+                logger.warning(f"  âœ— {defn.name} failed: {e}")
                 skipped_count += 1
         
         # Convert to DataFrame
@@ -205,16 +211,16 @@ class MetricEngine:
         logger.info("METRIC ENGINE INITIALIZED")
         logger.info("=" * 70)
         logger.info(f"Graph Statistics:")
-        logger.info(f"  • Nodes: {self.n:,}")
-        logger.info(f"  • Edges: {self.m:,}")
+        logger.info(f"  â€¢ Nodes: {self.n:,}")
+        logger.info(f"  â€¢ Edges: {self.m:,}")
         if self.n > 0:
-            logger.info(f"  • Avg degree: {2 * self.m / self.n:.2f}")
+            logger.info(f"  â€¢ Avg degree: {2 * self.m / self.n:.2f}")
         if self.n > 1:
-            logger.info(f"  • Density: {self.m / (self.n * (self.n - 1)):.6f}")
-        logger.info(f"  • Is connected: {nx.is_connected(self.U)}")
+            logger.info(f"  â€¢ Density: {self.m / (self.n * (self.n - 1)):.6f}")
+        logger.info(f"  â€¢ Is connected: {nx.is_connected(self.U)}")
         logger.info(f"Parallel Processing:")
-        logger.info(f"  • CPU cores: {multiprocessing.cpu_count()}")
-        logger.info(f"  • Workers: {self.n_jobs}")
+        logger.info(f"  â€¢ CPU cores: {multiprocessing.cpu_count()}")
+        logger.info(f"  â€¢ Workers: {self.n_jobs}")
         logger.info("=" * 70)
     
     def compute(
@@ -224,6 +230,7 @@ class MetricEngine:
         metrics: Optional[List[str]] = None,
         exclude_metrics: Optional[List[str]] = None,
         skip_expensive: bool = False,
+        metric_parameters: Optional[Dict[str, Dict[str, Any]]] = None,
         converters: List[str] = None,
         **kwargs
     ) -> pd.DataFrame:
@@ -236,6 +243,7 @@ class MetricEngine:
             metrics: List of individual metric names
             exclude_metrics: Metrics to exclude
             skip_expensive: Skip metrics with cost='very_high'
+            metric_parameters: Per-metric parameter overrides {metric_name: {param: value}}
             converters: Trusted seed nodes for trust algorithms
             **kwargs: Additional parameters for algorithms
             
@@ -275,6 +283,7 @@ class MetricEngine:
         return self.computer.compute(
             G=self.G,
             definitions=definitions,
+            metric_parameters=metric_parameters,
             converters=converters,
             **kwargs
         )

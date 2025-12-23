@@ -136,6 +136,29 @@ const API = {
         });
     },
 
+    /**
+     * List all available metrics with metadata
+     */
+    listMetrics() {
+        return this.fetch('/api/metrics');
+    },
+
+    /**
+     * Get parameter definitions for a specific metric
+     * @param {string} metricName - Name of the metric
+     */
+    getMetricParameters(metricName) {
+        return this.fetch(`/api/metrics/parameters/${encodeURIComponent(metricName)}`);
+    },
+
+    /**
+     * Get detailed information about metrics in a category
+     * @param {string} categoryName - Name of the category
+     */
+    getCategoryMetrics(categoryName) {
+        return this.fetch(`/api/metrics/categories/${encodeURIComponent(categoryName)}`);
+    },
+
     // =========================================================================
     // Anomaly Detection
     // =========================================================================

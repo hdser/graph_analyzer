@@ -2,11 +2,25 @@
 Metric Registry
 
 Central registry of all available metrics with their definitions,
-categories, and presets.
+categories, presets, and configurable parameters.
 """
 
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Any
+
+
+@dataclass
+class MetricParameter:
+    """Definition of a configurable metric parameter."""
+    
+    name: str                          # Parameter name
+    type: str                          # Type: "int", "float", "bool", "str", "choice"
+    default: Any                       # Default value
+    description: str                   # Human-readable description
+    min_value: Optional[float] = None  # Minimum value (for numeric types)
+    max_value: Optional[float] = None  # Maximum value (for numeric types)
+    choices: Optional[List[Any]] = None  # Available choices (for choice type)
+    step: Optional[float] = None       # Step size for UI sliders
 
 
 @dataclass
@@ -33,6 +47,9 @@ class MetricDefinition:
     # Metadata
     source: str = "networkx"           # "networkx", "custom", "scipy"
     citation: Optional[str] = None
+    
+    # Parameters (NEW)
+    parameters: List[MetricParameter] = field(default_factory=list)
 
 
 # =============================================================================
@@ -119,6 +136,20 @@ register_metric(MetricDefinition(
     algorithm_class="BetweennessCentralityAlgorithm",
     cost="high",
     output_columns=["betweenness_centrality", "betweenness_centrality_undirected"],
+    parameters=[
+        MetricParameter(
+            name="normalized",
+            type="bool",
+            default=True,
+            description="If True, normalize betweenness values"
+        ),
+        MetricParameter(
+            name="endpoints",
+            type="bool",
+            default=False,
+            description="If True, include endpoints in shortest path counts"
+        ),
+    ]
 ))
 
 register_metric(MetricDefinition(
@@ -128,6 +159,26 @@ register_metric(MetricDefinition(
     algorithm_class="EigenvectorCentralityAlgorithm",
     cost="medium",
     output_columns=["eigenvector_centrality", "eigenvector_centrality_undirected"],
+    parameters=[
+        MetricParameter(
+            name="max_iter",
+            type="int",
+            default=100,
+            description="Maximum number of iterations for power method",
+            min_value=10,
+            max_value=1000,
+            step=10
+        ),
+        MetricParameter(
+            name="tol",
+            type="float",
+            default=1.0e-6,
+            description="Convergence tolerance",
+            min_value=1.0e-10,
+            max_value=1.0e-3,
+            step=1.0e-7
+        ),
+    ]
 ))
 
 register_metric(MetricDefinition(
@@ -137,6 +188,44 @@ register_metric(MetricDefinition(
     algorithm_class="KatzCentralityAlgorithm",
     cost="medium",
     output_columns=["katz_centrality", "katz_centrality_undirected"],
+    parameters=[
+        MetricParameter(
+            name="alpha",
+            type="float",
+            default=0.1,
+            description="Attenuation factor (auto-calculated if None)",
+            min_value=0.001,
+            max_value=0.5,
+            step=0.01
+        ),
+        MetricParameter(
+            name="beta",
+            type="float",
+            default=1.0,
+            description="Weight attributed to immediate neighbors",
+            min_value=0.1,
+            max_value=10.0,
+            step=0.1
+        ),
+        MetricParameter(
+            name="max_iter",
+            type="int",
+            default=1000,
+            description="Maximum number of iterations",
+            min_value=100,
+            max_value=10000,
+            step=100
+        ),
+        MetricParameter(
+            name="tol",
+            type="float",
+            default=1.0e-6,
+            description="Convergence tolerance",
+            min_value=1.0e-10,
+            max_value=1.0e-3,
+            step=1.0e-7
+        ),
+    ]
 ))
 
 register_metric(MetricDefinition(
@@ -147,6 +236,35 @@ register_metric(MetricDefinition(
     cost="low",
     output_columns=["pagerank", "pagerank_undirected"],
     citation="Page et al., 1999",
+    parameters=[
+        MetricParameter(
+            name="alpha",
+            type="float",
+            default=0.85,
+            description="Damping parameter (probability of following a link)",
+            min_value=0.0,
+            max_value=1.0,
+            step=0.05
+        ),
+        MetricParameter(
+            name="max_iter",
+            type="int",
+            default=100,
+            description="Maximum number of iterations",
+            min_value=10,
+            max_value=1000,
+            step=10
+        ),
+        MetricParameter(
+            name="tol",
+            type="float",
+            default=1.0e-6,
+            description="Convergence tolerance",
+            min_value=1.0e-10,
+            max_value=1.0e-3,
+            step=1.0e-7
+        ),
+    ]
 ))
 
 register_metric(MetricDefinition(
@@ -323,6 +441,26 @@ register_metric(MetricDefinition(
     graph_type="undirected",
     cost="medium",
     output_columns=["community_id", "community_size"],
+    parameters=[
+        MetricParameter(
+            name="resolution",
+            type="float",
+            default=1.0,
+            description="Resolution parameter for modularity optimization",
+            min_value=0.1,
+            max_value=2.0,
+            step=0.1
+        ),
+        MetricParameter(
+            name="seed",
+            type="int",
+            default=42,
+            description="Random seed for reproducibility",
+            min_value=0,
+            max_value=10000,
+            step=1
+        ),
+    ]
 ))
 
 register_metric(MetricDefinition(
@@ -603,6 +741,26 @@ register_metric(MetricDefinition(
     cost="medium",
     output_columns=["eigentrust"],
     citation="Kamvar et al., 2003",
+    parameters=[
+        MetricParameter(
+            name="epsilon",
+            type="float",
+            default=0.01,
+            description="Convergence threshold",
+            min_value=0.0001,
+            max_value=0.1,
+            step=0.001
+        ),
+        MetricParameter(
+            name="max_iter",
+            type="int",
+            default=100,
+            description="Maximum number of iterations",
+            min_value=10,
+            max_value=1000,
+            step=10
+        ),
+    ]
 ))
 
 register_metric(MetricDefinition(

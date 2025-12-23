@@ -26,18 +26,54 @@ class LoadConfig(BaseModel):
         default=False,
         description="Skip SQL execution and use cached data"
     )
-    metrics_mode: str = Field(
+    preset: Optional[str] = Field(
         default="basic",
-        description="Metrics computation mode: basic, essential, standard, comprehensive, or full"
+        description="Metrics preset: basic, essential, moderate, comprehensive, all, trust_analysis, influence, structure"
+    )
+    categories: Optional[List[str]] = Field(
+        default=None,
+        description="Metrics categories to compute"
+    )
+    metrics: Optional[List[str]] = Field(
+        default=None,
+        description="Individual metrics to compute"
     )
 
 
 class MetricsConfig(BaseModel):
-    """Configuration for metrics computation."""
-    metrics_mode: str = Field(
-        default="basic",
-        description="Metrics computation mode"
+    """Configuration for metrics computation with granular selection."""
+    
+    # Selection strategies (mutually exclusive, priority order: metrics > categories > preset)
+    preset: Optional[str] = Field(
+        default=None,
+        description="Preset name: basic, essential, moderate, comprehensive, all, trust_analysis, influence, structure"
     )
+    categories: Optional[List[str]] = Field(
+        default=None,
+        description="List of category names: topology, centrality, clustering, community, trust, etc."
+    )
+    metrics: Optional[List[str]] = Field(
+        default=None,
+        description="List of individual metric names: pagerank, betweenness_centrality, etc."
+    )
+    exclude_metrics: Optional[List[str]] = Field(
+        default=None,
+        description="Metrics to exclude from final selection"
+    )
+    
+    # Parameters
+    metric_parameters: Optional[Dict[str, Dict[str, Any]]] = Field(
+        default=None,
+        description="Per-metric parameter overrides: {metric_name: {param: value}}"
+    )
+    
+    # Filters
+    skip_expensive: bool = Field(
+        default=False,
+        description="Skip metrics with cost='very_high'"
+    )
+    
+    # Target
     metrics_graph_id: Optional[str] = Field(
         default=None,
         description="Specific graph ID to compute metrics for (None = all)"
@@ -224,7 +260,15 @@ class AutoReloadConfig(BaseModel):
         default=True,
         description="Recompute metrics after reload"
     )
-    metrics_mode: str = Field(
+    preset: Optional[str] = Field(
         default="basic",
-        description="Metrics mode for recomputation"
+        description="Metrics preset for recomputation"
+    )
+    categories: Optional[List[str]] = Field(
+        default=None,
+        description="Metrics categories for recomputation"
+    )
+    metrics: Optional[List[str]] = Field(
+        default=None,
+        description="Individual metrics for recomputation"
     )

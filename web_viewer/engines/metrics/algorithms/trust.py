@@ -52,6 +52,7 @@ class EigenTrustAlgorithm(BaseMetricAlgorithm):
         U: nx.Graph,
         nodes: list,
         converters: List[str] = None,
+        parameters=None,
         **kwargs
     ) -> Dict[str, Dict[str, Any]]:
         """
@@ -62,7 +63,14 @@ class EigenTrustAlgorithm(BaseMetricAlgorithm):
             U: Undirected version
             nodes: List of nodes to compute for
             converters: List of trusted seed nodes (high pre-trust)
+            parameters: Algorithm parameters (epsilon, max_iter)
         """
+        # Get parameters with defaults
+        params = parameters or {}
+        epsilon = params.get('epsilon', self.tolerance)  # Use epsilon instead of tol for consistency with registry
+        max_iter = params.get('max_iter', self.max_iterations)
+        alpha = params.get('alpha', self.alpha)  # Allow override but not in registry yet
+        
         n = G.number_of_nodes()
         
         if n == 0:
@@ -91,20 +99,20 @@ class EigenTrustAlgorithm(BaseMetricAlgorithm):
         trust = pre_trust.copy()
         iterations_used = 0
         
-        for iteration in range(self.max_iterations):
+        for iteration in range(max_iter):
             trust_prev = trust.copy()
             
             # EigenTrust update: t = (1-α)C^T t + α p
-            trust = (1 - self.alpha) * (C.T @ trust_prev) + self.alpha * pre_trust
+            trust = (1 - alpha) * (C.T @ trust_prev) + alpha * pre_trust
             
             # Check convergence
-            if np.linalg.norm(trust - trust_prev, ord=1) < self.tolerance:
+            if np.linalg.norm(trust - trust_prev, ord=1) < epsilon:
                 iterations_used = iteration + 1
                 logger.debug(f"EigenTrust converged at iteration {iteration + 1}")
                 break
         else:
-            iterations_used = self.max_iterations
-            logger.warning(f"EigenTrust did not converge in {self.max_iterations} iterations")
+            iterations_used = max_iter
+            logger.warning(f"EigenTrust did not converge in {max_iter} iterations")
         
         # Build result
         result = {}

@@ -26,9 +26,14 @@ class LouvainCommunityAlgorithm(BaseMetricAlgorithm):
     cost = "medium"
     graph_type = "undirected"
     
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
+        # Get parameters with defaults
+        params = parameters or {}
+        resolution = params.get('resolution', 1.0)
+        seed = params.get('seed', 42)
+        
         try:
-            communities = nx_comm.louvain_communities(U, threshold=1e-10, seed=42)
+            communities = nx_comm.louvain_communities(U, resolution=resolution, threshold=1e-10, seed=seed)
             
             comm_map = {}
             comm_sizes = {}

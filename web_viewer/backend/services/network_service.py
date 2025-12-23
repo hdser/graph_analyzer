@@ -506,45 +506,36 @@ class NetworkService:
     def compute_metrics_for_shared_avatars(
         self,
         edge_layers: Dict[str, pd.DataFrame],
-        metrics_mode: str = "essential"
+        preset: Optional[str] = None,
+        categories: Optional[List[str]] = None,
+        metrics: Optional[List[str]] = None,
+        exclude_metrics: Optional[List[str]] = None,
+        metric_parameters: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> Dict[str, pd.DataFrame]:
         """
         Compute metrics for each version's shared avatars.
         
         Args:
             edge_layers: Edge layer DataFrames
-            metrics_mode: Metrics computation mode - can be:
-                - A preset name: "basic", "essential", "moderate", "comprehensive", "all"
-                - A single category: "centrality", "topology", etc.
-                - Comma-separated categories: "centrality,topology,clustering"
+            preset: Preset name (basic, essential, moderate, comprehensive, all, etc.)
+            categories: List of category names
+            metrics: List of individual metric names
+            exclude_metrics: Metrics to exclude
+            metric_parameters: Per-metric parameter overrides
             
         Returns:
             Dictionary of metrics DataFrames keyed by version
         """
-        # Parse metrics_mode to determine preset vs categories
-        metrics_mode = metrics_mode.lower().strip() if metrics_mode else "basic"
-        
-        preset = None
-        categories = None
-        
-        if metrics_mode in METRIC_PRESETS:
-            preset = metrics_mode
-            print(f"[METRICS] Using preset: {preset}")
-        elif ',' in metrics_mode:
-            categories = [c.strip() for c in metrics_mode.split(',') if c.strip()]
-            valid_cats = [c for c in categories if c in METRIC_CATEGORIES]
-            if valid_cats:
-                categories = valid_cats
-                print(f"[METRICS] Using categories: {categories}")
-            else:
-                preset = "basic"
-                print(f"[METRICS] Invalid categories '{metrics_mode}', using preset: basic")
-        elif metrics_mode in METRIC_CATEGORIES:
-            categories = [metrics_mode]
-            print(f"[METRICS] Using single category: {categories}")
-        else:
+        # Default to basic preset if nothing specified
+        if not preset and not categories and not metrics:
             preset = "basic"
-            print(f"[METRICS] Unknown mode '{metrics_mode}', using preset: basic")
+            print(f"[METRICS] Using default preset: {preset}")
+        elif preset:
+            print(f"[METRICS] Using preset: {preset}")
+        elif categories:
+            print(f"[METRICS] Using categories: {categories}")
+        elif metrics:
+            print(f"[METRICS] Using individual metrics: {metrics[:5]}{'...' if len(metrics) > 5 else ''}")
         
         # Group layers by version
         version_layers: Dict[str, Dict[str, pd.DataFrame]] = {}
@@ -601,7 +592,13 @@ class NetworkService:
             
             # Compute metrics using MetricEngine
             engine = MetricEngine(G, n_jobs=settings.N_JOBS)
-            metrics_df = engine.compute(preset=preset, categories=categories)
+            metrics_df = engine.compute(
+                preset=preset,
+                categories=categories,
+                metrics=metrics,
+                exclude_metrics=exclude_metrics,
+                metric_parameters=metric_parameters
+            )
             
             metrics_dfs[version] = metrics_df
             print(f"[METRICS] Computed {len(metrics_df.columns)-1} metrics for {len(metrics_df)} nodes in {version}")
@@ -718,8 +715,11 @@ class NetworkService:
         metrics_source = "computed"
         
         # Check if we should skip metrics computation entirely
-        if config.metrics_mode == "skip":
-            print("[METRICS] Skipping metrics computation (metrics_mode='skip')")
+        # Skip if no preset, categories, or metrics specified
+        should_compute_metrics = config.preset or config.categories or config.metrics
+        
+        if not should_compute_metrics:
+            print("[METRICS] Skipping metrics computation (no preset/categories/metrics specified)")
             metrics_source = "skipped"
         elif config.skip_sql:
             # Try loading cached metrics for each layer
@@ -730,11 +730,13 @@ class NetworkService:
                     metrics_dfs[version] = cached_metrics
                     metrics_source = "cache"
         
-        # If no cached metrics found and not skipping, compute them
-        if not metrics_dfs and config.metrics_mode != "skip":
+        # If no cached metrics found and should compute, compute them
+        if not metrics_dfs and should_compute_metrics:
             metrics_dfs = self.compute_metrics_for_shared_avatars(
-                edge_layers, 
-                config.metrics_mode
+                edge_layers,
+                preset=config.preset,
+                categories=config.categories,
+                metrics=config.metrics
             )
             metrics_source = "computed"
             
@@ -861,7 +863,11 @@ class NetworkService:
         
         new_metrics_df = self.compute_metrics_for_shared_avatars(
             edge_layers=self.edge_layers,
-            metrics_mode=config.metrics_mode
+            preset=config.preset,
+            categories=config.categories,
+            metrics=config.metrics,
+            exclude_metrics=config.exclude_metrics,
+            metric_parameters=config.metric_parameters
         )
         
         # Get the metrics for target version

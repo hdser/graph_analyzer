@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDropdownLogic();
     setupCollapsibleSections();
     setupSubsectionCollapsibles();
+    setupSidebarToggle();
     
     // Initialize features
     initializeDefaultStyle();
@@ -34,8 +35,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     AutoReload.setup();
     CompositeMetrics.setup();
     InfoPanel.setupNeighborClicks();
-    Metrics.initFilterUI();
     Snapshots.init();
+    
+    // Initialize Metrics module
+    try {
+        await Metrics.init();
+        console.log('[App] Metrics module initialized');
+    } catch (error) {
+        console.error('[App] Failed to initialize Metrics:', error);
+    }
     
     console.log('Graph Analyzer initialized');
 });
@@ -97,23 +105,15 @@ async function loadAvailableConfig() {
 
         // Populate metrics target graph dropdown
         const metricsGraphSelect = document.getElementById('metrics-graph');
-        metricsGraphSelect.innerHTML = '<option value="">Auto (first selected)</option>' + 
-            config.sql_files.map(file => `<option value="${file.graph_id}">${file.graph_id}</option>`).join('');
-        metricsGraphSelect.value = 'crc_v2_invites';
-
-        // Populate custom metrics checkboxes
-        if (config.metric_modes?.categories) {
-            const customDiv = document.getElementById('custom-metrics');
-            customDiv.innerHTML = Object.entries(config.metric_modes.categories)
-                .map(([key, desc]) => 
-                    `<label title="${desc}">
-                        <input type="checkbox" name="custom-metric" value="${key}" 
-                            ${['topology', 'clustering'].includes(key) ? 'checked' : ''}>
-                        <span style="font-weight:500;">${key}</span>
-                        <span style="color:#808080; font-size:11px; display:block; margin-left:20px; margin-bottom:4px;">${desc}</span>
-                    </label>`
-                ).join('');
+        if (metricsGraphSelect) {
+            metricsGraphSelect.innerHTML = '<option value="">Auto (first selected)</option>' + 
+                config.sql_files.map(file => `<option value="${file.graph_id}">${file.graph_id}</option>`).join('');
+            metricsGraphSelect.value = 'crc_v2_invites';
         }
+
+        // Metrics UI is now initialized by Metrics.init()
+        // (Old metrics-graph and custom-metrics elements removed)
+
 
         // Hide data source UI elements in production mode
         if (config.hide_data_source_ui) {
@@ -192,11 +192,11 @@ async function pollForDataReady() {
         if (status.status === 'loading') {
             updateStatus(`Loading: ${status.message}`, 'info');
         } else if (status.status === 'ready') {
-            console.log('[STARTUP] ✓ Data ready!');
+            console.log('[STARTUP] Ã¢Å“â€œ Data ready!');
             eventSource.close();
             await displayLoadedGraph(status);
         } else if (status.status === 'error') {
-            console.error('[STARTUP] ✗ Error:', status.message);
+            console.error('[STARTUP] Ã¢Å“â€” Error:', status.message);
             eventSource.close();
             updateStatus(`Error: ${status.message}`, 'error');
             DOMCache.loading.style.display = 'none';
@@ -292,8 +292,11 @@ async function displayLoadedGraph(status) {
     const firstGraph = graphs[0];
     GraphLoader.displayGraph(firstGraph);
     
-    // Enable metrics
-    document.getElementById('metrics-btn').disabled = false;
+    // Enable metrics button
+    const metricsBtn = document.getElementById('compute-metrics-btn');
+    if (metricsBtn) {
+        metricsBtn.disabled = false;
+    }
     
     DOMCache.loading.style.display = 'none';
     updateStatus(`Loaded ${graphs.length} graph(s)`, 'success');
@@ -344,6 +347,8 @@ function setupSubsectionCollapsibles() {
                     content.style.display = 'none';
                 } else {
                     content.style.display = '';
+                    // Inject icons when content is shown
+                    Icons.inject();
                 }
             }
             
@@ -357,19 +362,42 @@ function setupSubsectionCollapsibles() {
 }
 
 // =============================================================================
+// SIDEBAR TOGGLE
+// =============================================================================
+
+function setupSidebarToggle() {
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('sidebar-toggle');
+    
+    if (!sidebar || !toggleBtn) return;
+    
+    toggleBtn.addEventListener('click', () => {
+        sidebar.classList.toggle('collapsed');
+        
+        // Update icon direction
+        if (sidebar.classList.contains('collapsed')) {
+            toggleBtn.setAttribute('data-icon', 'chevronRight');
+        } else {
+            toggleBtn.setAttribute('data-icon', 'chevronLeft');
+        }
+        
+        // Re-inject icons
+        Icons.inject();
+    });
+}
+
+// =============================================================================
 // EVENT LISTENERS
 // =============================================================================
 
 function setupEventListeners() {
     // Core buttons
     document.getElementById('load-btn').addEventListener('click', () => GraphLoader.loadGraphs());
-    document.getElementById('metrics-btn').addEventListener('click', () => Metrics.run());
-    document.getElementById('filter-btn').addEventListener('click', () => Metrics.filter());
-    document.getElementById('reset-filter-btn').addEventListener('click', () => Metrics.reset());
-    document.getElementById('neighbor-toggle-btn').addEventListener('click', () => CytoscapeManager.toggleNeighborHighlight());
+    // Metrics button handled by Metrics module itself
+    document.getElementById('neighbor-toggle-btn')?.addEventListener('click', () => CytoscapeManager.toggleNeighborHighlight());
 
     // Graph selector
-    document.getElementById('graph-select').addEventListener('change', (e) => {
+    document.getElementById('graph-select')?.addEventListener('change', (e) => {
         if (e.target.value) GraphLoader.displayGraph(e.target.value);
     });
 
@@ -442,6 +470,15 @@ function setupEventListeners() {
             DataExplorer.open();
         }
     });
+    
+    // Filter nodes
+    document.getElementById('filter-btn')?.addEventListener('click', () => Metrics.filter());
+    document.getElementById('reset-filter-btn')?.addEventListener('click', () => Metrics.reset());
+    
+    // Node visibility controls
+    document.getElementById('show-only-selected-btn')?.addEventListener('click', () => Metrics.showOnlySelected());
+    document.getElementById('hide-selected-btn')?.addEventListener('click', () => Metrics.hideSelected());
+    document.getElementById('show-all-nodes-btn')?.addEventListener('click', () => Metrics.showAllNodes());
 }
 
 // =============================================================================

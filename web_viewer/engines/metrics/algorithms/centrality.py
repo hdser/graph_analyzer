@@ -79,10 +79,15 @@ class BetweennessCentralityAlgorithm(BaseMetricAlgorithm):
     description = "Betweenness centrality (directed and undirected)"
     cost = "high"
     
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
+        # Get parameters with defaults
+        params = parameters or {}
+        normalized = params.get('normalized', True)
+        endpoints = params.get('endpoints', False)
+        
         try:
-            betweenness = nx.betweenness_centrality(G)
-            betweenness_undirected = nx.betweenness_centrality(U)
+            betweenness = nx.betweenness_centrality(G, normalized=normalized, endpoints=endpoints)
+            betweenness_undirected = nx.betweenness_centrality(U, normalized=normalized, endpoints=endpoints)
             
             result = {}
             for node in nodes:
@@ -104,17 +109,22 @@ class EigenvectorCentralityAlgorithm(BaseMetricAlgorithm):
     description = "Eigenvector centrality (directed and undirected)"
     cost = "medium"
     
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
+        # Get parameters with defaults
+        params = parameters or {}
+        max_iter = params.get('max_iter', 1000)
+        tol = params.get('tol', 1.0e-6)
+        
         result = {}
         
         try:
-            eigenvector = nx.eigenvector_centrality(G, max_iter=1000)
+            eigenvector = nx.eigenvector_centrality(G, max_iter=max_iter, tol=tol)
         except Exception as e:
             logger.warning(f"Directed eigenvector centrality failed: {e}")
             eigenvector = {}
         
         try:
-            eigenvector_undirected = nx.eigenvector_centrality(U, max_iter=1000)
+            eigenvector_undirected = nx.eigenvector_centrality(U, max_iter=max_iter, tol=tol)
         except Exception as e:
             logger.warning(f"Undirected eigenvector centrality failed: {e}")
             eigenvector_undirected = {}
@@ -146,19 +156,30 @@ class KatzCentralityAlgorithm(BaseMetricAlgorithm):
         except Exception:
             return 0.01
     
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
+        # Get parameters with defaults
+        params = parameters or {}
+        alpha = params.get('alpha', None)  # None means auto-calculate
+        beta = params.get('beta', 1.0)
+        max_iter = params.get('max_iter', 1000)
+        tol = params.get('tol', 1.0e-6)
+        
         result = {}
         
         try:
-            alpha = self._safe_alpha(G)
-            katz = nx.katz_centrality(G, alpha=alpha, max_iter=1000)
+            if alpha is None:
+                alpha = self._safe_alpha(G)
+            katz = nx.katz_centrality(G, alpha=alpha, beta=beta, max_iter=max_iter, tol=tol)
         except Exception as e:
             logger.warning(f"Directed Katz centrality failed: {e}")
             katz = {}
         
         try:
-            alpha_u = self._safe_alpha(G)  # Use same alpha
-            katz_undirected = nx.katz_centrality(U, alpha=alpha_u, max_iter=1000)
+            if params.get('alpha', None) is None:  # Use same auto-calculated alpha
+                alpha_u = self._safe_alpha(U)
+            else:
+                alpha_u = alpha
+            katz_undirected = nx.katz_centrality(U, alpha=alpha_u, beta=beta, max_iter=max_iter, tol=tol)
         except Exception as e:
             logger.warning(f"Undirected Katz centrality failed: {e}")
             katz_undirected = {}
@@ -183,10 +204,16 @@ class PageRankAlgorithm(BaseMetricAlgorithm):
         super().__init__(**kwargs)
         self.alpha = alpha
     
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
+        # Get parameters with defaults
+        params = parameters or {}
+        alpha = params.get('alpha', self.alpha)
+        max_iter = params.get('max_iter', 100)
+        tol = params.get('tol', 1.0e-6)
+        
         try:
-            pagerank = nx.pagerank(G, alpha=self.alpha)
-            pagerank_undirected = nx.pagerank(U, alpha=self.alpha)
+            pagerank = nx.pagerank(G, alpha=alpha, max_iter=max_iter, tol=tol)
+            pagerank_undirected = nx.pagerank(U, alpha=alpha, max_iter=max_iter, tol=tol)
             
             result = {}
             for node in nodes:
