@@ -261,6 +261,38 @@ const Icons = {
             <circle cx="13" cy="8" r="1" fill="currentColor"/>
         </svg>`,
         
+        // Additional icons for sidebar navigation
+        upload: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 10v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-3"/>
+            <path d="M8 2v8"/>
+            <path d="M4 6l4-4 4 4"/>
+        </svg>`,
+        
+        camera: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="3" width="14" height="10" rx="1"/>
+            <circle cx="8" cy="8" r="2.5"/>
+            <path d="M5 3L6 1h4l1 2"/>
+        </svg>`,
+        
+        palette: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 1.5c3.5 0 6.5 3 6.5 6.5 0 1.5-.5 2.5-1.5 2.5h-1c-.5 0-1 .5-1 1 0 .5.2 1 .5 1.3.3.3.5.7.5 1.2 0 1-1 1.5-2 1.5-3.5 0-6.5-3-6.5-6.5S4.5 1.5 8 1.5z"/>
+            <circle cx="5.5" cy="6.5" r="0.8" fill="currentColor"/>
+            <circle cx="8" cy="5" r="0.8" fill="currentColor"/>
+            <circle cx="10.5" cy="6.5" r="0.8" fill="currentColor"/>
+        </svg>`,
+        
+        layers: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 11l6 3 6-3"/>
+            <path d="M2 8l6 3 6-3"/>
+            <path d="M8 2L2 5l6 3 6-3-6-3z"/>
+        </svg>`,
+        
+        database: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="8" cy="3" rx="6" ry="2"/>
+            <path d="M2 3v8c0 1.1 2.7 2 6 2s6-.9 6-2V3"/>
+            <path d="M2 7c0 1.1 2.7 2 6 2s6-.9 6-2"/>
+        </svg>`,
+        
         // App logo - network pattern inspired design
         appLogo: `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- Thick C shape as a filled path -->

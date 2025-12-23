@@ -9,34 +9,65 @@
 </head>
 <body>
     <div class="container">
+        <!-- NEW SIDEBAR STRUCTURE -->
         <div class="sidebar" id="sidebar">
+            <!-- Header -->
             <div class="app-header">
-                <span class="app-logo" data-icon="appLogo"></span>
+                <span class="app-logo" data-icon="appLogo" data-icon-size="36"></span>
                 <span class="app-title">Network <span style="color: #d33a47;">Analyzer</span></span>
-                <button id="sidebar-toggle" class="sidebar-toggle" data-icon="chevronLeft" title="Toggle sidebar"></button>
+                <button id="sidebar-collapse-toggle" class="sidebar-collapse-toggle" data-icon="chevronLeft" title="Collapse sidebar"></button>
             </div>
-            <div class="sidebar-content">
+            
+            <!-- Button Navigation Bar -->
+            <div class="nav-buttons" id="nav-buttons">
+                <button class="nav-btn" data-panel="load" title="Load Data">
+                    <span data-icon="upload" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Load</span>
+                </button>
+                <button class="nav-btn" data-panel="reload" title="Auto Reload">
+                    <span data-icon="refresh" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Reload</span>
+                </button>
+                <button class="nav-btn" data-panel="snapshots" title="Snapshots">
+                    <span data-icon="camera" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Snapshots</span>
+                </button>
+                <button class="nav-btn" data-panel="metrics" title="Metrics">
+                    <span data-icon="chart" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Metrics</span>
+                </button>
+                <button class="nav-btn" data-panel="filter" title="Filter">
+                    <span data-icon="filter" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Filter</span>
+                </button>
+                <button class="nav-btn" data-panel="style" title="Style">
+                    <span data-icon="palette" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Style</span>
+                </button>
+            </div>
+            
+            <!-- Slide-out Panels Container -->
+            <div class="sidebar-panels" id="sidebar-panels">
                 
-                <div class="section collapsible" id="data-source-section">
-                    <div class="collapsible-header">
-                        <h3>Data Source (Load)</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                <!-- LOAD PANEL -->
+                <div class="panel" id="panel-load" data-panel="load">
+                    <div class="panel-header">
+                        <h3>Load Data</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                   <div class="style-subsection">
+                    <div class="panel-content">
                         <div class="style-row">
                             <label>SQL Files</label>
                             <div class="custom-dropdown" id="sql-files-dropdown">
                                 <div class="dropdown-header" id="sql-dropdown-header">Select files...</div>
-                                <div class="dropdown-list" id="sql-files-list">
-                                </div>
+                                <div class="dropdown-list" id="sql-files-list"></div>
                             </div>
                         </div>
                         <div class="style-row" id="properties-dropdown-container">
                             <label>Node Properties</label>
                             <div class="custom-dropdown" id="properties-files-dropdown">
                                 <div class="dropdown-header" id="properties-dropdown-header">Select properties...</div>
-                                <div class="dropdown-list" id="properties-files-list">
-                                </div>
+                                <div class="dropdown-list" id="properties-files-list"></div>
                             </div>
                         </div>
                         <div class="style-row">
@@ -57,14 +88,13 @@
                     </div>
                 </div>
 
-                <!-- Auto-Reload Section -->
-                <div class="section collapsible" id="auto-reload-section">
-                    <div class="collapsible-header">
+                <!-- AUTO RELOAD PANEL -->
+                <div class="panel" id="panel-reload" data-panel="reload">
+                    <div class="panel-header">
                         <h3>Auto Reload</h3>
-                        <span class="auto-reload-indicator" id="reload-indicator" title="Auto-reload status"></span>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
+                    <div class="panel-content">
                         <div class="style-row">
                             <label>Enable</label>
                             <label class="toggle-switch">
@@ -109,13 +139,13 @@
                     </div>
                 </div>
 
-                <!-- Historical Snapshots Section -->
-                <div class="section collapsible" id="snapshots-section">
-                    <div class="collapsible-header">
+                <!-- SNAPSHOTS PANEL -->
+                <div class="panel" id="panel-snapshots" data-panel="snapshots">
+                    <div class="panel-header">
                         <h3>Historical Snapshots</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
+                    <div class="panel-content">
                         <!-- Status indicator -->
                         <div id="snapshot-status" class="snapshot-status-indicator">Live View</div>
                         
@@ -289,12 +319,13 @@
                     </div>
                 </div>
 
-                <div class="section collapsible" id="metrics-section">
-                    <div class="collapsible-header">
+                <!-- METRICS PANEL -->
+                <div class="panel" id="panel-metrics" data-panel="metrics">
+                    <div class="panel-header">
                         <h3>Metrics</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
+                    <div class="panel-content">
                         <!-- Target Selection (always visible) -->
                         <div class="style-row" style="margin-bottom: 16px;">
                             <label>Target:</label>
@@ -332,14 +363,13 @@
                     </div>
                 </div>
 
-
-
-                <div class="section collapsible">
-                    <div class="collapsible-header">
+                <!-- FILTER PANEL -->
+                <div class="panel" id="panel-filter" data-panel="filter">
+                    <div class="panel-header">
                         <h3>Filter Nodes</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
+                    <div class="panel-content">
                         <div class="style-row">
                             <label>Property</label>
                             <select id="filter-metric">
@@ -396,12 +426,13 @@
                     </div>
                 </div>
 
-                <div class="section collapsible">
-                    <div class="collapsible-header">
+                <!-- STYLE PANEL -->
+                <div class="panel" id="panel-style" data-panel="style">
+                    <div class="panel-header">
                         <h3>Visual Style</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
+                    <div class="panel-content">
                         <h4>Node Size</h4>
                         <div class="style-row">
                             <label>Metric</label>
@@ -453,6 +484,7 @@
             </div>
         </div>
 
+        <!-- MAIN CONTENT AREA -->
         <div class="main-content">
             <div class="toolbar">
                 <div class="toolbar-search">
@@ -486,6 +518,7 @@
             </div>
         </div>
 
+       <!-- INFO PANEL (RIGHT SIDE) -->
        <div id="info-panel" class="info-panel-right" style="display:none">
             <div class="info-header">
                 <h3>Node Information</h3>

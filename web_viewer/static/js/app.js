@@ -22,9 +22,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Setup event listeners
     setupEventListeners();
     setupDropdownLogic();
-    setupCollapsibleSections();
+    setupPanelNavigation();  // NEW: Setup button-based panel system
     setupSubsectionCollapsibles();
-    setupSidebarToggle();
     
     // Initialize features
     initializeDefaultStyle();
@@ -192,11 +191,11 @@ async function pollForDataReady() {
         if (status.status === 'loading') {
             updateStatus(`Loading: ${status.message}`, 'info');
         } else if (status.status === 'ready') {
-            console.log('[STARTUP] Ã¢Å“â€œ Data ready!');
+            console.log('[STARTUP] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Data ready!');
             eventSource.close();
             await displayLoadedGraph(status);
         } else if (status.status === 'error') {
-            console.error('[STARTUP] Ã¢Å“â€” Error:', status.message);
+            console.error('[STARTUP] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Error:', status.message);
             eventSource.close();
             updateStatus(`Error: ${status.message}`, 'error');
             DOMCache.loading.style.display = 'none';
@@ -303,35 +302,116 @@ async function displayLoadedGraph(status) {
 }
 
 // =============================================================================
-// COLLAPSIBLE SECTIONS
+// PANEL NAVIGATION SYSTEM
 // =============================================================================
 
-function setupCollapsibleSections() {
-    document.querySelectorAll('.section.collapsible .collapsible-header').forEach(header => {
-        header.addEventListener('click', () => {
-            header.classList.toggle('collapsed');
-            
-            // Find the content element (next sibling with class style-subsection)
-            const content = header.nextElementSibling;
-            if (content) {
-                if (header.classList.contains('collapsed')) {
-                    content.style.display = 'none';
-                } else {
-                    content.style.display = '';
-                }
-            }
-            
-            // Rotate chevron icon
-            const icon = header.querySelector('.collapse-icon');
-            if (icon) {
-                icon.style.transform = header.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
-            }
+/**
+ * Setup the new button-based panel navigation system
+ */
+function setupPanelNavigation() {
+    const navButtons = document.querySelectorAll('.nav-btn[data-panel]');
+    const panels = document.querySelectorAll('.panel[data-panel]');
+    const panelCloseButtons = document.querySelectorAll('.panel-close');
+    
+    console.log('[Panel Nav] Found', navButtons.length, 'buttons and', panels.length, 'panels');
+    
+    // Store active panel
+    let activePanel = null;
+    
+    /**
+     * Close all panels
+     */
+    function closeAllPanels() {
+        panels.forEach(panel => {
+            panel.classList.remove('active');
+        });
+        navButtons.forEach(btn => {
+            btn.classList.remove('active');
+        });
+        activePanel = null;
+        console.log('[Panel Nav] All panels closed');
+    }
+    
+    /**
+     * Open a specific panel
+     */
+    function openPanel(panelName) {
+        console.log('[Panel Nav] Opening panel:', panelName);
+        const panel = document.getElementById(`panel-${panelName}`);
+        const button = document.querySelector(`.nav-btn[data-panel="${panelName}"]`);
+        
+        if (!panel) {
+            console.error('[Panel Nav] Panel not found:', `panel-${panelName}`);
+            return;
+        }
+        if (!button) {
+            console.error('[Panel Nav] Button not found for panel:', panelName);
+            return;
+        }
+        
+        // If clicking the same button, close the panel
+        if (activePanel === panelName) {
+            console.log('[Panel Nav] Closing active panel:', panelName);
+            closeAllPanels();
+            return;
+        }
+        
+        // Close all panels first
+        closeAllPanels();
+        
+        // Open the requested panel
+        panel.classList.add('active');
+        button.classList.add('active');
+        activePanel = panelName;
+        
+        console.log('[Panel Nav] Panel opened:', panelName);
+        
+        // Inject icons in the panel content
+        setTimeout(() => {
+            Icons.inject();
+            console.log('[Panel Nav] Icons injected');
+        }, 50);
+    }
+    
+    // Setup button click handlers
+    navButtons.forEach(btn => {
+        const panelName = btn.dataset.panel;
+        console.log('[Panel Nav] Setting up button for panel:', panelName);
+        
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[Panel Nav] Button clicked:', panelName);
+            openPanel(panelName);
         });
     });
+    
+    // Setup panel close buttons
+    panelCloseButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[Panel Nav] Close button clicked');
+            closeAllPanels();
+        });
+    });
+    
+    // Setup ESC key to close panels
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && activePanel) {
+            console.log('[Panel Nav] ESC pressed, closing panel');
+            closeAllPanels();
+        }
+    });
+    
+    console.log('[Panel Nav] Setup complete');
+    
+    // Inject icons in buttons
+    Icons.inject();
 }
 
 /**
- * Setup collapsible subsections (like create snapshot section)
+ * Setup collapsible subsections within panels
  */
 function setupSubsectionCollapsibles() {
     document.querySelectorAll('.collapsible-sub').forEach(header => {
@@ -358,31 +438,6 @@ function setupSubsectionCollapsibles() {
                 icon.style.transform = header.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
             }
         });
-    });
-}
-
-// =============================================================================
-// SIDEBAR TOGGLE
-// =============================================================================
-
-function setupSidebarToggle() {
-    const sidebar = document.getElementById('sidebar');
-    const toggleBtn = document.getElementById('sidebar-toggle');
-    
-    if (!sidebar || !toggleBtn) return;
-    
-    toggleBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('collapsed');
-        
-        // Update icon direction
-        if (sidebar.classList.contains('collapsed')) {
-            toggleBtn.setAttribute('data-icon', 'chevronRight');
-        } else {
-            toggleBtn.setAttribute('data-icon', 'chevronLeft');
-        }
-        
-        // Re-inject icons
-        Icons.inject();
     });
 }
 
