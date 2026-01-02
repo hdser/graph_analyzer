@@ -32,28 +32,23 @@ class Settings:
     # SNAPSHOT CONFIGURATION
     # ==========================================================================
     
-    # Snapshot storage directory
     SNAPSHOT_CACHE_DIR: Path = CACHE_DIR / "snapshots"
     SNAPSHOT_MASTER_LAYOUTS_DIR: str = "_master_layouts"
     SNAPSHOT_INDEX_FILE: str = "_index.json"
     
-    # Spring layout parameters for unknown nodes
     SNAPSHOT_SPRING_ITERATIONS: int = int(os.getenv("SNAPSHOT_SPRING_ITERATIONS", "50"))
     SNAPSHOT_SPRING_K: float = float(os.getenv("SNAPSHOT_SPRING_K", "1.0"))
     SNAPSHOT_SPRING_REPULSION: float = float(os.getenv("SNAPSHOT_SPRING_REPULSION", "100.0"))
     SNAPSHOT_SPRING_ATTRACTION: float = float(os.getenv("SNAPSHOT_SPRING_ATTRACTION", "0.1"))
     SNAPSHOT_SPRING_DAMPING: float = float(os.getenv("SNAPSHOT_SPRING_DAMPING", "0.9"))
     
-    # Snapshot default metrics mode
     SNAPSHOT_DEFAULT_METRICS_MODE: str = os.getenv("SNAPSHOT_DEFAULT_METRICS_MODE", "standard")
     
-    # Standard metrics to compute for snapshots
     SNAPSHOT_STANDARD_METRICS: List[str] = [
         "in_degree", "out_degree", "total_degree",
         "pagerank", "betweenness_centrality"
     ]
     
-    # Limits
     SNAPSHOT_MAX_BATCH_SIZE: int = int(os.getenv("SNAPSHOT_MAX_BATCH_SIZE", "30"))
     SNAPSHOT_MAX_SUGGESTIONS: int = int(os.getenv("SNAPSHOT_MAX_SUGGESTIONS", "90"))
     
@@ -67,14 +62,42 @@ class Settings:
     DB_PORT: str = os.getenv("DB_PORT", "5432")
     DB_NAME: str = os.getenv("DB_NAME", "circles")
     
-    # Layout service
+    # Layout service (Node.js)
     LAYOUT_SERVICE_URL: str = os.getenv("LAYOUT_SERVICE_URL", "http://localhost:3000/layout")
     
     # Metrics settings
     DEFAULT_METRICS_MODE: str = os.getenv("DEFAULT_METRICS_MODE", "essential")
     N_JOBS: int = int(os.getenv("N_JOBS", "-1"))
     
-    # Layout algorithm parameters
+    # ==========================================================================
+    # LAYOUT BACKEND CONFIGURATION
+    # ==========================================================================
+    
+    # Priority order for layout backends (comma-separated)
+    # Available: cached, cytoscape_desktop, igraph, fa2, layout_service, local_spring, circular
+    LAYOUT_BACKEND_PRIORITY: List[str] = [
+        p.strip() for p in os.getenv(
+            "LAYOUT_BACKEND_PRIORITY",
+            "cached,cytoscape_desktop,igraph,fa2,layout_service,local_spring,circular"
+        ).split(",") if p.strip()
+    ]
+    
+    # igraph settings
+    IGRAPH_DEFAULT_ALGORITHM: str = os.getenv("IGRAPH_DEFAULT_ALGORITHM", "auto")
+    IGRAPH_SCALE: float = float(os.getenv("IGRAPH_SCALE", "1000.0"))
+    
+    # ForceAtlas2 settings
+    FA2_ITERATIONS: int = int(os.getenv("FA2_ITERATIONS", "1000"))
+    FA2_BARNES_HUT_OPTIMIZE: bool = os.getenv("FA2_BARNES_HUT_OPTIMIZE", "true").lower() == "true"
+    FA2_BARNES_HUT_THETA: float = float(os.getenv("FA2_BARNES_HUT_THETA", "1.2"))
+    FA2_SCALING_RATIO: float = float(os.getenv("FA2_SCALING_RATIO", "2.0"))
+    FA2_GRAVITY: float = float(os.getenv("FA2_GRAVITY", "1.0"))
+    FA2_SCALE: float = float(os.getenv("FA2_SCALE", "1.0"))
+    
+    # ==========================================================================
+    # LOCAL SPRING LAYOUT PARAMETERS
+    # ==========================================================================
+    
     SPRING_STRENGTH: float = float(os.getenv("SPRING_STRENGTH", "0.0008"))
     SPRING_LENGTH: float = float(os.getenv("SPRING_LENGTH", "200"))
     REPULSION_STRENGTH: float = float(os.getenv("REPULSION_STRENGTH", "5000"))
@@ -83,9 +106,13 @@ class Settings:
     CONVERGENCE_THRESHOLD: float = float(os.getenv("CONVERGENCE_THRESHOLD", "0.5"))
     MAX_ITERATIONS: int = int(os.getenv("MAX_ITERATIONS", "100"))
     
-    # Performance limits
+    # ==========================================================================
+    # PERFORMANCE LIMITS
+    # ==========================================================================
+    
     MAX_NODES_FOR_LOF: int = int(os.getenv("MAX_NODES_FOR_LOF", "50000"))
     MAX_EDGES_FOR_CYTOSCAPE_DESKTOP: int = int(os.getenv("MAX_EDGES_FOR_CYTOSCAPE_DESKTOP", "5000000"))
+    MAX_NODES_FOR_LOCAL_SPRING: int = int(os.getenv("MAX_NODES_FOR_LOCAL_SPRING", "10000"))
     EDGE_CHUNK_SIZE: int = int(os.getenv("EDGE_CHUNK_SIZE", "50000"))
     
     # Auto-reload interval (seconds)
@@ -96,13 +123,9 @@ class Settings:
     # ==========================================================================
     # UI MODE
     # ==========================================================================
-    # HIDE_DATA_SOURCE_UI=true  -> Production: auto-load + auto-reload from env
-    # HIDE_DATA_SOURCE_UI=false -> Admin: manual control, all menus visible
-    # ==========================================================================
     
     HIDE_DATA_SOURCE_UI: bool = os.getenv("HIDE_DATA_SOURCE_UI", "false").lower() == "true"
     
-    # Files to load (used when HIDE_DATA_SOURCE_UI=true)
     DEFAULT_SQL_FILES: List[str] = [
         f.strip() for f in os.getenv("DEFAULT_SQL_FILES", "").split(",") if f.strip()
     ]
@@ -113,33 +136,20 @@ class Settings:
     # ==========================================================================
     # EXTERNAL API PROPERTIES
     # ==========================================================================
-    # Configuration for fetching node properties from external REST APIs.
-    # Each provider can be enabled/disabled independently.
-    # ==========================================================================
     
-    # Base URL for external APIs
     EXTERNAL_API_BASE_URL: str = os.getenv(
         "EXTERNAL_API_BASE_URL",
         "https://squid-app-3gxnl.ondigitalocean.app"
     )
     
-    # HTTP timeout for API requests (seconds)
     EXTERNAL_API_TIMEOUT: int = int(os.getenv("EXTERNAL_API_TIMEOUT", "30"))
-    
-    # Number of retries for failed API requests
     EXTERNAL_API_RETRIES: int = int(os.getenv("EXTERNAL_API_RETRIES", "3"))
-    
-    # Cache TTL for API properties (seconds, 0 = no cache expiry)
     EXTERNAL_API_CACHE_TTL: int = int(os.getenv("EXTERNAL_API_CACHE_TTL", "3600"))
     
-    # Comma-separated list of enabled providers
     EXTERNAL_API_PROVIDERS: List[str] = [
         p.strip() for p in os.getenv("EXTERNAL_API_PROVIDERS", "blacklist").split(",") if p.strip()
     ]
     
-    # --------------------------------------------------------------------------
-    # Blacklist Provider Settings
-    # --------------------------------------------------------------------------
     EXTERNAL_API_BLACKLIST_ENABLED: bool = os.getenv(
         "EXTERNAL_API_BLACKLIST_ENABLED", "true"
     ).lower() == "true"
@@ -149,17 +159,9 @@ class Settings:
         "/aboutcircles-advanced-analytics2/bot-analytics/blacklist"
     )
     
-    # Whether to filter for v2 addresses only
     EXTERNAL_API_BLACKLIST_V2_ONLY: bool = os.getenv(
         "EXTERNAL_API_BLACKLIST_V2_ONLY", "true"
     ).lower() == "true"
-    
-    # --------------------------------------------------------------------------
-    # Add new provider settings here following the pattern:
-    # EXTERNAL_API_{PROVIDER}_ENABLED
-    # EXTERNAL_API_{PROVIDER}_ENDPOINT
-    # EXTERNAL_API_{PROVIDER}_{SETTING}
-    # --------------------------------------------------------------------------
     
     @property
     def database_url(self) -> str:
@@ -181,7 +183,10 @@ settings = Settings()
 settings.ensure_directories()
 
 
-# Feature availability flags
+# ==========================================================================
+# FEATURE AVAILABILITY FLAGS
+# ==========================================================================
+
 try:
     from sse_starlette.sse import EventSourceResponse
     HAS_SSE = True
@@ -200,30 +205,51 @@ try:
 except ImportError:
     HAS_CYTOSCAPE_DESKTOP = False
 
+try:
+    import igraph
+    HAS_IGRAPH = True
+except ImportError:
+    HAS_IGRAPH = False
+
+try:
+    from fa2 import ForceAtlas2
+    HAS_FA2 = True
+except ImportError:
+    try:
+        from forceatlas2 import ForceAtlas2
+        HAS_FA2 = True
+    except ImportError:
+        HAS_FA2 = False
+
 HAS_ANOMALY = HAS_SKLEARN
 
 
 def print_startup_banner():
     """Print startup information banner."""
     print("\n" + "=" * 60)
-    print("  Graph Analyzer Web Viewer v2.0.0")
+    print("  Graph Analyzer Web Viewer v2.1.0")
     print("=" * 60)
     print(f"  Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     print(f"  SQL Dir:  {settings.SQL_DIR}")
     print(f"  Properties Dir: {settings.NODE_PROPERTIES_DIR}")
     print(f"  Cache:    {settings.CACHE_DIR}")
     print("-" * 60)
-    print(f"  SSE Support:        {'Y' if HAS_SSE else 'N'}")
-    print(f"  Anomaly Detection:  {'Y' if HAS_ANOMALY else 'N'}")
-    print(f"  Cytoscape Desktop:  {'Y' if HAS_CYTOSCAPE_DESKTOP else 'N'}")
+    print("  Core Features:")
+    print(f"    SSE Support:        {'Y' if HAS_SSE else 'N'}")
+    print(f"    Anomaly Detection:  {'Y' if HAS_ANOMALY else 'N'}")
     print("-" * 60)
-    # Snapshot configuration
+    print("  Layout Backends:")
+    print(f"    Cytoscape Desktop:  {'Y' if HAS_CYTOSCAPE_DESKTOP else 'N'}")
+    print(f"    igraph:             {'Y' if HAS_IGRAPH else 'N'}")
+    print(f"    ForceAtlas2:        {'Y' if HAS_FA2 else 'N'}")
+    print(f"    Local Spring:       Y")
+    print(f"    Priority: {', '.join(settings.LAYOUT_BACKEND_PRIORITY)}")
+    print("-" * 60)
     print("  Snapshots:")
     print(f"    Storage: {settings.SNAPSHOT_CACHE_DIR}")
     print(f"    SQL Templates: {settings.SNAPSHOT_SQL_DIR}")
     print(f"    Max Batch Size: {settings.SNAPSHOT_MAX_BATCH_SIZE}")
     print("-" * 60)
-    # External API providers
     print("  External API Properties:")
     print(f"    Base URL: {settings.EXTERNAL_API_BASE_URL}")
     print(f"    Providers: {', '.join(settings.EXTERNAL_API_PROVIDERS) or 'None'}")

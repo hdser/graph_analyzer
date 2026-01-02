@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Graph Analyzer Web Viewer</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.31.0/cytoscape.min.js"></script>
 </head>
 <body>
@@ -43,6 +44,10 @@
                 <button class="nav-btn" data-panel="style" title="Style">
                     <span data-icon="palette" data-icon-size="20"></span>
                     <span class="nav-btn-label">Style</span>
+                </button>
+                <button class="nav-btn" data-panel="layout" title="Layout">
+                    <span data-icon="nodes" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Layout</span>
                 </button>
             </div>
             
@@ -481,6 +486,66 @@
                     </div>
                 </div>
 
+                <!-- LAYOUT PANEL -->
+                <div class="panel" id="panel-layout" data-panel="layout">
+                    <div class="panel-header">
+                        <h3>Layout Settings</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Backend Selection -->
+                        <div class="style-row">
+                            <label>Backend</label>
+                            <select id="layout-backend-select" class="form-select">
+                                <option value="auto">Auto (Best Available)</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Algorithm Selection (shown for igraph) -->
+                        <div class="style-row" id="layout-algorithm-group" style="display: none;">
+                            <label>Algorithm</label>
+                            <select id="layout-algorithm-select" class="form-select">
+                                <option value="auto">Auto</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Optional: Iterations -->
+                        <div class="style-row">
+                            <label>Iterations</label>
+                            <input type="number" id="layout-iterations" class="form-input" 
+                                   placeholder="Default" min="100" max="10000" step="100">
+                        </div>
+                        
+                        <!-- Save as base layout -->
+                        <div class="style-row">
+                            <label>
+                                <input type="checkbox" id="layout-save-as-base"> Save as Base Layout
+                            </label>
+                        </div>
+                        
+                        <!-- Recompute Button -->
+                        <button id="recompute-layout-btn" class="primary-btn">Recompute Layout</button>
+                        
+                        <!-- Separator -->
+                        <hr style="margin: 15px 0; border-color: #333;">
+                        
+                        <!-- Test Section -->
+                        <div class="subsection-header">Test Backend</div>
+                        <div class="style-row">
+                            <label>Test Nodes</label>
+                            <input type="number" id="layout-test-nodes" class="form-input" 
+                                   value="500" min="10" max="10000" step="100">
+                        </div>
+                        <button id="test-layout-btn" class="secondary-btn">Test Backend</button>
+                        <div id="layout-test-result" class="test-result"></div>
+                        
+                        <!-- Backend Info -->
+                        <hr style="margin: 15px 0; border-color: #333;">
+                        <div class="subsection-header">Available Backends</div>
+                        <div id="layout-backends-info" class="backends-info"></div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -663,6 +728,7 @@
     <script src="/static/js/snapshot-analysis.js"></script>
     <script src="/static/js/timeseries.js"></script>
     <script src="/static/js/temporal-composite.js"></script>
+    <script src="/static/js/layout.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>
