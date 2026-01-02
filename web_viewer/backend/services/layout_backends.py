@@ -151,9 +151,19 @@ class IGraphLayoutBackend(LayoutBackend):
         G: nx.Graph,
         algorithm: str = 'auto',
         scale: float = 1000.0,
+        initial_positions: Optional[Dict[str, Dict[str, float]]] = None,
         **kwargs
     ) -> Optional[Dict[str, Dict[str, float]]]:
-        """Compute layout using igraph."""
+        """
+        Compute layout using igraph.
+        
+        Args:
+            G: NetworkX graph
+            algorithm: Layout algorithm to use
+            scale: Scale factor for positions
+            initial_positions: Optional starting positions for warm start
+            **kwargs: Additional algorithm parameters
+        """
         if not self.is_available:
             return None
         
@@ -166,17 +176,35 @@ class IGraphLayoutBackend(LayoutBackend):
             ig_graph, node_to_idx, idx_to_node = self._nx_to_igraph(G)
             
             algo = self._select_algorithm(n_nodes, algorithm)
-            print(f"[LAYOUT:igraph] {algo} for {n_nodes} nodes, {G.number_of_edges()} edges")
+            
+            # Prepare initial positions if provided (for warm start)
+            init_coords = None
+            if initial_positions:
+                init_coords = []
+                for i in range(len(idx_to_node)):
+                    node_id = str(idx_to_node[i])
+                    if node_id in initial_positions:
+                        pos = initial_positions[node_id]
+                        # Scale down for igraph (will scale up after)
+                        init_coords.append([pos['x'] / scale, pos['y'] / scale])
+                    else:
+                        # Random position for nodes without initial position
+                        import random
+                        init_coords.append([random.uniform(-1, 1), random.uniform(-1, 1)])
+                
+                print(f"[LAYOUT:igraph] {algo} for {n_nodes} nodes (warm start from {len(initial_positions)} positions)")
+            else:
+                print(f"[LAYOUT:igraph] {algo} for {n_nodes} nodes, {G.number_of_edges()} edges")
             
             # Compute layout based on algorithm
             if algo == 'drl':
-                layout = ig_graph.layout_drl()
+                layout = ig_graph.layout_drl(seed=init_coords)
             elif algo == 'fr':
                 niter = kwargs.get('niter', 500)
-                layout = ig_graph.layout_fruchterman_reingold(niter=niter)
+                layout = ig_graph.layout_fruchterman_reingold(niter=niter, seed=init_coords)
             elif algo == 'kk':
                 maxiter = kwargs.get('maxiter', 1000)
-                layout = ig_graph.layout_kamada_kawai(maxiter=maxiter)
+                layout = ig_graph.layout_kamada_kawai(maxiter=maxiter, seed=init_coords)
             elif algo == 'lgl':
                 layout = ig_graph.layout_lgl()
             elif algo == 'graphopt':
@@ -245,9 +273,24 @@ class FA2LayoutBackend(LayoutBackend):
         gravity: float = 1.0,
         outbound_attraction_distribution: bool = True,
         scale: float = 1.0,
+        initial_positions: Optional[Dict[str, Dict[str, float]]] = None,
         **kwargs
     ) -> Optional[Dict[str, Dict[str, float]]]:
-        """Compute layout using ForceAtlas2."""
+        """
+        Compute layout using ForceAtlas2.
+        
+        Args:
+            G: NetworkX graph
+            iterations: Number of iterations
+            barnes_hut_optimize: Use Barnes-Hut optimization
+            barnes_hut_theta: Barnes-Hut theta parameter
+            scaling_ratio: Repulsion scaling ratio
+            gravity: Gravity strength
+            outbound_attraction_distribution: Dissuade hubs
+            scale: Output scale factor
+            initial_positions: Optional starting positions for warm start
+            **kwargs: Additional parameters
+        """
         if not self.is_available:
             return None
         
@@ -257,7 +300,22 @@ class FA2LayoutBackend(LayoutBackend):
         
         try:
             start = time.time()
-            print(f"[LAYOUT:fa2] ForceAtlas2 for {n_nodes} nodes, {iterations} iterations")
+            
+            # Prepare initial positions if provided
+            init_pos = None
+            if initial_positions:
+                # Convert to NetworkX format {node: (x, y)}
+                init_pos = {}
+                for node in G.nodes():
+                    node_str = str(node)
+                    if node_str in initial_positions:
+                        pos = initial_positions[node_str]
+                        init_pos[node] = (pos['x'] / scale if scale != 1 else pos['x'], 
+                                          pos['y'] / scale if scale != 1 else pos['y'])
+                
+                print(f"[LAYOUT:fa2] ForceAtlas2 for {n_nodes} nodes, {iterations} iterations (warm start from {len(init_pos)} positions)")
+            else:
+                print(f"[LAYOUT:fa2] ForceAtlas2 for {n_nodes} nodes, {iterations} iterations")
             
             # Adjust iterations for large graphs
             if n_nodes > 10000 and iterations > 500:
@@ -287,7 +345,7 @@ class FA2LayoutBackend(LayoutBackend):
             
             positions_raw = forceatlas2.forceatlas2_networkx_layout(
                 G_undirected,
-                pos=None,
+                pos=init_pos,
                 iterations=iterations
             )
             

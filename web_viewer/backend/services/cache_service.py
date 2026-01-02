@@ -576,3 +576,299 @@ class CacheService:
                 continue
         
         return sorted(caches, key=lambda x: (x.get('provider', ''), x.get('version', '')))
+    
+    # =========================================================================
+    # Named Layout Cache (NEW - for layout backend/algorithm tracking)
+    # =========================================================================
+    
+    def _make_layout_name(self, graph_id: str, backend: str, algorithm: str) -> str:
+        """Create standardized layout filename."""
+        backend = backend.replace(' ', '_').lower()
+        algorithm = algorithm.replace(' ', '_').lower()
+        return f"{graph_id}_{backend}_{algorithm}"
+    
+    def _parse_layout_name(self, filename: str, known_graph_id: str = None) -> Optional[Dict[str, str]]:
+        """
+        Parse layout filename to extract components.
+        
+        Handles formats:
+        - {graph_id}_base.parquet
+        - {graph_id}_{backend}_{algorithm}.parquet
+        - {graph_id}.parquet (legacy current)
+        
+        Args:
+            filename: Layout filename
+            known_graph_id: If provided, use this as the graph_id for parsing
+        """
+        stem = Path(filename).stem
+        
+        if stem.endswith('_base'):
+            graph_id = stem[:-5]
+            return {
+                'graph_id': graph_id,
+                'backend': 'base',
+                'algorithm': 'default',
+                'is_base': True,
+                'display_name': 'Default (Base)'
+            }
+        
+        # If we know the graph_id, use it to parse the rest
+        if known_graph_id and stem.startswith(known_graph_id):
+            suffix = stem[len(known_graph_id):]
+            
+            # Legacy format: just graph_id (no suffix)
+            if not suffix:
+                return {
+                    'graph_id': known_graph_id,
+                    'backend': 'cached',
+                    'algorithm': 'default',
+                    'is_base': False,
+                    'display_name': 'Cached'
+                }
+            
+            # Remove leading underscore
+            if suffix.startswith('_'):
+                suffix = suffix[1:]
+            
+            # Try to parse {backend}_{algorithm}
+            parts = suffix.rsplit('_', 1)
+            if len(parts) == 2:
+                backend, algorithm = parts
+                return {
+                    'graph_id': known_graph_id,
+                    'backend': backend,
+                    'algorithm': algorithm,
+                    'is_base': False,
+                    'display_name': f"{backend} / {algorithm}"
+                }
+            elif len(parts) == 1 and parts[0]:
+                return {
+                    'graph_id': known_graph_id,
+                    'backend': parts[0],
+                    'algorithm': 'default',
+                    'is_base': False,
+                    'display_name': parts[0]
+                }
+        
+        # Fallback: try to parse without known graph_id (may fail for IDs with underscores)
+        parts = stem.rsplit('_', 2)
+        if len(parts) == 3:
+            graph_id, backend, algorithm = parts
+            return {
+                'graph_id': graph_id,
+                'backend': backend,
+                'algorithm': algorithm,
+                'is_base': False,
+                'display_name': f"{backend} / {algorithm}"
+            }
+        elif len(parts) == 2:
+            graph_id, backend = parts
+            return {
+                'graph_id': graph_id,
+                'backend': backend,
+                'algorithm': 'default',
+                'is_base': False,
+                'display_name': backend
+            }
+        else:
+            return {
+                'graph_id': stem,
+                'backend': 'unknown',
+                'algorithm': 'unknown',
+                'is_base': False,
+                'display_name': 'Legacy'
+            }
+    
+    def save_named_layout(
+        self, 
+        graph_id: str, 
+        positions: Dict[str, Dict[str, float]],
+        backend: str,
+        algorithm: str
+    ) -> str:
+        """
+        Save layout with backend/algorithm in the name.
+        
+        Args:
+            graph_id: Graph identifier
+            positions: Layout positions {node_id: {x, y}}
+            backend: Backend name (e.g., 'igraph', 'fa2', 'cytoscape_desktop')
+            algorithm: Algorithm name (e.g., 'drl', 'fr', 'forceatlas2')
+            
+        Returns:
+            Cache file path
+        """
+        layout_name = self._make_layout_name(graph_id, backend, algorithm)
+        cache_file = self.layouts_dir / f"{layout_name}.parquet"
+        
+        df = self._positions_to_df(positions)
+        df.to_parquet(cache_file, index=False)
+        
+        print(f"[CACHE] Saved named layout: {cache_file.name} ({len(positions)} nodes)")
+        return str(cache_file)
+    
+    def get_named_layout(
+        self, 
+        graph_id: str, 
+        backend: str, 
+        algorithm: str
+    ) -> Optional[Dict[str, Dict[str, float]]]:
+        """
+        Get a specific named layout.
+        
+        Args:
+            graph_id: Graph identifier
+            backend: Backend name (e.g., 'igraph', 'fa2')
+            algorithm: Algorithm name (e.g., 'drl', 'forceatlas2')
+            
+        Returns:
+            Layout dictionary or None if not found
+        """
+        layout_name = self._make_layout_name(graph_id, backend, algorithm)
+        cache_file = self.layouts_dir / f"{layout_name}.parquet"
+        
+        if cache_file.exists():
+            try:
+                df = pd.read_parquet(cache_file)
+                positions = self._df_to_positions(df)
+                print(f"[CACHE] Loaded named layout: {cache_file.name} ({len(positions)} nodes)")
+                return positions
+            except Exception as e:
+                print(f"[CACHE] Error loading named layout: {e}")
+        
+        return None
+    
+    def get_layout_by_filename(self, filename: str) -> Optional[Dict[str, Dict[str, float]]]:
+        """
+        Get layout by its filename.
+        
+        Args:
+            filename: Layout filename (with or without .parquet extension)
+            
+        Returns:
+            Layout dictionary or None if not found
+        """
+        if not filename.endswith('.parquet'):
+            filename = f"{filename}.parquet"
+        
+        cache_file = self.layouts_dir / filename
+        
+        if cache_file.exists():
+            try:
+                df = pd.read_parquet(cache_file)
+                positions = self._df_to_positions(df)
+                print(f"[CACHE] Loaded layout: {cache_file.name} ({len(positions)} nodes)")
+                return positions
+            except Exception as e:
+                print(f"[CACHE] Error loading layout: {e}")
+        
+        return None
+    
+    def list_layouts_for_graph(self, graph_id: str) -> List[Dict[str, Any]]:
+        """
+        List all saved layouts for a specific graph.
+        
+        Args:
+            graph_id: Graph identifier
+            
+        Returns:
+            List of layout metadata dictionaries
+        """
+        from datetime import datetime
+        
+        print(f"[CACHE] list_layouts_for_graph called with graph_id: {graph_id}")
+        print(f"[CACHE] layouts_dir: {self.layouts_dir}")
+        
+        layouts = []
+        pattern = f"{graph_id}*.parquet"
+        print(f"[CACHE] Searching with pattern: {pattern}")
+        
+        matching_files = list(self.layouts_dir.glob(pattern))
+        print(f"[CACHE] Found {len(matching_files)} matching files: {[f.name for f in matching_files]}")
+        
+        for cache_file in matching_files:
+            try:
+                # Pass known graph_id to help with parsing
+                parsed = self._parse_layout_name(cache_file.name, known_graph_id=graph_id)
+                print(f"[CACHE] Parsed {cache_file.name}: {parsed}")
+                
+                if parsed:
+                    df = pd.read_parquet(cache_file)
+                    stat = cache_file.stat()
+                    
+                    layout_info = {
+                        'filename': cache_file.name,
+                        'graph_id': graph_id,
+                        'backend': parsed['backend'],
+                        'algorithm': parsed['algorithm'],
+                        'display_name': parsed['display_name'],
+                        'is_base': parsed['is_base'],
+                        'node_count': len(df),
+                        'size_mb': round(stat.st_size / (1024 * 1024), 3),
+                        'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    }
+                    print(f"[CACHE] Adding layout: {layout_info}")
+                    layouts.append(layout_info)
+            except Exception as e:
+                print(f"[CACHE] Error reading {cache_file.name}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        # Sort: base first, then by backend/algorithm
+        layouts.sort(key=lambda x: (not x['is_base'], x['backend'], x['algorithm']))
+        
+        print(f"[CACHE] Returning {len(layouts)} layouts")
+        return layouts
+    
+    def set_layout_as_default(
+        self, 
+        graph_id: str, 
+        source_filename: str
+    ) -> str:
+        """
+        Set an existing layout as the default (base) layout.
+        
+        Args:
+            graph_id: Graph identifier
+            source_filename: Source layout filename (with or without .parquet)
+            
+        Returns:
+            Base layout file path
+        """
+        import shutil
+        
+        if not source_filename.endswith('.parquet'):
+            source_filename = f"{source_filename}.parquet"
+        
+        source_file = self.layouts_dir / source_filename
+        if not source_file.exists():
+            raise FileNotFoundError(f"Source layout not found: {source_filename}")
+        
+        base_file = self.layouts_dir / f"{graph_id}_base.parquet"
+        
+        # Copy source to base
+        shutil.copy2(source_file, base_file)
+        
+        print(f"[CACHE] Set {source_filename} as default layout for {graph_id}")
+        return str(base_file)
+    
+    def delete_layout(self, filename: str) -> bool:
+        """
+        Delete a specific layout file.
+        
+        Args:
+            filename: Layout filename (with or without .parquet)
+            
+        Returns:
+            True if deleted, False if not found
+        """
+        if not filename.endswith('.parquet'):
+            filename = f"{filename}.parquet"
+        
+        cache_file = self.layouts_dir / filename
+        if cache_file.exists():
+            cache_file.unlink()
+            print(f"[CACHE] Deleted layout: {filename}")
+            return True
+        return False

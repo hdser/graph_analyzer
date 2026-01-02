@@ -44,9 +44,15 @@ class LayoutRequest(BaseModel):
     backend: Optional[str] = None
     algorithm: Optional[str] = None
     save_as_base: bool = False
+    from_scratch: bool = True  # If False, use existing layout as starting point (warm start)
     # Backend-specific parameters
     iterations: Optional[int] = None
     scale: Optional[float] = None
+
+
+class SetDefaultLayoutRequest(BaseModel):
+    """Request to set a layout as the default."""
+    filename: str
 
 
 @router.get("/config")
@@ -196,6 +202,105 @@ async def get_layout_backends():
     }
 
 
+@router.get("/layout/saved/{graph_id}")
+async def get_saved_layouts(graph_id: str):
+    """
+    Get list of all saved layouts for a graph.
+    
+    Returns layouts with metadata including backend, algorithm, and timestamps.
+    """
+    print(f"[LAYOUT API] Getting saved layouts for graph_id: {graph_id}")
+    print(f"[LAYOUT API] Layouts dir: {network_service.cache_service.layouts_dir}")
+    
+    # List all parquet files in layouts dir
+    import os
+    layouts_dir = network_service.cache_service.layouts_dir
+    if layouts_dir.exists():
+        all_files = list(layouts_dir.glob("*.parquet"))
+        print(f"[LAYOUT API] All parquet files in layouts dir: {[f.name for f in all_files]}")
+        matching = list(layouts_dir.glob(f"{graph_id}*.parquet"))
+        print(f"[LAYOUT API] Files matching '{graph_id}*.parquet': {[f.name for f in matching]}")
+    else:
+        print(f"[LAYOUT API] Layouts dir does not exist!")
+    
+    layouts = network_service.cache_service.list_layouts_for_graph(graph_id)
+    print(f"[LAYOUT API] Found {len(layouts)} layouts: {layouts}")
+    return {
+        "graph_id": graph_id,
+        "layouts": layouts,
+        "count": len(layouts)
+    }
+
+
+@router.post("/layout/set-default/{graph_id}")
+async def set_default_layout(graph_id: str, request: SetDefaultLayoutRequest):
+    """
+    Set an existing layout as the default (base) layout.
+    
+    Args:
+        graph_id: Graph identifier
+        request: Contains filename of the layout to set as default
+    """
+    try:
+        base_path = network_service.cache_service.set_layout_as_default(
+            graph_id, 
+            request.filename
+        )
+        
+        return {
+            "status": "success",
+            "graph_id": graph_id,
+            "source": request.filename,
+            "base_path": base_path
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/layout/load/{graph_id}/{filename}")
+async def load_specific_layout(graph_id: str, filename: str):
+    """
+    Load a specific saved layout and apply it to the current graph.
+    
+    Args:
+        graph_id: Graph identifier
+        filename: Layout filename (with or without .parquet extension)
+    """
+    if graph_id not in network_service.graphs:
+        raise HTTPException(status_code=404, detail=f"Graph not found: {graph_id}")
+    
+    positions = network_service.cache_service.get_layout_by_filename(filename)
+    
+    if not positions:
+        raise HTTPException(status_code=404, detail=f"Layout not found: {filename}")
+    
+    # Update stored layout
+    network_service.layouts[graph_id] = positions
+    
+    return {
+        "graph_id": graph_id,
+        "filename": filename,
+        "node_count": len(positions),
+        "status": "loaded"
+    }
+
+
+@router.delete("/layout/{graph_id}/{filename}")
+async def delete_layout(graph_id: str, filename: str):
+    """Delete a specific saved layout."""
+    deleted = network_service.cache_service.delete_layout(filename)
+    
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Layout not found: {filename}")
+    
+    return {
+        "status": "deleted",
+        "filename": filename
+    }
+
+
 @router.post("/layout/recompute/{graph_id}")
 async def recompute_layout(graph_id: str, request: LayoutRequest):
     """
@@ -203,10 +308,16 @@ async def recompute_layout(graph_id: str, request: LayoutRequest):
     
     Args:
         graph_id: Graph identifier
-        request: Layout configuration (backend, algorithm, parameters)
+        request: Layout configuration including:
+            - backend: Specific backend to use (igraph, fa2, cytoscape_desktop)
+            - algorithm: Algorithm for backends with multiple options
+            - from_scratch: If False, use existing layout as starting point (warm start)
+            - save_as_base: Save result as the default layout
+            - iterations: Number of iterations (for iterative algorithms)
+            - scale: Output scale factor
         
     Returns:
-        Layout computation result
+        Layout computation result with backend/algorithm info
     """
     if graph_id not in network_service.graphs:
         raise HTTPException(status_code=404, detail=f"Graph not found: {graph_id}")
@@ -221,11 +332,12 @@ async def recompute_layout(graph_id: str, request: LayoutRequest):
         if request.scale:
             kwargs['scale'] = request.scale
         
-        positions, algo_used, comp_time = network_service.layout_service.recompute_layout(
+        positions, backend_used, algo_used, comp_time = network_service.layout_service.recompute_layout(
             G,
             graph_id,
             backend=request.backend,
             algorithm=request.algorithm,
+            from_scratch=request.from_scratch,
             **kwargs
         )
         
@@ -235,18 +347,27 @@ async def recompute_layout(graph_id: str, request: LayoutRequest):
         # Update stored layout
         network_service.layouts[graph_id] = positions
         
-        # Cache layout
-        network_service.cache_service.save_layout_cache(graph_id, positions)
+        # Save named layout with backend/algorithm in filename
+        layout_path = network_service.cache_service.save_named_layout(
+            graph_id, 
+            positions, 
+            backend_used, 
+            algo_used
+        )
         
+        # Also save as base if requested
         if request.save_as_base:
             network_service.cache_service.save_base_layout(graph_id, positions)
         
         return {
             "graph_id": graph_id,
+            "backend": backend_used,
             "algorithm": algo_used,
             "node_count": len(positions),
             "computation_time": comp_time,
-            "saved_as_base": request.save_as_base
+            "layout_file": layout_path,
+            "saved_as_base": request.save_as_base,
+            "warm_start": not request.from_scratch
         }
         
     except HTTPException:

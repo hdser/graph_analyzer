@@ -1,8 +1,8 @@
 /**
  * Layout Module
  * 
- * Handles layout backend selection and recomputation.
- * Integrates with the sidebar panel system.
+ * Handles layout backend selection, recomputation, saved layouts management,
+ * warm start (using existing layout as starting point), and setting default layouts.
  */
 
 const Layout = (function() {
@@ -10,6 +10,7 @@ const Layout = (function() {
     
     // State
     let availableBackends = [];
+    let savedLayouts = [];
     let currentBackend = 'auto';
     let currentAlgorithm = 'auto';
     
@@ -27,6 +28,37 @@ const Layout = (function() {
         
         // Populate backend info display
         populateBackendInfo();
+        
+        // Load saved layouts for current graph (if any)
+        await loadSavedLayouts();
+        
+        // Also listen for panel open to refresh layouts
+        const layoutPanel = document.getElementById('panel-layout');
+        if (layoutPanel) {
+            // Use MutationObserver to detect when panel becomes visible
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.attributeName === 'class' || mutation.attributeName === 'style') {
+                        const isVisible = layoutPanel.classList.contains('active') || 
+                                         layoutPanel.style.display !== 'none';
+                        if (isVisible) {
+                            console.log('[Layout] Panel opened, refreshing layouts...');
+                            loadSavedLayouts();
+                        }
+                    }
+                });
+            });
+            observer.observe(layoutPanel, { attributes: true });
+        }
+        
+        // Listen for nav button click to refresh
+        const layoutNavBtn = document.querySelector('[data-panel="layout"]');
+        if (layoutNavBtn) {
+            layoutNavBtn.addEventListener('click', () => {
+                console.log('[Layout] Nav button clicked, refreshing...');
+                setTimeout(loadSavedLayouts, 100);
+            });
+        }
         
         console.log('[Layout] Initialized');
     }
@@ -57,6 +89,42 @@ const Layout = (function() {
     }
     
     /**
+     * Load saved layouts for the current graph
+     */
+    async function loadSavedLayouts() {
+        const graphId = getCurrentGraphId();
+        console.log('[Layout] loadSavedLayouts called, graphId:', graphId);
+        
+        if (!graphId) {
+            console.log('[Layout] No graph ID found, clearing layouts');
+            savedLayouts = [];
+            populateSavedLayoutsSelector();
+            return;
+        }
+        
+        try {
+            const url = `/api/layout/saved/${graphId}`;
+            console.log('[Layout] Fetching:', url);
+            
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.warn('[Layout] Failed to load saved layouts:', response.status);
+                savedLayouts = [];
+            } else {
+                const data = await response.json();
+                savedLayouts = data.layouts || [];
+                console.log('[Layout] Loaded', savedLayouts.length, 'saved layouts for', graphId);
+                console.log('[Layout] Layouts:', savedLayouts);
+            }
+        } catch (error) {
+            console.error('[Layout] Error loading saved layouts:', error);
+            savedLayouts = [];
+        }
+        
+        populateSavedLayoutsSelector();
+    }
+    
+    /**
      * Populate the backend selector dropdown
      */
     function populateBackendSelector() {
@@ -79,6 +147,49 @@ const Layout = (function() {
             
             select.appendChild(option);
         });
+    }
+    
+    /**
+     * Populate saved layouts selector
+     */
+    function populateSavedLayoutsSelector() {
+        const select = document.getElementById('layout-saved-select');
+        if (!select) {
+            console.warn('[Layout] layout-saved-select element not found');
+            return;
+        }
+        
+        console.log('[Layout] Populating selector with', savedLayouts.length, 'layouts');
+        
+        select.innerHTML = '<option value="">Select saved layout...</option>';
+        
+        savedLayouts.forEach(layout => {
+            const option = document.createElement('option');
+            option.value = layout.filename;
+            
+            let label = layout.display_name;
+            if (layout.is_base) {
+                label += ' ★';  // Star for default
+            }
+            label += ` (${layout.node_count} nodes)`;
+            
+            option.textContent = label;
+            option.dataset.isBase = layout.is_base;
+            
+            select.appendChild(option);
+        });
+        
+        // Enable/disable related buttons
+        const loadBtn = document.getElementById('load-layout-btn');
+        const setDefaultBtn = document.getElementById('set-default-layout-btn');
+        const deleteBtn = document.getElementById('delete-layout-btn');
+        
+        const hasLayouts = savedLayouts.length > 0;
+        if (loadBtn) loadBtn.disabled = !hasLayouts;
+        if (setDefaultBtn) setDefaultBtn.disabled = !hasLayouts;
+        if (deleteBtn) deleteBtn.disabled = !hasLayouts;
+        
+        console.log('[Layout] Selector populated, buttons enabled:', hasLayouts);
     }
     
     /**
@@ -132,11 +243,40 @@ const Layout = (function() {
             recomputeBtn.addEventListener('click', handleRecomputeLayout);
         }
         
-        // Test backend button
-        const testBtn = document.getElementById('test-layout-btn');
-        if (testBtn) {
-            testBtn.addEventListener('click', handleTestBackend);
+        // Saved layouts selector
+        const savedSelect = document.getElementById('layout-saved-select');
+        if (savedSelect) {
+            savedSelect.addEventListener('change', handleSavedLayoutChange);
         }
+        
+        // Load saved layout button
+        const loadBtn = document.getElementById('load-layout-btn');
+        if (loadBtn) {
+            loadBtn.addEventListener('click', handleLoadLayout);
+        }
+        
+        // Set as default button
+        const setDefaultBtn = document.getElementById('set-default-layout-btn');
+        if (setDefaultBtn) {
+            setDefaultBtn.addEventListener('click', handleSetDefault);
+        }
+        
+        // Delete layout button
+        const deleteBtn = document.getElementById('delete-layout-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', handleDeleteLayout);
+        }
+        
+        // Refresh saved layouts button
+        const refreshBtn = document.getElementById('refresh-layouts-btn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', loadSavedLayouts);
+        }
+        
+        // Listen for graph load events to refresh saved layouts
+        document.addEventListener('graphLoaded', () => {
+            setTimeout(loadSavedLayouts, 500);
+        });
     }
     
     /**
@@ -163,7 +303,7 @@ const Layout = (function() {
                 option.textContent = algo.charAt(0).toUpperCase() + algo.slice(1);
                 algorithmSelect.appendChild(option);
             });
-            algorithmGroup.style.display = 'block';
+            algorithmGroup.style.display = 'flex';
             currentAlgorithm = backend.algorithms[0];
         } else {
             algorithmGroup.style.display = 'none';
@@ -172,11 +312,31 @@ const Layout = (function() {
     }
     
     /**
+     * Handle saved layout selection change
+     */
+    function handleSavedLayoutChange(e) {
+        const filename = e.target.value;
+        const setDefaultBtn = document.getElementById('set-default-layout-btn');
+        const deleteBtn = document.getElementById('delete-layout-btn');
+        
+        if (setDefaultBtn) {
+            // Disable if already the default
+            const option = e.target.options[e.target.selectedIndex];
+            setDefaultBtn.disabled = !filename || option?.dataset?.isBase === 'true';
+        }
+        if (deleteBtn) {
+            // Disable delete for base layouts
+            const option = e.target.options[e.target.selectedIndex];
+            deleteBtn.disabled = !filename || option?.dataset?.isBase === 'true';
+        }
+    }
+    
+    /**
      * Get current graph ID from various sources
      */
     function getCurrentGraphId() {
         // Try State.currentGraph first (main source)
-        if (State.currentGraph) {
+        if (typeof State !== 'undefined' && State.currentGraph) {
             return State.currentGraph;
         }
         
@@ -187,12 +347,12 @@ const Layout = (function() {
         }
         
         // Try to get from State.graphData keys
-        if (State.graphData && Object.keys(State.graphData).length > 0) {
+        if (typeof State !== 'undefined' && State.graphData && Object.keys(State.graphData).length > 0) {
             return Object.keys(State.graphData)[0];
         }
         
         // Try to get from currentState
-        if (State.currentState && State.currentState.loaded_graphs && State.currentState.loaded_graphs.length > 0) {
+        if (typeof State !== 'undefined' && State.currentState && State.currentState.loaded_graphs && State.currentState.loaded_graphs.length > 0) {
             return State.currentState.loaded_graphs[0];
         }
         
@@ -206,8 +366,7 @@ const Layout = (function() {
         const graphId = getCurrentGraphId();
         if (!graphId) {
             showToast('No graph loaded', 'error');
-            console.error('[Layout] No graph loaded - State.currentGraph:', State.currentGraph, 
-                          'State.graphData:', Object.keys(State.graphData || {}));
+            console.error('[Layout] No graph loaded');
             return;
         }
         
@@ -222,7 +381,10 @@ const Layout = (function() {
             showToast('Recomputing layout...', 'info');
             
             // Build request
-            const request = {};
+            const request = {
+                from_scratch: !document.getElementById('layout-warm-start')?.checked
+            };
+            
             if (currentBackend !== 'auto') {
                 request.backend = currentBackend;
             }
@@ -261,8 +423,12 @@ const Layout = (function() {
             // Reload graph to apply new layout
             await reloadGraphWithNewLayout(graphId);
             
+            // Refresh saved layouts list
+            await loadSavedLayouts();
+            
+            const warmStartText = result.warm_start ? ' (warm start)' : '';
             showToast(
-                `Layout computed: ${result.algorithm} (${result.computation_time.toFixed(2)}s)`,
+                `Layout: ${result.backend}/${result.algorithm}${warmStartText} (${result.computation_time.toFixed(2)}s)`,
                 'success'
             );
             
@@ -272,6 +438,113 @@ const Layout = (function() {
         } finally {
             btn.disabled = false;
             btn.textContent = originalText;
+        }
+    }
+    
+    /**
+     * Handle load saved layout button
+     */
+    async function handleLoadLayout() {
+        const graphId = getCurrentGraphId();
+        const select = document.getElementById('layout-saved-select');
+        const filename = select?.value;
+        
+        if (!graphId || !filename) {
+            showToast('Select a layout to load', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/layout/load/${graphId}/${filename}`);
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to load layout');
+            }
+            
+            const result = await response.json();
+            
+            // Reload graph to apply layout
+            await reloadGraphWithNewLayout(graphId);
+            
+            showToast(`Loaded layout: ${filename}`, 'success');
+            
+        } catch (error) {
+            console.error('[Layout] Load error:', error);
+            showToast(`Load failed: ${error.message}`, 'error');
+        }
+    }
+    
+    /**
+     * Handle set as default button
+     */
+    async function handleSetDefault() {
+        const graphId = getCurrentGraphId();
+        const select = document.getElementById('layout-saved-select');
+        const filename = select?.value;
+        
+        if (!graphId || !filename) {
+            showToast('Select a layout first', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/layout/set-default/${graphId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to set default');
+            }
+            
+            // Refresh saved layouts list
+            await loadSavedLayouts();
+            
+            showToast(`Set default layout: ${filename}`, 'success');
+            
+        } catch (error) {
+            console.error('[Layout] Set default error:', error);
+            showToast(`Failed: ${error.message}`, 'error');
+        }
+    }
+    
+    /**
+     * Handle delete layout button
+     */
+    async function handleDeleteLayout() {
+        const graphId = getCurrentGraphId();
+        const select = document.getElementById('layout-saved-select');
+        const filename = select?.value;
+        
+        if (!graphId || !filename) {
+            showToast('Select a layout first', 'warning');
+            return;
+        }
+        
+        if (!confirm(`Delete layout: ${filename}?`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/layout/${graphId}/${filename}`, {
+                method: 'DELETE'
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to delete');
+            }
+            
+            // Refresh saved layouts list
+            await loadSavedLayouts();
+            
+            showToast(`Deleted: ${filename}`, 'success');
+            
+        } catch (error) {
+            console.error('[Layout] Delete error:', error);
+            showToast(`Delete failed: ${error.message}`, 'error');
         }
     }
     
@@ -288,7 +561,7 @@ const Layout = (function() {
             const elements = data.elements || [];
             
             // Update Cytoscape positions
-            const cy = State.cy || window.cy;
+            const cy = (typeof State !== 'undefined' && State.cy) || window.cy;
             if (cy) {
                 elements.forEach(el => {
                     if (el.group === 'nodes' && el.position) {
@@ -374,7 +647,8 @@ const Layout = (function() {
         return {
             backend: currentBackend,
             algorithm: currentAlgorithm,
-            availableBackends: availableBackends
+            availableBackends: availableBackends,
+            savedLayouts: savedLayouts
         };
     }
     
@@ -382,6 +656,7 @@ const Layout = (function() {
     return {
         init,
         loadBackends,
+        loadSavedLayouts,
         getSettings,
         recomputeLayout: handleRecomputeLayout,
         getCurrentGraphId
@@ -392,4 +667,10 @@ const Layout = (function() {
 document.addEventListener('DOMContentLoaded', () => {
     // Delay init to ensure other modules are ready
     setTimeout(() => Layout.init(), 500);
+});
+
+// Also refresh layouts when a graph is loaded
+document.addEventListener('graphLoaded', (event) => {
+    console.log('[Layout] graphLoaded event received:', event.detail);
+    setTimeout(() => Layout.loadSavedLayouts(), 100);
 });

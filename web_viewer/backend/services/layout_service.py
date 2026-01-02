@@ -350,9 +350,22 @@ class LayoutService:
         n_edges: int,
         use_cytoscape: bool,
         algorithm: Optional[str] = None,
+        initial_positions: Optional[Dict[str, Dict[str, float]]] = None,
         **kwargs
     ) -> Optional[Dict[str, Dict[str, float]]]:
-        """Try a specific layout backend."""
+        """
+        Try a specific layout backend.
+        
+        Args:
+            backend: Backend name
+            G: NetworkX graph  
+            graph_id: Graph identifier
+            n_edges: Number of edges
+            use_cytoscape: Whether to try Cytoscape Desktop
+            algorithm: Algorithm for backends that support multiple
+            initial_positions: Starting positions for warm start
+            **kwargs: Backend-specific parameters
+        """
         n_nodes = G.number_of_nodes()
         
         if backend == "cytoscape_desktop":
@@ -370,6 +383,7 @@ class LayoutService:
                         G,
                         algorithm=algo,
                         scale=settings.IGRAPH_SCALE,
+                        initial_positions=initial_positions,
                         **kwargs
                     )
                     if positions:
@@ -388,6 +402,7 @@ class LayoutService:
                         scaling_ratio=kwargs.get('scaling_ratio', settings.FA2_SCALING_RATIO),
                         gravity=kwargs.get('gravity', settings.FA2_GRAVITY),
                         scale=kwargs.get('scale', settings.FA2_SCALE),
+                        initial_positions=initial_positions,
                     )
                     if positions:
                         return positions
@@ -615,8 +630,10 @@ class LayoutService:
         graph_id: str,
         backend: Optional[str] = None,
         algorithm: Optional[str] = None,
+        initial_positions: Optional[Dict[str, Dict[str, float]]] = None,
+        from_scratch: bool = True,
         **kwargs
-    ) -> Tuple[Dict[str, Dict[str, float]], str, float]:
+    ) -> Tuple[Dict[str, Dict[str, float]], str, str, float]:
         """
         Recompute layout for an existing graph.
         
@@ -625,17 +642,58 @@ class LayoutService:
             graph_id: Graph identifier
             backend: Specific backend to use
             algorithm: Algorithm for backends that support multiple
+            initial_positions: Starting positions for warm start (overrides from_scratch)
+            from_scratch: If False and no initial_positions, use existing layout as starting point
             **kwargs: Backend-specific parameters
             
         Returns:
-            Tuple of (positions, algorithm_name, computation_time)
+            Tuple of (positions, backend_name, algorithm_name, computation_time)
         """
-        return self.compute_layout(
-            G,
-            graph_id,
-            cached_layout=None,
-            use_cytoscape=True,
-            preferred_backend=backend,
-            algorithm=algorithm,
-            **kwargs
-        )
+        start_time = time.time()
+        
+        # Determine initial positions for warm start
+        init_pos = None
+        if initial_positions:
+            init_pos = initial_positions
+        elif not from_scratch:
+            # Try to load existing layout for warm start
+            from .cache_service import CacheService
+            cache = CacheService()
+            init_pos = cache.get_cached_layout(graph_id)
+            if init_pos:
+                print(f"[LAYOUT] Using existing layout as starting point ({len(init_pos)} positions)")
+        
+        n_edges = G.number_of_edges()
+        
+        # If specific backend requested
+        if backend:
+            positions = self._try_backend(
+                backend, G, graph_id, n_edges, 
+                use_cytoscape=True,
+                algorithm=algorithm,
+                initial_positions=init_pos,
+                **kwargs
+            )
+            if positions:
+                algo_name = algorithm or (backend if backend == 'cytoscape_desktop' else 'auto')
+                return positions, backend, algo_name, time.time() - start_time
+        
+        # Try backends in priority order
+        for backend_name in settings.LAYOUT_BACKEND_PRIORITY:
+            if backend_name == "cached":
+                continue  # Skip cache for recompute
+            
+            positions = self._try_backend(
+                backend_name, G, graph_id, n_edges,
+                use_cytoscape=True,
+                algorithm=algorithm,
+                initial_positions=init_pos,
+                **kwargs
+            )
+            if positions:
+                algo_name = algorithm or backend_name
+                return positions, backend_name, algo_name, time.time() - start_time
+        
+        # Fallback to circular
+        positions = self.compute_circular_layout(G)
+        return positions, "circular", "circular", time.time() - start_time

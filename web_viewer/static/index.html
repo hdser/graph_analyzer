@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Graph Analyzer Web Viewer</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/fixes.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.31.0/cytoscape.min.js"></script>
 </head>
 <body>
@@ -493,55 +493,56 @@
                         <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
                     <div class="panel-content">
-                        <!-- Backend Selection -->
+                        <h4>Saved Layouts</h4>
+                        <div class="style-row">
+                            <label>Layout</label>
+                            <div style="display:flex; gap:8px; flex:1; align-items:center;">
+                                <select id="layout-saved-select" style="flex:1; margin:0;">
+                                    <option value="">Select layout...</option>
+                                </select>
+                                <button id="refresh-layouts-btn" class="icon-btn" title="Refresh list" data-icon="refresh" style="flex-shrink:0;"></button>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px; margin-bottom:16px;">
+                            <button id="load-layout-btn" class="secondary-btn" style="flex:1; margin:0; padding:8px 12px; white-space:nowrap;" disabled>Load</button>
+                            <button id="set-default-layout-btn" class="secondary-btn" style="flex:1; margin:0; padding:8px 12px; white-space:nowrap;" disabled>Default</button>
+                            <button id="delete-layout-btn" class="secondary-btn" style="flex:1; margin:0; padding:8px 12px; white-space:nowrap; border-color:#d33a47; color:#d33a47;" disabled>Delete</button>
+                        </div>
+                        
+                        <h4 style="margin-top:20px">Compute Layout</h4>
                         <div class="style-row">
                             <label>Backend</label>
-                            <select id="layout-backend-select" class="form-select">
+                            <select id="layout-backend-select">
                                 <option value="auto">Auto (Best Available)</option>
                             </select>
                         </div>
-                        
-                        <!-- Algorithm Selection (shown for igraph) -->
                         <div class="style-row" id="layout-algorithm-group" style="display: none;">
                             <label>Algorithm</label>
-                            <select id="layout-algorithm-select" class="form-select">
+                            <select id="layout-algorithm-select">
                                 <option value="auto">Auto</option>
                             </select>
                         </div>
-                        
-                        <!-- Optional: Iterations -->
                         <div class="style-row">
                             <label>Iterations</label>
-                            <input type="number" id="layout-iterations" class="form-input" 
-                                   placeholder="Default" min="100" max="10000" step="100">
+                            <input type="number" id="layout-iterations" placeholder="Default" min="100" max="10000" step="100" style="width:100px;">
                         </div>
-                        
-                        <!-- Save as base layout -->
                         <div class="style-row">
-                            <label>
-                                <input type="checkbox" id="layout-save-as-base"> Save as Base Layout
+                            <label title="Use existing node positions as starting point for refinement">Warm Start</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="layout-warm-start">
+                                <span class="toggle-slider"></span>
                             </label>
                         </div>
-                        
-                        <!-- Recompute Button -->
+                        <div class="style-row">
+                            <label title="Save computed layout as the default for this graph">Save as Default</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="layout-save-as-base">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
                         <button id="recompute-layout-btn" class="primary-btn">Recompute Layout</button>
                         
-                        <!-- Separator -->
-                        <hr style="margin: 15px 0; border-color: #333;">
-                        
-                        <!-- Test Section -->
-                        <div class="subsection-header">Test Backend</div>
-                        <div class="style-row">
-                            <label>Test Nodes</label>
-                            <input type="number" id="layout-test-nodes" class="form-input" 
-                                   value="500" min="10" max="10000" step="100">
-                        </div>
-                        <button id="test-layout-btn" class="secondary-btn">Test Backend</button>
-                        <div id="layout-test-result" class="test-result"></div>
-                        
-                        <!-- Backend Info -->
-                        <hr style="margin: 15px 0; border-color: #333;">
-                        <div class="subsection-header">Available Backends</div>
+                        <h4 style="margin-top:20px">Available Backends</h4>
                         <div id="layout-backends-info" class="backends-info"></div>
                     </div>
                 </div>
