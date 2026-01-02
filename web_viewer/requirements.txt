@@ -39,7 +39,8 @@ pyarrow>=14.0.0
 # License: GPL-2.0
 igraph>=0.11.0
 
-# ForceAtlas2 - OPTIONAL (has build issues on Python 3.12+)
-# Uncomment if you need it and can build it:
-# fa2>=0.3.5
-# Cython>=3.0.0
+# ForceAtlas2 - Gephi's layout algorithm (OPTIONAL)
+# fa2_modified is the maintained fork that works with Python 3.9+
+# License: GPL-3.0
+# https://github.com/AminAlam/fa2_modified
+fa2_modified>=0.4.0

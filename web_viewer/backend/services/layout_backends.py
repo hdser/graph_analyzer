@@ -25,15 +25,16 @@ except ImportError:
     ig = None
 
 try:
-    from fa2 import ForceAtlas2
+    # Try fa2_modified first (maintained fork, works with Python 3.9+)
+    from fa2_modified import ForceAtlas2
     HAS_FA2 = True
-    FA2_PACKAGE = 'fa2'
+    FA2_PACKAGE = 'fa2_modified'
 except ImportError:
     try:
-        # Alternative package that may work on newer Python
-        from forceatlas2 import ForceAtlas2
+        # Fallback to original fa2 (Python <3.8 only)
+        from fa2 import ForceAtlas2
         HAS_FA2 = True
-        FA2_PACKAGE = 'forceatlas2'
+        FA2_PACKAGE = 'fa2'
     except ImportError:
         HAS_FA2 = False
         ForceAtlas2 = None
@@ -342,7 +343,6 @@ def get_backend_info() -> List[Dict]:
         "install": "pip install igraph"
     })
     
-    fa2_install = "pip install fa2 (Python ≤3.12) or forceatlas2"
     info.append({
         "id": "fa2",
         "name": "ForceAtlas2",
@@ -350,7 +350,7 @@ def get_backend_info() -> List[Dict]:
         "description": "Gephi's ForceAtlas2 with Barnes-Hut optimization",
         "algorithms": ["forceatlas2"],
         "recommended_max_nodes": "50K",
-        "install": fa2_install,
+        "install": "pip install fa2_modified",
         "package": FA2_PACKAGE if HAS_FA2 else None
     })
     

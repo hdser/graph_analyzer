@@ -212,11 +212,13 @@ except ImportError:
     HAS_IGRAPH = False
 
 try:
-    from fa2 import ForceAtlas2
+    # Try fa2_modified first (maintained fork, works with Python 3.9+)
+    from fa2_modified import ForceAtlas2
     HAS_FA2 = True
 except ImportError:
     try:
-        from forceatlas2 import ForceAtlas2
+        # Fallback to original fa2
+        from fa2 import ForceAtlas2
         HAS_FA2 = True
     except ImportError:
         HAS_FA2 = False
