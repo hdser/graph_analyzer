@@ -256,9 +256,17 @@ class AutoReloadConfig(BaseModel):
         default=None,
         description="Node properties files to reload (None = use current)"
     )
+    preserve_layout: bool = Field(
+        default=True,
+        description="Preserve current layout positions after reload"
+    )
     compute_metrics: bool = Field(
         default=True,
         description="Recompute metrics after reload"
+    )
+    metrics_mode: Optional[str] = Field(
+        default="basic",
+        description="Metrics computation mode: 'basic', 'standard', or 'full'"
     )
     preset: Optional[str] = Field(
         default="basic",
