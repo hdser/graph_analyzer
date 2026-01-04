@@ -1,0 +1,793 @@
+/**
+ * Path Analysis Styles
+ * Location: web_viewer/static/css/path-analysis.css
+ */
+
+/* ==========================================================================
+   GLOBAL TEXT INPUT STYLING FOR ALL PANELS - VERY AGGRESSIVE
+   ========================================================================== */
+
+/* Target all text inputs in panels with maximum specificity */
+input[type="text"],
+.panel input[type="text"],
+.panel-content input[type="text"],
+#panel-paths input[type="text"],
+#panel-subgraph input[type="text"],
+#panel-flow input[type="text"],
+#path-source-input,
+#path-target-input,
+#subgraph-center-input,
+#flow-source-input,
+#flow-target-input {
+    background: #0f0f0f !important;
+    background-color: #0f0f0f !important;
+    border: 1px solid #2a2a2a !important;
+    border-radius: 6px !important;
+    color: #e0e0e0 !important;
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+    box-sizing: border-box !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+}
+
+#path-source-input:hover,
+#path-target-input:hover,
+#subgraph-center-input:hover,
+#flow-source-input:hover,
+#flow-target-input:hover,
+.panel-content input[type="text"]:hover {
+    border-color: #3a3a3a !important;
+    background: #1a1a1a !important;
+    background-color: #1a1a1a !important;
+}
+
+#path-source-input:focus,
+#path-target-input:focus,
+#subgraph-center-input:focus,
+#flow-source-input:focus,
+#flow-target-input:focus,
+.panel-content input[type="text"]:focus {
+    border-color: #4A90E2 !important;
+    outline: none !important;
+    background: #0f0f0f !important;
+    background-color: #0f0f0f !important;
+}
+
+#path-source-input::placeholder,
+#path-target-input::placeholder,
+#subgraph-center-input::placeholder,
+#flow-source-input::placeholder,
+#flow-target-input::placeholder,
+.panel-content input[type="text"]::placeholder {
+    color: #666 !important;
+}
+
+/* ==========================================================================
+   BUTTON GROUP - EQUAL SIZE BUTTONS (High specificity to override style.css)
+   ========================================================================== */
+
+#panel-paths .button-group {
+    display: flex !important;
+    gap: 8px !important;
+    margin: 12px 0 0 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+}
+
+#panel-paths .button-group button,
+#panel-paths .button-group .primary-btn,
+#panel-paths .button-group .secondary-btn {
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 42px !important;
+    margin: 0 !important;
+    padding: 8px 12px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    box-sizing: border-box !important;
+    transform: none !important;
+}
+
+#panel-paths .button-group .primary-btn {
+    background: #4A90E2 !important;
+    border: none !important;
+    color: #fff !important;
+}
+
+#panel-paths .button-group .primary-btn:hover:not(:disabled) {
+    background: #357ABD !important;
+}
+
+#panel-paths .button-group .primary-btn:disabled {
+    background: #3a5a7a !important;
+    color: #aaa !important;
+    cursor: wait !important;
+}
+
+#panel-paths .button-group .secondary-btn {
+    background: #2a2a2a !important;
+    border: 1px solid #444 !important;
+    color: #ccc !important;
+}
+
+#panel-paths .button-group .secondary-btn:hover {
+    background: #333 !important;
+    border-color: #555 !important;
+    color: #fff !important;
+}
+
+/* ==========================================================================
+   INPUT WITH BUTTON
+   ========================================================================== */
+
+#panel-paths .input-with-button {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+}
+
+#panel-paths .input-with-button input {
+    flex: 1;
+    min-width: 0;
+}
+
+#panel-paths .mini-icon-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #4A90E2;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+#panel-paths .mini-icon-btn:hover {
+    background: #357ABD;
+}
+
+#panel-paths .mini-icon-btn.picking {
+    background: #22c55e;
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* ==========================================================================
+   PATH RESULTS
+   ========================================================================== */
+
+#panel-paths .path-results-section {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #333;
+    /* Let it expand - parent panel-content handles scrolling */
+}
+
+#panel-paths .path-results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+#panel-paths #path-results-summary {
+    color: #e0e0e0;
+    font-weight: 500;
+}
+
+#panel-paths #path-results-time {
+    color: #888;
+    font-size: 11px;
+}
+
+#panel-paths .path-results-list {
+    /* Scrollable list for many paths */
+    max-height: 400px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Path nodes display - compact with truncation */
+#panel-paths .path-nodes {
+    color: #888;
+    font-size: 10px;
+    font-family: monospace;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Custom scrollbar for path lists */
+#panel-paths .path-results-list::-webkit-scrollbar,
+#path-detail-panel .path-node-list::-webkit-scrollbar,
+.multi-path-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+#panel-paths .path-results-list::-webkit-scrollbar-track,
+#path-detail-panel .path-node-list::-webkit-scrollbar-track,
+.multi-path-list::-webkit-scrollbar-track {
+    background: #1a1a1a;
+    border-radius: 3px;
+}
+
+#panel-paths .path-results-list::-webkit-scrollbar-thumb,
+#path-detail-panel .path-node-list::-webkit-scrollbar-thumb,
+.multi-path-list::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+}
+
+#panel-paths .path-results-list::-webkit-scrollbar-thumb:hover,
+#path-detail-panel .path-node-list::-webkit-scrollbar-thumb:hover,
+.multi-path-list::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+#panel-paths .path-item {
+    background: #252525;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 6px 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+#panel-paths .path-item:hover {
+    background: #2a2a2a;
+    border-color: #444;
+}
+
+#panel-paths .path-item.selected {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: #00d4ff;
+}
+
+#panel-paths .path-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    gap: 8px;
+}
+
+/* Checkbox styles */
+#panel-paths .path-checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+#panel-paths .path-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #00d4ff;
+}
+
+#panel-paths .path-select-all {
+    padding: 8px 10px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    border: 1px solid #333;
+}
+
+#panel-paths .path-select-all .path-checkbox-label {
+    gap: 8px;
+    font-size: 12px;
+    color: #aaa;
+}
+
+#panel-paths .path-select-all .path-checkbox-label:hover {
+    color: #fff;
+}
+
+#panel-paths .path-index {
+    color: #00d4ff;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+#panel-paths .path-length {
+    color: #888;
+    font-size: 11px;
+}
+
+#panel-paths .path-item.no-paths {
+    color: #888;
+    text-align: center;
+    cursor: default;
+}
+
+/* ==========================================================================
+   PATH DETAIL PANEL (Right sidebar) - SCROLLABLE
+   ========================================================================== */
+
+#path-detail-panel .path-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+#path-detail-panel .path-stat {
+    background: #252525;
+    border-radius: 4px;
+    padding: 8px 10px;
+}
+
+#path-detail-panel .path-stat-label {
+    color: #888;
+    font-size: 10px;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+#path-detail-panel .path-stat-value {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#path-detail-panel .path-node-list-header {
+    color: #aaa;
+    font-size: 11px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+#path-detail-panel .path-node-list {
+    max-height: 250px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+#path-detail-panel .path-node-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    background: #252525;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+#path-detail-panel .path-node-item:hover {
+    background: #2d2d2d;
+}
+
+#path-detail-panel .path-node-hop {
+    width: 24px;
+    height: 24px;
+    background: #00d4ff;
+    color: #000;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+#path-detail-panel .path-node-hop.source {
+    background: #22c55e;
+}
+
+#path-detail-panel .path-node-hop.target {
+    background: #ef4444;
+}
+
+#path-detail-panel .path-node-id {
+    color: #e0e0e0;
+    font-family: monospace;
+    font-size: 11px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#path-detail-panel .path-edge-info {
+    display: flex;
+    align-items: center;
+    padding: 2px 0 2px 34px;
+    color: #666;
+    font-size: 10px;
+}
+
+#path-detail-panel .path-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+#path-detail-panel .path-actions button {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ccc;
+    transition: all 0.15s ease;
+}
+
+#path-detail-panel .path-actions button:hover:not(:disabled) {
+    background: #333;
+    border-color: #00d4ff;
+    color: #00d4ff;
+}
+
+#path-detail-panel .path-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#path-detail-panel .path-actions .isolate-btn {
+    background: #1a3a1a;
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+#path-detail-panel .path-actions .isolate-btn:hover:not(:disabled) {
+    background: #22c55e;
+    color: #000;
+}
+
+#path-detail-panel .path-actions .show-all-btn {
+    background: #3a2a1a;
+    border-color: #f59e0b;
+    color: #f59e0b;
+}
+
+#path-detail-panel .path-actions .show-all-btn:hover:not(:disabled) {
+    background: #f59e0b;
+    color: #000;
+}
+
+/* ==========================================================================
+   COLLAPSIBLE SUBSECTIONS
+   ========================================================================== */
+
+#panel-paths .subsection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    cursor: pointer;
+    color: #aaa;
+    font-size: 12px;
+    font-weight: 500;
+    border-top: 1px solid #333;
+    margin-top: 12px;
+}
+
+#panel-paths .subsection-header:hover {
+    color: #e0e0e0;
+}
+
+#panel-paths .subsection-content {
+    padding: 8px 0;
+}
+
+/* ==========================================================================
+   INFO PANEL SCROLLING FIX
+   The main style.css has overflow:hidden on .info-panel-right
+   So we need to make the content sections scroll instead
+   ========================================================================== */
+
+/* Path detail panel needs to scroll within the info-panel-right */
+#path-detail-panel {
+    flex: 1;
+    overflow-y: auto !important;
+    padding: 12px;
+    min-height: 0;
+}
+
+/* When path-detail-panel is shown, it should take available space */
+.info-panel-right #path-detail-panel {
+    max-height: calc(100vh - 150px);
+}
+
+/* Ensure node-info and other sections also scroll */
+#info-panel #node-info,
+#info-panel #edge-info,
+#info-panel #multi-info {
+    flex: 1;
+    overflow-y: auto !important;
+    min-height: 0;
+}
+
+/* Sticky header within info panel */
+.info-panel-right .info-header {
+    flex-shrink: 0;
+}
+
+/* ==========================================================================
+   MULTI-PATH DETAILS
+   ========================================================================== */
+
+.multi-path-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 12px 0;
+}
+
+.multi-path-item {
+    background: #252525;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.multi-path-item:hover {
+    background: #2d2d2d;
+    border-color: #00d4ff;
+}
+
+.multi-path-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.multi-path-route {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.node-badge {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 10px;
+}
+
+.node-badge.source {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+    border: 1px solid #22c55e;
+}
+
+.node-badge.target {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border: 1px solid #ef4444;
+}
+
+.route-arrow {
+    color: #666;
+    font-size: 12px;
+}
+
+/* ==========================================================================
+   FLOW AND SUBGRAPH DETAIL PANELS - Use same styles as path-detail-panel
+   ========================================================================== */
+
+#flow-detail-panel,
+#subgraph-detail-panel {
+    padding: 0 16px 16px 16px;
+}
+
+#flow-detail-panel .path-stats,
+#subgraph-detail-panel .path-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+#flow-detail-panel .path-stat,
+#subgraph-detail-panel .path-stat {
+    background: #252525;
+    border-radius: 4px;
+    padding: 8px 10px;
+}
+
+#flow-detail-panel .path-stat-label,
+#subgraph-detail-panel .path-stat-label {
+    color: #888;
+    font-size: 10px;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+#flow-detail-panel .path-stat-value,
+#subgraph-detail-panel .path-stat-value {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#flow-detail-panel .path-node-list-header,
+#subgraph-detail-panel .path-node-list-header {
+    color: #aaa;
+    font-size: 11px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+#flow-detail-panel .path-node-list,
+#subgraph-detail-panel .path-node-list {
+    max-height: 250px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+#flow-detail-panel .path-node-item,
+#subgraph-detail-panel .path-node-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    background: #252525;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+#flow-detail-panel .path-node-item:hover,
+#subgraph-detail-panel .path-node-item:hover {
+    background: #2d2d2d;
+}
+
+#flow-detail-panel .path-node-hop,
+#subgraph-detail-panel .path-node-hop {
+    width: 24px;
+    height: 24px;
+    background: #00d4ff;
+    color: #000;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+#flow-detail-panel .path-node-hop.source,
+#subgraph-detail-panel .path-node-hop.source {
+    background: #22c55e;
+}
+
+#flow-detail-panel .path-node-hop.target,
+#subgraph-detail-panel .path-node-hop.target {
+    background: #ef4444;
+}
+
+#flow-detail-panel .path-node-id,
+#subgraph-detail-panel .path-node-id {
+    color: #e0e0e0;
+    font-family: monospace;
+    font-size: 11px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#flow-detail-panel .path-edge-info,
+#subgraph-detail-panel .path-edge-info {
+    display: flex;
+    align-items: center;
+    padding: 2px 0 2px 34px;
+    color: #666;
+    font-size: 10px;
+}
+
+#flow-detail-panel .path-actions,
+#subgraph-detail-panel .path-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+#flow-detail-panel .path-actions button,
+#subgraph-detail-panel .path-actions button {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ccc;
+    transition: all 0.15s ease;
+}
+
+#flow-detail-panel .path-actions button:hover:not(:disabled),
+#subgraph-detail-panel .path-actions button:hover:not(:disabled) {
+    background: #333;
+    border-color: #00d4ff;
+    color: #00d4ff;
+}
+
+#flow-detail-panel .path-actions button:disabled,
+#subgraph-detail-panel .path-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#flow-detail-panel .path-actions .isolate-btn,
+#subgraph-detail-panel .path-actions .isolate-btn {
+    background: #1a3a1a;
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+#flow-detail-panel .path-actions .isolate-btn:hover:not(:disabled),
+#subgraph-detail-panel .path-actions .isolate-btn:hover:not(:disabled) {
+    background: #22c55e;
+    color: #000;
+}
+
+#flow-detail-panel .path-actions .show-all-btn,
+#subgraph-detail-panel .path-actions .show-all-btn {
+    background: #3a2a1a;
+    border-color: #f59e0b;
+    color: #f59e0b;
+}
+
+#flow-detail-panel .path-actions .show-all-btn:hover:not(:disabled),
+#subgraph-detail-panel .path-actions .show-all-btn:hover:not(:disabled) {
+    background: #f59e0b;
+    color: #000;
+}
+
+/* Scrollbar styling */
+#flow-detail-panel .path-node-list::-webkit-scrollbar,
+#subgraph-detail-panel .path-node-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+#flow-detail-panel .path-node-list::-webkit-scrollbar-track,
+#subgraph-detail-panel .path-node-list::-webkit-scrollbar-track {
+    background: #1a1a1a;
+    border-radius: 3px;
+}
+
+#flow-detail-panel .path-node-list::-webkit-scrollbar-thumb,
+#subgraph-detail-panel .path-node-list::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+}
+
+#flow-detail-panel .path-node-list::-webkit-scrollbar-thumb:hover,
+#subgraph-detail-panel .path-node-list::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}

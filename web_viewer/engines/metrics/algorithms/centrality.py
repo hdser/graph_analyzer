@@ -2,11 +2,13 @@
 Centrality Metric Algorithms
 
 Node importance and influence measures.
+Includes standard NetworkX centralities plus custom implementations.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 import logging
 import random
+from collections import defaultdict
 
 import networkx as nx
 import numpy as np
@@ -237,7 +239,7 @@ class HITSAlgorithm(BaseMetricAlgorithm):
     
     def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
         try:
-            hubs, authorities = nx.hits(G, max_iter=100)
+            hubs, authorities = nx.hits(G, max_iter=100, tol=1e-6)
             
             result = {}
             for node in nodes:
@@ -330,15 +332,10 @@ class SecondOrderCentralityAlgorithm(BaseMetricAlgorithm):
     category = "centrality"
     description = "Second order centrality (random walk variance)"
     cost = "high"
-    max_nodes = 1000
     graph_type = "undirected"
+    # max_nodes is handled by registry/resolver - no internal limit
     
     def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
-        n_nodes = U.number_of_nodes()
-        if n_nodes > self.max_nodes:
-            logger.debug(f"Skipping second order centrality: graph too large ({n_nodes})")
-            return {node: {} for node in nodes}
-        
         try:
             second_order = nx.second_order_centrality(U)
             
@@ -402,15 +399,11 @@ class CurrentFlowCentralityAlgorithm(BaseMetricAlgorithm):
     category = "centrality"
     description = "Current flow betweenness and closeness centrality"
     cost = "very_high"
-    max_nodes = 1000
     graph_type = "undirected"
     requires_connected = True
+    # max_nodes is handled by registry/resolver - no internal limit
     
     def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
-        n_nodes = U.number_of_nodes()
-        if n_nodes > self.max_nodes:
-            return {node: {} for node in nodes}
-        
         if not nx.is_connected(U):
             logger.debug("Skipping current flow: graph not connected")
             return {node: {} for node in nodes}
@@ -438,15 +431,11 @@ class InformationCentralityAlgorithm(BaseMetricAlgorithm):
     category = "centrality"
     description = "Information centrality based on information flow"
     cost = "very_high"
-    max_nodes = 1000
     graph_type = "undirected"
     requires_connected = True
+    # max_nodes is handled by registry/resolver - no internal limit
     
     def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
-        n_nodes = U.number_of_nodes()
-        if n_nodes > self.max_nodes:
-            return {node: {} for node in nodes}
-        
         if not nx.is_connected(U):
             return {node: {} for node in nodes}
         
@@ -469,14 +458,10 @@ class CommunicabilityBetweennessAlgorithm(BaseMetricAlgorithm):
     category = "centrality"
     description = "Communicability betweenness centrality"
     cost = "very_high"
-    max_nodes = 500
     graph_type = "undirected"
+    # max_nodes is handled by registry/resolver - no internal limit
     
     def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
-        n_nodes = U.number_of_nodes()
-        if n_nodes > self.max_nodes:
-            return {node: {} for node in nodes}
-        
         try:
             comm_between = nx.communicability_betweenness_centrality(U)
             
@@ -531,4 +516,192 @@ class EdgeBetweennessSumAlgorithm(BaseMetricAlgorithm):
             return result
         except Exception as e:
             logger.warning(f"Edge betweenness failed: {e}")
+            return {node: {} for node in nodes}
+
+
+# =============================================================================
+# NEW CENTRALITY ALGORITHMS
+# =============================================================================
+
+class LaplacianCentralityAlgorithm(BaseMetricAlgorithm):
+    """
+    Compute Laplacian centrality based on Laplacian matrix.
+    
+    Laplacian centrality measures the drop in Laplacian energy when a node is removed.
+    """
+    
+    name = "laplacian_centrality"
+    category = "centrality"
+    description = "Laplacian centrality based on Laplacian energy"
+    cost = "high"
+    graph_type = "undirected"
+    
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+        try:
+            # Compute Laplacian centrality for each node
+            # Based on the drop in Laplacian energy when node is removed
+            n = U.number_of_nodes()
+            if n == 0:
+                return {node: {} for node in nodes}
+            
+            # Get original Laplacian energy
+            L = nx.laplacian_matrix(U).toarray()
+            eigenvalues = np.linalg.eigvalsh(L)
+            original_energy = np.sum(eigenvalues ** 2)
+            
+            result = {}
+            nodes_list = list(U.nodes())
+            
+            for node in nodes:
+                if node not in U:
+                    result[node] = {"laplacian_centrality": 0}
+                    continue
+                
+                # Create subgraph without this node
+                subgraph = U.subgraph([n for n in nodes_list if n != node])
+                if subgraph.number_of_nodes() == 0:
+                    result[node] = {"laplacian_centrality": original_energy}
+                    continue
+                
+                # Compute energy of subgraph
+                L_sub = nx.laplacian_matrix(subgraph).toarray()
+                sub_eigenvalues = np.linalg.eigvalsh(L_sub)
+                sub_energy = np.sum(sub_eigenvalues ** 2)
+                
+                # Laplacian centrality is the drop in energy
+                centrality = (original_energy - sub_energy) / original_energy if original_energy > 0 else 0
+                result[node] = {"laplacian_centrality": max(0, centrality)}
+            
+            return result
+        except Exception as e:
+            logger.warning(f"Laplacian centrality failed: {e}")
+            return {node: {} for node in nodes}
+
+
+class LeverageCentralityAlgorithm(BaseMetricAlgorithm):
+    """
+    Compute leverage centrality.
+    
+    Measures how much a node's degree exceeds its neighbors' degrees.
+    """
+    
+    name = "leverage_centrality"
+    category = "centrality"
+    description = "Leverage centrality based on neighbor degrees"
+    cost = "medium"
+    
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+        try:
+            result = {}
+            
+            for node in nodes:
+                if node not in U or U.degree(node) == 0:
+                    result[node] = {"leverage_centrality": 0}
+                    continue
+                
+                k_i = U.degree(node)
+                neighbors = list(U.neighbors(node))
+                
+                if len(neighbors) == 0:
+                    result[node] = {"leverage_centrality": 0}
+                    continue
+                
+                # Compute leverage centrality
+                leverage_sum = 0
+                for neighbor in neighbors:
+                    k_j = U.degree(neighbor)
+                    if k_i + k_j > 0:
+                        leverage_sum += (k_i - k_j) / (k_i + k_j)
+                
+                leverage = leverage_sum / k_i
+                result[node] = {"leverage_centrality": leverage}
+            
+            return result
+        except Exception as e:
+            logger.warning(f"Leverage centrality failed: {e}")
+            return {node: {} for node in nodes}
+
+
+class SemiLocalCentralityAlgorithm(BaseMetricAlgorithm):
+    """
+    Compute semi-local centrality.
+    
+    Captures local influence by considering 2-hop neighborhood structure.
+    """
+    
+    name = "semi_local_centrality"
+    category = "centrality"
+    description = "Semi-local centrality based on 2-hop neighborhood"
+    cost = "low"
+    
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+        try:
+            result = {}
+            
+            for node in nodes:
+                if node not in U:
+                    result[node] = {"semi_local_centrality": 0}
+                    continue
+                
+                # Get neighbors
+                neighbors = list(U.neighbors(node))
+                
+                # Compute Q(v) = sum of N(u) for all neighbors u
+                # where N(u) is the number of nearest and next-nearest neighbors of u
+                q_score = 0
+                for neighbor in neighbors:
+                    # Count neighbors of neighbor (2nd hop from node)
+                    second_hop = set(U.neighbors(neighbor))
+                    q_score += len(second_hop)
+                
+                result[node] = {"semi_local_centrality": q_score}
+            
+            return result
+        except Exception as e:
+            logger.warning(f"Semi-local centrality failed: {e}")
+            return {node: {} for node in nodes}
+
+
+class DecayCentralityAlgorithm(BaseMetricAlgorithm):
+    """
+    Compute decay centrality.
+    
+    Distance-weighted influence measure where influence decays with distance.
+    """
+    
+    name = "decay_centrality"
+    category = "centrality"
+    description = "Decay centrality with distance-weighted influence"
+    cost = "medium"
+    
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
+        params = parameters or {}
+        delta = params.get('delta', 0.5)  # Decay factor
+        max_distance = params.get('max_distance', 5)  # Maximum distance to consider
+        
+        try:
+            result = {}
+            
+            for node in nodes:
+                if node not in G:
+                    result[node] = {"decay_centrality": 0}
+                    continue
+                
+                # Get shortest path lengths from this node
+                try:
+                    lengths = nx.single_source_shortest_path_length(G, node, cutoff=max_distance)
+                except Exception:
+                    lengths = {}
+                
+                # Compute decay centrality
+                centrality = 0
+                for target, distance in lengths.items():
+                    if target != node and distance > 0:
+                        centrality += delta ** distance
+                
+                result[node] = {"decay_centrality": centrality}
+            
+            return result
+        except Exception as e:
+            logger.warning(f"Decay centrality failed: {e}")
             return {node: {} for node in nodes}

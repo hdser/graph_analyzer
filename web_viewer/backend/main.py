@@ -2,6 +2,8 @@
 Graph Analyzer Web Viewer - Main Application
 
 FastAPI application with modular router architecture.
+
+Location: web_viewer/backend/main.py
 """
 
 import json
@@ -24,6 +26,7 @@ from .routers import (
     snapshot_analysis_router,
     timeseries_router,
     temporal_composite_router,
+    graph_algorithms_router,
 )
 
 
@@ -147,6 +150,7 @@ app.include_router(snapshots_router)
 app.include_router(snapshot_analysis_router)
 app.include_router(timeseries_router)
 app.include_router(temporal_composite_router)
+app.include_router(graph_algorithms_router)
 
 
 @app.get("/")

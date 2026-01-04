@@ -7,6 +7,9 @@ Main package for graph analysis engines including:
 - Graph metrics computation
 - Timeseries analysis
 - Temporal composite analysis
+- Graph algorithms (path finding, subgraph extraction, flow analysis)
+
+Location: web_viewer/engines/__init__.py
 """
 
 # Metrics engine (new modular system)
@@ -63,6 +66,14 @@ from .timeseries_engine import TimeseriesEngine
 # Temporal composite engine
 from .temporal_composite_engine import TemporalCompositeEngine
 
+# Graph algorithms (path finding, subgraph extraction, flow analysis)
+from .graph_algorithms import (
+    PathFinder,
+    SubgraphExtractor,
+    FlowAnalyzer,
+    SelectionAnalyzer,
+)
+
 
 __all__ = [
     # Metrics
@@ -96,6 +107,11 @@ __all__ = [
     "MetricProfile",
     "TimeseriesEngine",
     "TemporalCompositeEngine",
+    # Graph algorithms
+    "PathFinder",
+    "SubgraphExtractor",
+    "FlowAnalyzer",
+    "SelectionAnalyzer",
     # Preprocessing
     "Preprocessor",
     "ChunkedPreprocessor",

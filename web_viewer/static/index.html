@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Graph Analyzer Web Viewer</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/fixes.css">
+    <link rel="stylesheet" href="/static/css/path-analysis.css">
+    <link rel="stylesheet" href="/static/css/subgraph-tools.css">
+    <link rel="stylesheet" href="/static/css/flow-analysis.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.31.0/cytoscape.min.js"></script>
 </head>
 <body>
@@ -35,6 +39,18 @@
                 <button class="nav-btn" data-panel="metrics" title="Metrics">
                     <span data-icon="chart" data-icon-size="20"></span>
                     <span class="nav-btn-label">Metrics</span>
+                </button>
+                <button class="nav-btn" data-panel="paths" title="Path Analysis">
+                    <span data-icon="paths" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Paths</span>
+                </button>
+                <button class="nav-btn" data-panel="subgraph" title="Subgraph Extraction">
+                    <span data-icon="subgraph" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Subgraph</span>
+                </button>
+                <button class="nav-btn" data-panel="flow" title="Flow Analysis">
+                    <span data-icon="flow" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Flow</span>
                 </button>
                 <button class="nav-btn" data-panel="filter" title="Filter">
                     <span data-icon="filter" data-icon-size="20"></span>
@@ -364,6 +380,272 @@
                             <button class="parameter-modal-close" style="background: none; border: none; color: #888; font-size: 24px; cursor: pointer;">&times;</button>
                         </div>
                         <div id="parameter-modal-content"></div>
+                    </div>
+                </div>
+
+                <!-- PATH ANALYSIS PANEL -->
+                <div class="panel" id="panel-paths" data-panel="paths">
+                    <div class="panel-header">
+                        <h3>Path Analysis</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Source Node -->
+                        <div class="style-row">
+                            <label>Source Node</label>
+                            <input type="text" id="path-source-input" placeholder="Enter or click node" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
+                        </div>
+                        
+                        <!-- Target Node -->
+                        <div class="style-row">
+                            <label>Target Node</label>
+                            <input type="text" id="path-target-input" placeholder="Enter or click node" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
+                        </div>
+                        
+                        <!-- Swap Button -->
+                        <div class="style-row" style="justify-content: center;">
+                            <button id="swap-nodes-btn" class="secondary-btn" style="padding: 4px 12px; font-size: 11px;">
+                                ↑↓ Swap
+                            </button>
+                        </div>
+                        
+                        <!-- Algorithm Selection -->
+                        <div class="style-row">
+                            <label>Algorithm</label>
+                            <select id="path-algorithm-select">
+                                <option value="shortest_path">Shortest Path</option>
+                                <option value="all_shortest_paths">All Shortest Paths</option>
+                                <option value="k_shortest_paths">K Shortest Paths</option>
+                                <option value="all_simple_paths">All Simple Paths</option>
+                                <option value="dijkstra">Dijkstra (Weighted)</option>
+                                <option value="node_disjoint_paths">Node-Disjoint Paths</option>
+                                <option value="edge_disjoint_paths">Edge-Disjoint Paths</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Algorithm Parameters -->
+                        <div id="path-params" class="path-params-section">
+                            <div class="style-row">
+                                <label>
+                                    <input type="checkbox" id="path-directed" checked> Directed
+                                </label>
+                            </div>
+                            <div class="style-row" id="param-k-row" style="display: none;">
+                                <label>K (paths)</label>
+                                <input type="number" id="path-k" value="5" min="1" max="100" style="width: 60px;">
+                            </div>
+                            <div class="style-row" id="param-cutoff-row" style="display: none;">
+                                <label>Cutoff</label>
+                                <input type="number" id="path-cutoff" value="10" min="1" max="15" style="width: 60px;">
+                            </div>
+                            <div class="style-row" id="param-weight-row" style="display: none;">
+                                <label>Weight Attr</label>
+                                <input type="text" id="path-weight" placeholder="weight" style="width: 80px;">
+                            </div>
+                        </div>
+                        
+                        <!-- Actions -->
+                        <div class="button-group">
+                            <button id="find-paths-btn" class="primary-btn">Find Paths</button>
+                            <button id="clear-paths-btn" class="secondary-btn">Clear</button>
+                        </div>
+                        
+                        <!-- Results -->
+                        <div id="path-results" class="path-results-section" style="display: none;">
+                            <div class="path-results-header">
+                                <span id="path-results-summary">No paths found</span>
+                                <span id="path-results-time" class="path-results-time"></span>
+                            </div>
+                            <div id="path-results-list" class="path-results-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUBGRAPH PANEL -->
+                <div class="panel" id="panel-subgraph" data-panel="subgraph">
+                    <div class="panel-header">
+                        <h3>Subgraph Extraction</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Extraction Mode -->
+                        <div class="style-row">
+                            <label>Mode</label>
+                            <select id="subgraph-mode">
+                                <option value="neighborhood">Neighborhood</option>
+                                <option value="ego">Ego Graph</option>
+                                <option value="component">Connected Component</option>
+                                <option value="induced">Induced Subgraph</option>
+                                <option value="k_hop">K-Hop from Seeds</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Center Node -->
+                        <div class="style-row">
+                            <label>Center Node</label>
+                            <input type="text" id="subgraph-center-input" placeholder="Node ID..." style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
+                        </div>
+                        
+                        <!-- Seed Nodes (for induced/k_hop) -->
+                        <div id="seed-nodes-section" style="display: none;">
+                            <div class="style-row">
+                                <label>Seed Nodes</label>
+                                <button id="add-selected-seeds-btn" class="secondary-btn" style="font-size: 11px; padding: 4px 8px;">
+                                    + Add Selected
+                                </button>
+                            </div>
+                            <div id="seed-nodes-list" class="seed-nodes-list"></div>
+                        </div>
+                        
+                        <!-- Parameters -->
+                        <div class="style-row" id="subgraph-hops-row">
+                            <label>Hops/Radius</label>
+                            <input type="number" id="subgraph-hops" value="1" min="1" max="5" style="width: 60px;">
+                        </div>
+                        
+                        <div class="style-row">
+                            <label>
+                                <input type="checkbox" id="subgraph-directed"> Directed
+                            </label>
+                        </div>
+                        
+                        <!-- Actions -->
+                        <div class="button-group">
+                            <button id="extract-subgraph-btn" class="primary-btn">Extract</button>
+                            <button id="clear-subgraph-btn" class="secondary-btn">Clear</button>
+                        </div>
+                        
+                        <!-- Results -->
+                        <div id="subgraph-results" class="subgraph-results-section" style="display: none;">
+                            <div class="result-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">Nodes</span>
+                                    <span id="subgraph-node-count" class="stat-value">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Edges</span>
+                                    <span id="subgraph-edge-count" class="stat-value">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Time</span>
+                                    <span id="subgraph-time" class="stat-value">0ms</span>
+                                </div>
+                            </div>
+                            
+                            <div class="button-group" style="margin-top: 12px;">
+                                <button id="highlight-subgraph-btn" class="secondary-btn">Highlight</button>
+                                <button id="isolate-subgraph-btn" class="secondary-btn">Isolate</button>
+                            </div>
+                            <div class="button-group" style="margin-top: 8px;">
+                                <button id="show-all-subgraph-btn" class="secondary-btn">Show All</button>
+                                <button id="export-subgraph-btn" class="secondary-btn">Export</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FLOW PANEL -->
+                <div class="panel" id="panel-flow" data-panel="flow">
+                    <div class="panel-header">
+                        <h3>Flow Analysis</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Analysis Type -->
+                        <div class="style-row">
+                            <label>Analysis</label>
+                            <select id="flow-analysis-type">
+                                <option value="max_flow">Maximum Flow</option>
+                                <option value="min_cut">Minimum Cut</option>
+                                <option value="edge_connectivity">Edge Connectivity</option>
+                                <option value="node_connectivity">Node Connectivity</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Source Node -->
+                        <div class="style-row">
+                            <label>Source</label>
+                            <input type="text" id="flow-source-input" placeholder="Source node..." style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
+                        </div>
+                        
+                        <!-- Target Node -->
+                        <div class="style-row">
+                            <label>Target/Sink</label>
+                            <input type="text" id="flow-target-input" placeholder="Target node..." style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
+                        </div>
+                        
+                        <!-- Swap Button -->
+                        <div class="style-row" style="justify-content: center;">
+                            <button id="swap-flow-nodes-btn" class="secondary-btn" style="padding: 4px 12px; font-size: 11px;">
+                                ↑↓ Swap
+                            </button>
+                        </div>
+                        
+                        <!-- Capacity Attribute -->
+                        <div class="style-row" id="flow-capacity-row">
+                            <label>Capacity</label>
+                            <select id="flow-capacity-attr">
+                                <option value="">Unit Capacity</option>
+                                <option value="weight">weight</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Actions -->
+                        <div class="button-group">
+                            <button id="compute-flow-btn" class="primary-btn">Compute</button>
+                            <button id="clear-flow-btn" class="secondary-btn">Clear</button>
+                        </div>
+                        
+                        <!-- Results -->
+                        <div id="flow-results" class="flow-results-section" style="display: none;">
+                            <div class="result-header">
+                                <span id="flow-result-type">Maximum Flow</span>
+                                <span id="flow-result-time" class="result-time"></span>
+                            </div>
+                            
+                            <div class="result-stats">
+                                <div class="stat-item highlight">
+                                    <span class="stat-label" id="flow-value-label">Flow Value</span>
+                                    <span id="flow-value" class="stat-value large">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label" id="flow-edges-label">Flow Edges</span>
+                                    <span id="flow-edge-count" class="stat-value">0</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Flow/Cut Edges List -->
+                            <div id="flow-edges-section" style="margin-top: 12px;">
+                                <div class="list-header">
+                                    <span id="flow-edges-title">Flow Edges</span>
+                                </div>
+                                <div id="flow-edges-list" class="flow-edges-list"></div>
+                            </div>
+                            
+                            <!-- Partition (for min-cut) -->
+                            <div id="partition-section" style="display: none; margin-top: 12px;">
+                                <div class="list-header">Partition</div>
+                                <div class="partition-stats">
+                                    <div class="partition-item source-side">
+                                        <span class="partition-label">Source Side</span>
+                                        <span id="partition-source-count" class="partition-value">0</span>
+                                    </div>
+                                    <div class="partition-item target-side">
+                                        <span class="partition-label">Target Side</span>
+                                        <span id="partition-target-count" class="partition-value">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="button-group" style="margin-top: 12px;">
+                                <button id="highlight-flow-btn" class="secondary-btn">Highlight</button>
+                                <button id="isolate-flow-btn" class="secondary-btn">Isolate</button>
+                            </div>
+                            <div class="button-group" style="margin-top: 8px;">
+                                <button id="show-partition-btn" class="secondary-btn" style="display: none;">Show Partition</button>
+                                <button id="show-all-flow-btn" class="secondary-btn">Show All</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -729,6 +1011,9 @@
     <script src="/static/js/timeseries.js"></script>
     <script src="/static/js/temporal-composite.js"></script>
     <script src="/static/js/layout.js"></script>
+    <script src="/static/js/path-analysis.js"></script>
+    <script src="/static/js/subgraph-tools.js"></script>
+    <script src="/static/js/flow-analysis.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

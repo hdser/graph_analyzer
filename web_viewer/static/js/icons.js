@@ -110,6 +110,30 @@ const Icons = {
             <path d="M10.5 5.5l-2 4.5"/>
         </svg>`,
         
+        flow: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="8" r="2"/>
+            <circle cx="13" cy="8" r="2"/>
+            <path d="M5 8h6"/>
+            <path d="M8 5l3 3-3 3"/>
+        </svg>`,
+        
+        paths: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="3" r="2"/>
+            <circle cx="13" cy="13" r="2"/>
+            <path d="M5 5l6 6"/>
+            <path d="M5 3h4"/>
+            <path d="M13 7v4"/>
+        </svg>`,
+        
+        subgraph: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="12" height="12" rx="2" stroke-dasharray="2 2"/>
+            <circle cx="5" cy="8" r="1.5" fill="currentColor"/>
+            <circle cx="11" cy="5" r="1.5" fill="currentColor"/>
+            <circle cx="11" cy="11" r="1.5" fill="currentColor"/>
+            <path d="M6.5 7.5l3-2"/>
+            <path d="M6.5 8.5l3 2"/>
+        </svg>`,
+        
         filter: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 3h12"/>
             <path d="M4 7h8"/>

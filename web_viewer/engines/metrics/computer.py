@@ -70,20 +70,31 @@ class MetricComputer:
         n = len(nodes)
         
         if n == 0:
-            logger.warning("Empty graph, returning empty DataFrame")
+            print("[COMPUTER] Empty graph, returning empty DataFrame")
             return pd.DataFrame()
         
         # Create undirected version
         U = G.to_undirected()
         is_connected = nx.is_connected(U)
         
-        logger.info(f"Computing {len(definitions)} metrics for {n} nodes")
-        logger.info(f"Graph connected: {is_connected}")
+        print(f"[COMPUTER] ╔{'═'*60}╗")
+        print(f"[COMPUTER] ║ STARTING METRIC COMPUTATION")
+        print(f"[COMPUTER] ╠{'═'*60}╣")
+        print(f"[COMPUTER] ║ Graph: {n:,} nodes, {G.number_of_edges():,} edges")
+        print(f"[COMPUTER] ║ Connected: {is_connected}")
+        print(f"[COMPUTER] ║ Definitions to compute: {len(definitions)}")
+        print(f"[COMPUTER] ╚{'═'*60}╝")
+        
+        # Log definitions we received
+        print(f"[COMPUTER] Metrics queue:")
+        for i, defn in enumerate(definitions, 1):
+            print(f"[COMPUTER]   {i}. {defn.name} (class={defn.algorithm_class}, cost={defn.cost})")
         
         # Initialize results
         metrics = {node: {} for node in nodes}
         computed_count = 0
         skipped_count = 0
+        failed_metrics = []
         
         start_time = time.time()
         
@@ -91,25 +102,46 @@ class MetricComputer:
         for i, defn in enumerate(definitions, 1):
             metric_start = time.time()
             
+            print(f"\n[COMPUTER] ┌─ [{i}/{len(definitions)}] {defn.name} ─────────────────────")
+            print(f"[COMPUTER] │ Algorithm class: {defn.algorithm_class}")
+            print(f"[COMPUTER] │ Cost: {defn.cost}, Source: {getattr(defn, 'source', 'networkx')}")
+            
             # Get or create algorithm instance
             algorithm = self._get_algorithm(defn)
             if algorithm is None:
-                logger.warning(f"No algorithm found for {defn.name}")
+                print(f"[COMPUTER] │ ✗ FAILED: Algorithm class not found!")
+                print(f"[COMPUTER] │ Available: {list(ALGORITHM_CLASSES.keys())[:5]}...")
+                print(f"[COMPUTER] └─────────────────────────────────────────────────")
                 skipped_count += 1
+                failed_metrics.append((defn.name, "algorithm_not_found"))
                 continue
             
+            print(f"[COMPUTER] │ ✓ Algorithm loaded: {type(algorithm).__name__}")
+            
             # Check if algorithm can be computed
-            if not algorithm.can_compute(n, is_connected):
-                logger.debug(f"Skipping {defn.name}: cannot compute for this graph")
+            can_compute = algorithm.can_compute(n, is_connected)
+            print(f"[COMPUTER] │ can_compute(n={n}, connected={is_connected}) = {can_compute}")
+            
+            if not can_compute:
+                # Get more info about why
+                alg_max_nodes = getattr(algorithm, 'max_nodes', None)
+                alg_requires_connected = getattr(algorithm, 'requires_connected', False)
+                print(f"[COMPUTER] │ ✗ SKIPPED: Cannot compute for this graph")
+                print(f"[COMPUTER] │   Algorithm max_nodes: {alg_max_nodes}")
+                print(f"[COMPUTER] │   Algorithm requires_connected: {alg_requires_connected}")
+                print(f"[COMPUTER] └─────────────────────────────────────────────────")
                 skipped_count += 1
+                failed_metrics.append((defn.name, f"cannot_compute (max_nodes={alg_max_nodes}, requires_connected={alg_requires_connected})"))
                 continue
             
             # Get parameters for this metric
             params = metric_parameters.get(defn.name, {}) if metric_parameters else {}
+            if params:
+                print(f"[COMPUTER] │ Parameters: {params}")
             
             # Compute metric
             try:
-                logger.debug(f"[{i}/{len(definitions)}] Computing {defn.name}...")
+                print(f"[COMPUTER] │ Computing...")
                 
                 result = algorithm.compute(
                     G=G,
@@ -117,25 +149,58 @@ class MetricComputer:
                     nodes=nodes,
                     n_jobs=self.n_jobs,
                     converters=converters,
-                    computed_metrics=metrics,  # Pass already computed metrics for dependencies
-                    parameters=params,  # NEW: Pass metric-specific parameters
+                    computed_metrics=metrics,
+                    parameters=params,
                     **kwargs
                 )
                 
+                # Check result
+                if result is None:
+                    print(f"[COMPUTER] │ ✗ FAILED: Algorithm returned None")
+                    print(f"[COMPUTER] └─────────────────────────────────────────────────")
+                    skipped_count += 1
+                    failed_metrics.append((defn.name, "returned_none"))
+                    continue
+                
+                result_nodes = len(result)
+                result_with_data = sum(1 for v in result.values() if v)
+                
+                # Sample some results
+                sample_data = None
+                if result:
+                    sample_node = next(iter(result))
+                    sample_data = result[sample_node]
+                
                 # Merge results
+                merged_count = 0
                 for node, node_metrics in result.items():
-                    if node in metrics:
+                    if node in metrics and node_metrics:
                         metrics[node].update(node_metrics)
+                        merged_count += 1
                 
                 elapsed = time.time() - metric_start
                 computed_count += 1
-                logger.debug(f"  âœ“ {defn.name} computed in {elapsed:.2f}s")
+                
+                print(f"[COMPUTER] │ ✓ SUCCESS in {elapsed:.2f}s")
+                print(f"[COMPUTER] │   Nodes with results: {result_with_data}/{result_nodes}")
+                print(f"[COMPUTER] │   Merged: {merged_count} nodes")
+                if sample_data:
+                    print(f"[COMPUTER] │   Sample output: {sample_data}")
+                print(f"[COMPUTER] └─────────────────────────────────────────────────")
                 
             except Exception as e:
-                logger.warning(f"  âœ— {defn.name} failed: {e}")
+                import traceback
+                print(f"[COMPUTER] │ ✗ EXCEPTION: {e}")
+                print(f"[COMPUTER] │ Traceback:")
+                for line in traceback.format_exc().split('\n')[-5:]:
+                    if line.strip():
+                        print(f"[COMPUTER] │   {line}")
+                print(f"[COMPUTER] └─────────────────────────────────────────────────")
                 skipped_count += 1
+                failed_metrics.append((defn.name, str(e)))
         
         # Convert to DataFrame
+        print(f"\n[COMPUTER] Converting results to DataFrame...")
         df = pd.DataFrame.from_dict(metrics, orient='index')
         df.index.name = 'avatar'
         df = df.reset_index()
@@ -147,8 +212,21 @@ class MetricComputer:
         df = df.replace([np.inf, -np.inf], 0).fillna(0)
         
         total_time = time.time() - start_time
-        logger.info(f"Computation complete: {computed_count} metrics in {total_time:.2f}s")
-        logger.info(f"Skipped: {skipped_count} metrics")
+        
+        print(f"\n[COMPUTER] ╔{'═'*60}╗")
+        print(f"[COMPUTER] ║ COMPUTATION COMPLETE")
+        print(f"[COMPUTER] ╠{'═'*60}╣")
+        print(f"[COMPUTER] ║ Total time: {total_time:.2f}s")
+        print(f"[COMPUTER] ║ Computed: {computed_count} metrics")
+        print(f"[COMPUTER] ║ Skipped: {skipped_count} metrics")
+        print(f"[COMPUTER] ║ Output: {len(df)} rows × {len(df.columns)} columns")
+        print(f"[COMPUTER] ║ Columns: {list(df.columns)[:10]}{'...' if len(df.columns) > 10 else ''}")
+        print(f"[COMPUTER] ╚{'═'*60}╝")
+        
+        if failed_metrics:
+            print(f"\n[COMPUTER] ⚠ Failed/Skipped metrics:")
+            for name, reason in failed_metrics:
+                print(f"[COMPUTER]   • {name}: {reason}")
         
         return df
     
@@ -158,7 +236,9 @@ class MetricComputer:
             return self._algorithm_cache[defn.name]
         
         algorithm_class = get_algorithm_class(defn.algorithm_class)
+        
         if algorithm_class is None:
+            print(f"[COMPUTER] Algorithm class '{defn.algorithm_class}' not found in ALGORITHM_CLASSES")
             return None
         
         algorithm = algorithm_class()
@@ -172,14 +252,6 @@ class MetricEngine:
     
     Combines resolver and computer to provide a simple interface
     for computing graph metrics with various selection options.
-    
-    Usage:
-        engine = MetricEngine(graph)
-        df = engine.compute(metrics=["pagerank", "eigentrust"])
-        # or
-        df = engine.compute(categories=["centrality", "trust"])
-        # or
-        df = engine.compute(preset="essential")
     """
     
     def __init__(
@@ -207,21 +279,18 @@ class MetricEngine:
     
     def _print_graph_info(self):
         """Print graph statistics."""
-        logger.info("=" * 70)
-        logger.info("METRIC ENGINE INITIALIZED")
-        logger.info("=" * 70)
-        logger.info(f"Graph Statistics:")
-        logger.info(f"  â€¢ Nodes: {self.n:,}")
-        logger.info(f"  â€¢ Edges: {self.m:,}")
+        print(f"\n[ENGINE] ══════════════════════════════════════════════════════")
+        print(f"[ENGINE] METRIC ENGINE INITIALIZED")
+        print(f"[ENGINE] ══════════════════════════════════════════════════════")
+        print(f"[ENGINE] Graph: {self.n:,} nodes, {self.m:,} edges")
         if self.n > 0:
-            logger.info(f"  â€¢ Avg degree: {2 * self.m / self.n:.2f}")
+            print(f"[ENGINE] Avg degree: {2 * self.m / self.n:.2f}")
         if self.n > 1:
-            logger.info(f"  â€¢ Density: {self.m / (self.n * (self.n - 1)):.6f}")
-        logger.info(f"  â€¢ Is connected: {nx.is_connected(self.U)}")
-        logger.info(f"Parallel Processing:")
-        logger.info(f"  â€¢ CPU cores: {multiprocessing.cpu_count()}")
-        logger.info(f"  â€¢ Workers: {self.n_jobs}")
-        logger.info("=" * 70)
+            density = self.m / (self.n * (self.n - 1))
+            print(f"[ENGINE] Density: {density:.6f}")
+        print(f"[ENGINE] Connected: {nx.is_connected(self.U)}")
+        print(f"[ENGINE] Workers: {self.n_jobs} (CPUs: {multiprocessing.cpu_count()})")
+        print(f"[ENGINE] ══════════════════════════════════════════════════════")
     
     def compute(
         self,
@@ -236,21 +305,16 @@ class MetricEngine:
     ) -> pd.DataFrame:
         """
         Compute metrics for the graph.
-        
-        Args:
-            preset: Preset name (basic, essential, moderate, comprehensive, all)
-            categories: List of category names
-            metrics: List of individual metric names
-            exclude_metrics: Metrics to exclude
-            skip_expensive: Skip metrics with cost='very_high'
-            metric_parameters: Per-metric parameter overrides {metric_name: {param: value}}
-            converters: Trusted seed nodes for trust algorithms
-            **kwargs: Additional parameters for algorithms
-            
-        Returns:
-            DataFrame with metric values for each node
         """
+        print(f"\n[ENGINE] compute() called:")
+        print(f"[ENGINE]   preset={preset}")
+        print(f"[ENGINE]   categories={categories}")
+        print(f"[ENGINE]   metrics={metrics}")
+        print(f"[ENGINE]   exclude_metrics={exclude_metrics}")
+        print(f"[ENGINE]   skip_expensive={skip_expensive}")
+        
         # Resolve metrics
+        print(f"[ENGINE] Resolving metrics...")
         definitions = self.resolver.resolve(
             preset=preset,
             categories=categories,
@@ -261,14 +325,24 @@ class MetricEngine:
             require_connected=nx.is_connected(self.U),
         )
         
+        print(f"[ENGINE] Resolver returned {len(definitions)} metric definitions")
+        
         if not definitions:
-            logger.warning("No metrics to compute")
+            print(f"[ENGINE] ⚠ No metrics to compute!")
+            if metrics:
+                print(f"[ENGINE] Checking requested metrics in registry:")
+                for m in metrics:
+                    exists = m in METRIC_REGISTRY
+                    if exists:
+                        defn = METRIC_REGISTRY[m]
+                        print(f"[ENGINE]   {m}: EXISTS (class={defn.algorithm_class}, max_nodes={defn.max_nodes})")
+                    else:
+                        print(f"[ENGINE]   {m}: NOT FOUND")
             return pd.DataFrame({'avatar': list(self.G.nodes())})
         
         # Log what we're computing
-        logger.info("")
-        logger.info("METRICS TO COMPUTE")
-        logger.info("-" * 40)
+        print(f"\n[ENGINE] ────────────────────────────────────────────────────")
+        print(f"[ENGINE] METRICS TO COMPUTE ({len(definitions)} total):")
         by_category = {}
         for d in definitions:
             if d.category not in by_category:
@@ -276,8 +350,8 @@ class MetricEngine:
             by_category[d.category].append(d.name)
         
         for cat, metric_names in sorted(by_category.items()):
-            logger.info(f"  {cat}: {', '.join(metric_names)}")
-        logger.info("-" * 40)
+            print(f"[ENGINE]   {cat}: {', '.join(metric_names)}")
+        print(f"[ENGINE] ────────────────────────────────────────────────────")
         
         # Compute
         return self.computer.compute(
@@ -294,11 +368,7 @@ class MetricEngine:
         categories: Optional[List[str]] = None,
         metrics: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """
-        Preview what metrics would be computed without running computation.
-        
-        Returns dict with metric counts, categories, and estimated cost.
-        """
+        """Preview what metrics would be computed."""
         return self.resolver.get_metrics_info(
             preset=preset,
             categories=categories,
