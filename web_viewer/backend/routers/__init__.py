@@ -1,7 +1,7 @@
 """
-Routers Package
+API Routers Package
 
-FastAPI routers for the Graph Analyzer API.
+Exports all API routers for registration in main app.
 
 Location: web_viewer/backend/routers/__init__.py
 """
@@ -16,6 +16,8 @@ from .snapshot_analysis import router as snapshot_analysis_router
 from .timeseries import router as timeseries_router
 from .temporal_composite import router as temporal_composite_router
 from .graph_algorithms import router as graph_algorithms_router
+from .capacity_flow import router as capacity_flow_router
+
 
 __all__ = [
     "network_router",
@@ -28,4 +30,5 @@ __all__ = [
     "timeseries_router",
     "temporal_composite_router",
     "graph_algorithms_router",
+    "capacity_flow_router",
 ]

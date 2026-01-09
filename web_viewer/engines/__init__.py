@@ -8,6 +8,7 @@ Main package for graph analysis engines including:
 - Timeseries analysis
 - Temporal composite analysis
 - Graph algorithms (path finding, subgraph extraction, flow analysis)
+- Capacity flow (Circles protocol max flow computation)
 
 Location: web_viewer/engines/__init__.py
 """
@@ -74,6 +75,22 @@ from .graph_algorithms import (
     SelectionAnalyzer,
 )
 
+# Capacity flow - optional (requires capacity_flow subpackage)
+try:
+    from .capacity_flow import (
+        CapacityFlowEngine,
+        CapacityGraphBuilder,
+        TrustRelation,
+        TokenBalance,
+        FlowResult,
+        CapacityGraphStats,
+        get_available_backends,
+        get_backend_info,
+    )
+    HAS_CAPACITY_FLOW = True
+except ImportError:
+    HAS_CAPACITY_FLOW = False
+
 
 __all__ = [
     # Metrics
@@ -122,4 +139,19 @@ __all__ = [
     # Parallel
     "ParallelExecutor",
     "get_optimal_workers",
+    # Capacity flow (if available)
+    "HAS_CAPACITY_FLOW",
 ]
+
+# Add capacity flow exports if available
+if HAS_CAPACITY_FLOW:
+    __all__.extend([
+        "CapacityFlowEngine",
+        "CapacityGraphBuilder",
+        "TrustRelation",
+        "TokenBalance",
+        "FlowResult",
+        "CapacityGraphStats",
+        "get_available_backends",
+        "get_backend_info",
+    ])

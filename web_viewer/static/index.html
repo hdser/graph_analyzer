@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Graph Analyzer Web Viewer</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="stylesheet" href="/static/css/fixes.css">
     <link rel="stylesheet" href="/static/css/path-analysis.css">
     <link rel="stylesheet" href="/static/css/subgraph-tools.css">
     <link rel="stylesheet" href="/static/css/flow-analysis.css">
@@ -551,99 +550,172 @@
                         <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
                     <div class="panel-content">
-                        <!-- Analysis Type -->
-                        <div class="style-row">
-                            <label>Analysis</label>
-                            <select id="flow-analysis-type">
-                                <option value="max_flow">Maximum Flow</option>
-                                <option value="min_cut">Minimum Cut</option>
-                                <option value="edge_connectivity">Edge Connectivity</option>
-                                <option value="node_connectivity">Node Connectivity</option>
-                            </select>
-                        </div>
-                        
-                        <!-- Source Node -->
-                        <div class="style-row">
-                            <label>Source</label>
-                            <input type="text" id="flow-source-input" placeholder="Source node..." style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
-                        </div>
-                        
-                        <!-- Target Node -->
-                        <div class="style-row">
-                            <label>Target/Sink</label>
-                            <input type="text" id="flow-target-input" placeholder="Target node..." style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
-                        </div>
-                        
-                        <!-- Swap Button -->
-                        <div class="style-row" style="justify-content: center;">
-                            <button id="swap-flow-nodes-btn" class="secondary-btn" style="padding: 4px 12px; font-size: 11px;">
-                                ↑↓ Swap
-                            </button>
-                        </div>
-                        
-                        <!-- Capacity Attribute -->
-                        <div class="style-row" id="flow-capacity-row">
-                            <label>Capacity</label>
-                            <select id="flow-capacity-attr">
-                                <option value="">Unit Capacity</option>
-                                <option value="weight">weight</option>
-                            </select>
-                        </div>
-                        
-                        <!-- Actions -->
-                        <div class="button-group">
-                            <button id="compute-flow-btn" class="primary-btn">Compute</button>
-                            <button id="clear-flow-btn" class="secondary-btn">Clear</button>
-                        </div>
-                        
-                        <!-- Results -->
-                        <div id="flow-results" class="flow-results-section" style="display: none;">
-                            <div class="result-header">
-                                <span id="flow-result-type">Maximum Flow</span>
-                                <span id="flow-result-time" class="result-time"></span>
+                        <!-- Shared Source/Sink Inputs -->
+                        <div class="flow-endpoints">
+                            <div class="endpoint-row">
+                                <label>Source</label>
+                                <input type="text" id="flow-source-input" placeholder="Click node or paste address...">
                             </div>
-                            
-                            <div class="result-stats">
-                                <div class="stat-item highlight">
-                                    <span class="stat-label" id="flow-value-label">Flow Value</span>
-                                    <span id="flow-value" class="stat-value large">0</span>
+                            <button id="swap-flow-nodes-btn" class="swap-btn" title="Swap">⇅</button>
+                            <div class="endpoint-row">
+                                <label>Sink</label>
+                                <input type="text" id="flow-target-input" placeholder="Click node or paste address...">
+                            </div>
+                        </div>
+                        
+                        <!-- Tab Switcher -->
+                        <div class="flow-tabs">
+                            <button class="flow-tab active" data-tab="graph-flow">Graph Flow</button>
+                            <button class="flow-tab" data-tab="circles-flow">Circles Capacity</button>
+                        </div>
+                        
+                        <!-- GRAPH FLOW TAB -->
+                        <div id="graph-flow-tab" class="flow-tab-content active">
+                            <div class="flow-options">
+                                <div class="option-row">
+                                    <label>Analysis</label>
+                                    <select id="flow-analysis-type">
+                                        <option value="max_flow">Maximum Flow</option>
+                                        <option value="min_cut">Minimum Cut</option>
+                                        <option value="edge_connectivity">Edge Connectivity</option>
+                                        <option value="node_connectivity">Node Connectivity</option>
+                                    </select>
                                 </div>
-                                <div class="stat-item">
-                                    <span class="stat-label" id="flow-edges-label">Flow Edges</span>
-                                    <span id="flow-edge-count" class="stat-value">0</span>
+                                <div class="option-row" id="flow-capacity-row">
+                                    <label>Capacity</label>
+                                    <select id="flow-capacity-attr">
+                                        <option value="">Unit Capacity (1.0)</option>
+                                        <option value="weight">weight</option>
+                                    </select>
                                 </div>
                             </div>
                             
-                            <!-- Flow/Cut Edges List -->
-                            <div id="flow-edges-section" style="margin-top: 12px;">
-                                <div class="list-header">
-                                    <span id="flow-edges-title">Flow Edges</span>
-                                </div>
-                                <div id="flow-edges-list" class="flow-edges-list"></div>
+                            <div class="flow-actions">
+                                <button id="compute-flow-btn" class="primary-btn">Compute</button>
+                                <button id="clear-flow-btn" class="secondary-btn">Clear</button>
                             </div>
                             
-                            <!-- Partition (for min-cut) -->
-                            <div id="partition-section" style="display: none; margin-top: 12px;">
-                                <div class="list-header">Partition</div>
-                                <div class="partition-stats">
-                                    <div class="partition-item source-side">
-                                        <span class="partition-label">Source Side</span>
-                                        <span id="partition-source-count" class="partition-value">0</span>
+                            <!-- Graph Flow Results -->
+                            <div id="flow-results" class="flow-results" style="display: none;">
+                                <div class="result-row main">
+                                    <span id="flow-result-type">Maximum Flow</span>
+                                    <span id="flow-value" class="result-value">0</span>
+                                </div>
+                                <div class="result-row meta">
+                                    <span id="flow-edge-count">0 edges</span>
+                                    <span id="flow-result-time"></span>
+                                </div>
+                                
+                                <div id="flow-edges-section" class="edges-section">
+                                    <div class="section-header">
+                                        <span id="flow-edges-title">Flow Edges</span>
                                     </div>
-                                    <div class="partition-item target-side">
-                                        <span class="partition-label">Target Side</span>
-                                        <span id="partition-target-count" class="partition-value">0</span>
+                                    <div id="flow-edges-list" class="edges-list"></div>
+                                </div>
+                                
+                                <div id="partition-section" class="partition-section" style="display: none;">
+                                    <div class="section-header">Partition</div>
+                                    <div class="partition-counts">
+                                        <span class="source-side">Source: <b id="partition-source-count">0</b></span>
+                                        <span class="target-side">Sink: <b id="partition-target-count">0</b></span>
                                     </div>
                                 </div>
+                                
+                                <div class="viz-actions">
+                                    <button id="highlight-flow-btn" class="small-btn">Highlight</button>
+                                    <button id="isolate-flow-btn" class="small-btn">Isolate</button>
+                                    <button id="show-partition-btn" class="small-btn" style="display: none;">Partition</button>
+                                    <button id="show-all-flow-btn" class="small-btn">Reset</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- CIRCLES CAPACITY FLOW TAB -->
+                        <div id="circles-flow-tab" class="flow-tab-content">
+                            <!-- Build Status -->
+                            <div class="cf-build-section">
+                                <div class="cf-build-row">
+                                    <span id="cf-status" class="cf-badge not-built">Not Built</span>
+                                    <button id="cf-build-btn" class="small-btn">Build Graph</button>
+                                    <button id="cf-view-graph-btn" class="small-btn" disabled>View Graph</button>
+                                </div>
+                                <div id="cf-graph-stats" class="cf-stats" style="display: none;"></div>
                             </div>
                             
-                            <div class="button-group" style="margin-top: 12px;">
-                                <button id="highlight-flow-btn" class="secondary-btn">Highlight</button>
-                                <button id="isolate-flow-btn" class="secondary-btn">Isolate</button>
+                            <!-- Edge Loading (shown after View Graph) -->
+                            <div id="cf-edge-loading" class="cf-edge-loading" style="display: none;">
+                                <span id="cf-edge-progress" class="progress">0 / 0 edges</span>
+                                <button id="cf-load-edges-btn" class="small-btn">Load Edges</button>
                             </div>
-                            <div class="button-group" style="margin-top: 8px;">
-                                <button id="show-partition-btn" class="secondary-btn" style="display: none;">Show Partition</button>
-                                <button id="show-all-flow-btn" class="secondary-btn">Show All</button>
+                            
+                            <!-- Options (collapsible) -->
+                            <details class="cf-options">
+                                <summary>Options</summary>
+                                <div class="cf-options-content">
+                                    <div class="option-row">
+                                        <label>Algorithm</label>
+                                        <select id="cf-algorithm-select">
+                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ✓</option>
+                                            <option value="networkx:preflow_push">Preflow Push (NetworkX)</option>
+                                            <option value="networkx:dinitz">Dinitz (NetworkX)</option>
+                                            <option value="ortools:max_flow">Max Flow (OR-Tools)</option>
+                                        </select>
+                                    </div>
+                                    <div class="option-row">
+                                        <label>Cutoff</label>
+                                        <input type="number" id="cf-cutoff-input" placeholder="No limit" min="0">
+                                        <span id="cf-cutoff-note" class="note" style="display: none;"></span>
+                                    </div>
+                                    <div class="checkbox-row">
+                                        <label><input type="checkbox" id="cf-decompose-paths" checked> Decompose paths</label>
+                                        <label><input type="checkbox" id="cf-simplify-paths" checked> Simplify paths</label>
+                                    </div>
+                                </div>
+                            </details>
+                            
+                            <div class="flow-actions">
+                                <button id="cf-compute-btn" class="primary-btn">Compute Flow</button>
+                                <button id="cf-clear-btn" class="secondary-btn">Clear</button>
+                            </div>
+                            
+                            <!-- Loading -->
+                            <div id="cf-loading" class="cf-loading" style="display: none;">
+                                <div class="spinner-small"></div>
+                                <span>Computing...</span>
+                            </div>
+                            
+                            <!-- Error -->
+                            <div id="cf-error" class="cf-error" style="display: none;"></div>
+                            
+                            <!-- Results -->
+                            <div id="cf-results" class="flow-results" style="display: none;">
+                                <div class="result-row main">
+                                    <span>Maximum Flow</span>
+                                    <span id="cf-max-flow-value" class="result-value">0</span>
+                                </div>
+                                <div class="result-row meta">
+                                    <span id="cf-path-count">0 paths</span>
+                                    <span id="cf-computation-time"></span>
+                                    <span id="cf-backend-used"></span>
+                                </div>
+                                
+                                <!-- Token Flows -->
+                                <div id="cf-token-flows" class="token-flows-section" style="display: none;">
+                                    <div class="section-header">Token Flows</div>
+                                    <div id="cf-token-flows-list" class="token-flows-list"></div>
+                                </div>
+                                
+                                <!-- Paths -->
+                                <div class="paths-section">
+                                    <div class="section-header">Paths</div>
+                                    <div id="cf-paths-list" class="paths-list"></div>
+                                </div>
+                                
+                                <div class="viz-actions">
+                                    <button id="cf-highlight-btn" class="small-btn">Highlight</button>
+                                    <button id="cf-isolate-btn" class="small-btn">Isolate</button>
+                                    <button id="cf-show-all-btn" class="small-btn">Reset</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1014,6 +1086,7 @@
     <script src="/static/js/path-analysis.js"></script>
     <script src="/static/js/subgraph-tools.js"></script>
     <script src="/static/js/flow-analysis.js"></script>
+    <script src="/static/js/capacity-flow.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

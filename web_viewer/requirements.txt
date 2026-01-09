@@ -39,6 +39,9 @@ pyarrow>=14.0.0
 # License: GPL-2.0
 igraph>=0.11.0
 
+# OR-Tools for optimized max flow computation 
+ortools>=9.14
+
 # ForceAtlas2 - Gephi's layout algorithm (OPTIONAL)
 # fa2_modified is the maintained fork that works with Python 3.9+
 # License: GPL-3.0

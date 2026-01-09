@@ -3,6 +3,8 @@ Configuration Module
 
 Centralized configuration for the Graph Analyzer Web Viewer.
 All settings are loaded from environment variables with sensible defaults.
+
+Location: web_viewer/backend/config.py
 """
 
 import os
@@ -163,6 +165,38 @@ class Settings:
         "EXTERNAL_API_BLACKLIST_V2_ONLY", "true"
     ).lower() == "true"
     
+    # ==========================================================================
+    # CAPACITY FLOW CONFIGURATION
+    # ==========================================================================
+    
+    # Router address for Circles protocol
+    CIRCLES_ROUTER_ADDRESS: str = os.getenv(
+        "CIRCLES_ROUTER_ADDRESS",
+        "0xdc287474114cc0551a81ddc2eb51783fbf34802f"
+    )
+    
+    # Backend priority for max flow computation
+    # Available: ortools, networkx
+    CAPACITY_FLOW_BACKEND_PRIORITY: List[str] = [
+        p.strip() for p in os.getenv(
+            "CAPACITY_FLOW_BACKEND_PRIORITY",
+            "ortools,networkx"
+        ).split(",") if p.strip()
+    ]
+    
+    # Default algorithm for NetworkX backend
+    CAPACITY_FLOW_NETWORKX_ALGORITHM: str = os.getenv(
+        "CAPACITY_FLOW_NETWORKX_ALGORITHM",
+        "preflow_push"
+    )
+    
+    # Cache settings for capacity graphs
+    CAPACITY_FLOW_CACHE_ENABLED: bool = os.getenv(
+        "CAPACITY_FLOW_CACHE_ENABLED", "true"
+    ).lower() == "true"
+    
+    CAPACITY_FLOW_CACHE_TTL: int = int(os.getenv("CAPACITY_FLOW_CACHE_TTL", "3600"))
+    
     @property
     def database_url(self) -> str:
         """Construct database URL from components."""
@@ -223,13 +257,19 @@ except ImportError:
     except ImportError:
         HAS_FA2 = False
 
+try:
+    from ortools.graph.python import max_flow
+    HAS_ORTOOLS = True
+except ImportError:
+    HAS_ORTOOLS = False
+
 HAS_ANOMALY = HAS_SKLEARN
 
 
 def print_startup_banner():
     """Print startup information banner."""
     print("\n" + "=" * 60)
-    print("  Graph Analyzer Web Viewer v2.1.0")
+    print("  Graph Analyzer Web Viewer v2.2.0")
     print("=" * 60)
     print(f"  Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     print(f"  SQL Dir:  {settings.SQL_DIR}")
@@ -246,6 +286,11 @@ def print_startup_banner():
     print(f"    ForceAtlas2:        {'Y' if HAS_FA2 else 'N'}")
     print(f"    Local Spring:       Y")
     print(f"    Priority: {', '.join(settings.LAYOUT_BACKEND_PRIORITY)}")
+    print("-" * 60)
+    print("  Capacity Flow:")
+    print(f"    OR-Tools:           {'Y' if HAS_ORTOOLS else 'N'}")
+    print(f"    NetworkX:           Y")
+    print(f"    Backend Priority: {', '.join(settings.CAPACITY_FLOW_BACKEND_PRIORITY)}")
     print("-" * 60)
     print("  Snapshots:")
     print(f"    Storage: {settings.SNAPSHOT_CACHE_DIR}")

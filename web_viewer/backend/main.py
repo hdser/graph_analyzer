@@ -27,6 +27,7 @@ from .routers import (
     timeseries_router,
     temporal_composite_router,
     graph_algorithms_router,
+    capacity_flow_router,
 )
 
 
@@ -151,6 +152,7 @@ app.include_router(snapshot_analysis_router)
 app.include_router(timeseries_router)
 app.include_router(temporal_composite_router)
 app.include_router(graph_algorithms_router)
+app.include_router(capacity_flow_router)
 
 
 @app.get("/")
