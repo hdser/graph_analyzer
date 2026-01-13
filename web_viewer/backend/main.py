@@ -28,6 +28,7 @@ from .routers import (
     temporal_composite_router,
     graph_algorithms_router,
     capacity_flow_router,
+    embeddings_router,
 )
 
 
@@ -122,7 +123,7 @@ async def notify_startup_subscribers():
 app = FastAPI(
     title="Graph Analyzer Web Viewer",
     description="Web-based graph visualization and analysis dashboard",
-    version="2.1.0",
+    version="2.2.0",
     lifespan=lifespan
 )
 
@@ -153,6 +154,7 @@ app.include_router(timeseries_router)
 app.include_router(temporal_composite_router)
 app.include_router(graph_algorithms_router)
 app.include_router(capacity_flow_router)
+app.include_router(embeddings_router)
 
 
 @app.get("/")
@@ -187,6 +189,14 @@ async def health_check():
     """Health check endpoint."""
     from .services.network_service import network_service
     
+    # Check deep learning availability
+    deep_learning_available = False
+    try:
+        from engines.deep_learning import HAS_DEEP_LEARNING
+        deep_learning_available = HAS_DEEP_LEARNING
+    except ImportError:
+        pass
+    
     graphs_loaded = len(network_service.graphs) > 0
     node_count = sum(G.number_of_nodes() for G in network_service.graphs.values()) if graphs_loaded else 0
     
@@ -196,11 +206,12 @@ async def health_check():
     
     return {
         "status": "healthy",
-        "version": "2.1.0",
+        "version": "2.2.0",
         "mode": "production" if settings.HIDE_DATA_SOURCE_UI else "admin",
         "data_status": loading_status,
         "graphs_loaded": graphs_loaded,
-        "node_count": node_count
+        "node_count": node_count,
+        "deep_learning_available": deep_learning_available
     }
 
 

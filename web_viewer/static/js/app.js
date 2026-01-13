@@ -35,6 +35,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     CompositeMetrics.setup();
     InfoPanel.setupNeighborClicks();
     Snapshots.init();
+
+    // Initialize Embedding Panel (Deep Learning)
+    try {
+        await EmbeddingPanel.init();
+        console.log('[App] EmbeddingPanel initialized');
+    } catch (error) {
+        console.warn('[App] EmbeddingPanel init failed:', error);
+    }
     
     // Initialize Metrics module
     try {

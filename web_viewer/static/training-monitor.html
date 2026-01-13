@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIT-CD Training Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #30363d;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+        
+        .status-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .status-badge.idle {
+            background: #30363d;
+            color: #8b949e;
+        }
+        
+        .status-badge.running {
+            background: #1f6feb33;
+            color: #58a6ff;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-badge.completed {
+            background: #23883433;
+            color: #3fb950;
+        }
+        
+        .status-badge.failed {
+            background: #f8514933;
+            color: #f85149;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .card-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #8b949e;
+            margin-bottom: 8px;
+        }
+        
+        .metric-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #e6edf3;
+            line-height: 1.2;
+        }
+        
+        .metric-value .metric-unit {
+            font-size: 16px;
+            font-weight: 400;
+            color: #8b949e;
+            margin-left: 4px;
+        }
+        
+        .metric-change {
+            font-size: 13px;
+            margin-top: 4px;
+        }
+        
+        .metric-change.positive {
+            color: #3fb950;
+        }
+        
+        .metric-change.negative {
+            color: #f85149;
+        }
+        
+        .metric-change.neutral {
+            color: #8b949e;
+        }
+        
+        .chart-container {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+        
+        .chart-legend {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        
+        .legend-dot.total { background: #58a6ff; }
+        .legend-dot.cluster { background: #3fb950; }
+        .legend-dot.recon { background: #f0883e; }
+        
+        .chart-wrapper {
+            height: 250px;
+            position: relative;
+        }
+        
+        .progress-section {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .progress-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+        
+        .progress-percent {
+            font-size: 14px;
+            font-weight: 600;
+            color: #58a6ff;
+        }
+        
+        .progress-bar {
+            height: 8px;
+            background: #30363d;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #58a6ff, #3fb950);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        .log-section {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .log-header {
+            background: #21262d;
+            padding: 12px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #e6edf3;
+            border-bottom: 1px solid #30363d;
+        }
+        
+        .log-content {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 12px 16px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        
+        .log-entry {
+            margin-bottom: 4px;
+            display: flex;
+            gap: 12px;
+        }
+        
+        .log-time {
+            color: #8b949e;
+            flex-shrink: 0;
+        }
+        
+        .log-message {
+            color: #e6edf3;
+        }
+        
+        .log-message.info { color: #58a6ff; }
+        .log-message.success { color: #3fb950; }
+        .log-message.warning { color: #d29922; }
+        .log-message.error { color: #f85149; }
+        
+        .config-section {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .config-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #8b949e;
+            margin-bottom: 16px;
+        }
+        
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+        }
+        
+        .config-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .config-label {
+            font-size: 11px;
+            color: #8b949e;
+            text-transform: uppercase;
+        }
+        
+        .config-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+        
+        .results-section {
+            background: #23883422;
+            border: 1px solid #238636;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+            display: none;
+        }
+        
+        .results-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #3fb950;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+        }
+        
+        .result-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .result-label {
+            font-size: 11px;
+            color: #8b949e;
+            text-transform: uppercase;
+        }
+        
+        .result-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+        
+        .waiting-section {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .waiting-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 20px;
+            border: 3px solid #30363d;
+            border-top-color: #58a6ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .waiting-text {
+            font-size: 18px;
+            color: #8b949e;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>GIT-CD Training Monitor</h1>
+            <span id="status-badge" class="status-badge idle">Idle</span>
+        </div>
+        
+        <!-- Waiting Section (shown when no training) -->
+        <div id="waiting-section" class="waiting-section">
+            <div class="waiting-icon"></div>
+            <div class="waiting-text">Waiting for Training to Start...</div>
+        </div>
+        
+        <!-- Training Content (hidden until training starts) -->
+        <div id="training-content" style="display: none;">
+            <!-- Progress -->
+            <div class="progress-section">
+                <div class="progress-header">
+                    <span class="progress-title">Training Progress</span>
+                    <span id="progress-text" class="progress-percent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <!-- Metrics Grid -->
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">Current Epoch</div>
+                    <div id="metric-epoch" class="metric-value">0<span class="metric-unit">/ 200</span></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Total Loss</div>
+                    <div id="metric-loss" class="metric-value">-</div>
+                    <div id="loss-change" class="metric-change neutral"></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Clustering Loss</div>
+                    <div id="metric-cluster-loss" class="metric-value">-</div>
+                </div>
+            </div>
+            
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">Reconstruction Loss</div>
+                    <div id="metric-recon-loss" class="metric-value">-</div>
+                </div>
+            </div>
+            
+            <!-- Loss Chart -->
+            <div class="chart-container">
+                <div class="chart-header">
+                    <span class="chart-title">Loss Over Time</span>
+                    <div class="chart-legend">
+                        <div class="legend-item">
+                            <div class="legend-dot total"></div>
+                            <span>Total Loss</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-dot cluster"></div>
+                            <span>Clustering</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-dot recon"></div>
+                            <span>Reconstruction</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="loss-chart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Configuration -->
+            <div class="config-section">
+                <div class="config-title">Training Configuration</div>
+                <div class="config-grid">
+                    <div class="config-item">
+                        <span class="config-label">Model Name</span>
+                        <span id="config-model" class="config-value">-</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Graph</span>
+                        <span id="config-graph" class="config-value">-</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Clusters</span>
+                        <span id="config-clusters" class="config-value">-</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Hidden Dim</span>
+                        <span id="config-hidden" class="config-value">-</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Learning Rate</span>
+                        <span id="config-lr" class="config-value">-</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Elapsed Time</span>
+                        <span id="config-time" class="config-value">0s</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Results (shown on completion) -->
+            <div id="results-section" class="results-section">
+                <div class="results-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    Training Complete
+                </div>
+                <div class="results-grid">
+                    <div class="result-item">
+                        <span class="result-label">Final Loss</span>
+                        <span id="result-loss" class="result-value">-</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Silhouette Score</span>
+                        <span id="result-silhouette" class="result-value">-</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Training Time</span>
+                        <span id="result-time" class="result-value">-</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Epochs Trained</span>
+                        <span id="result-epochs" class="result-value">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Training Log -->
+        <div class="log-section">
+            <div class="log-header">Training Log</div>
+            <div id="log-content" class="log-content"></div>
+        </div>
+    </div>
+    
+    <script>
+        // State
+        let lossChart = null;
+        let lossHistory = [];
+        let clusterLossHistory = [];
+        let reconLossHistory = [];
+        let epochLabels = [];
+        let lastLoss = null;
+        let startTime = null;
+        let lastLoggedEpoch = -1;
+        let lastChartEpoch = 0;
+        
+        // Initialize chart
+        function initChart() {
+            const ctx = document.getElementById('loss-chart').getContext('2d');
+            
+            lossChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: epochLabels,
+                    datasets: [
+                        {
+                            label: 'Total Loss',
+                            data: lossHistory,
+                            borderColor: '#58a6ff',
+                            backgroundColor: '#58a6ff22',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                        },
+                        {
+                            label: 'Clustering',
+                            data: clusterLossHistory,
+                            borderColor: '#3fb950',
+                            backgroundColor: 'transparent',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                        },
+                        {
+                            label: 'Reconstruction',
+                            data: reconLossHistory,
+                            borderColor: '#f0883e',
+                            backgroundColor: 'transparent',
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Epoch',
+                                color: '#8b949e'
+                            },
+                            grid: {
+                                color: '#30363d',
+                            },
+                            ticks: {
+                                color: '#8b949e',
+                                maxTicksLimit: 15
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Loss',
+                                color: '#8b949e'
+                            },
+                            grid: {
+                                color: '#30363d',
+                            },
+                            ticks: {
+                                color: '#8b949e',
+                            },
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: '#21262d',
+                            titleColor: '#e6edf3',
+                            bodyColor: '#e6edf3',
+                            borderColor: '#30363d',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: true,
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update status badge
+        function updateStatus(status) {
+            const badge = document.getElementById('status-badge');
+            badge.className = 'status-badge ' + status;
+            badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        }
+        
+        // Add log entry
+        function addLog(message, type = 'info') {
+            const logContent = document.getElementById('log-content');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+            entry.innerHTML = `
+                <span class="log-time">${time}</span>
+                <span class="log-message ${type}">${message}</span>
+            `;
+            
+            logContent.appendChild(entry);
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+        
+        // Format time
+        function formatTime(seconds) {
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            if (seconds < 3600) {
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.round(seconds % 60);
+                return `${mins}m ${secs}s`;
+            }
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${mins}m`;
+        }
+        
+        // Handle training update from parent window
+        function handleTrainingUpdate(data) {
+            // Only log significant changes (when epoch changes)
+            if (data.current_epoch !== lastLoggedEpoch) {
+                const lossStr = data.metrics?.loss?.toFixed(4) || '-';
+                console.log(`[TrainingMonitor] Epoch ${data.current_epoch} - Loss: ${lossStr}`);
+                lastLoggedEpoch = data.current_epoch;
+            }
+            
+            // Show training content, hide waiting
+            document.getElementById('waiting-section').style.display = 'none';
+            document.getElementById('training-content').style.display = 'block';
+            
+            // Update status
+            updateStatus(data.status);
+            
+            // Record start time
+            if (!startTime && data.status === 'running') {
+                startTime = Date.now();
+                addLog('Training started', 'info');
+            }
+            
+            // Update progress
+            const currentEpoch = data.current_epoch || 0;
+            const maxEpochs = data.max_epochs || 200;
+            const progress = (currentEpoch / maxEpochs) * 100;
+            
+            document.getElementById('progress-fill').style.width = `${progress}%`;
+            document.getElementById('progress-text').textContent = `${Math.round(progress)}%`;
+            document.getElementById('metric-epoch').innerHTML = `${currentEpoch}<span class="metric-unit">/ ${maxEpochs}</span>`;
+            
+            // Update losses if available - only add to chart when epoch changes
+            if (data.metrics && currentEpoch > 0 && currentEpoch !== lastChartEpoch) {
+                lastChartEpoch = currentEpoch;
+                
+                const totalLoss = data.metrics.loss || data.metrics.total_loss;
+                const clusterLoss = data.metrics.cluster_loss;
+                const reconLoss = data.metrics.recon_loss;
+                
+                if (totalLoss !== undefined && totalLoss !== null) {
+                    document.getElementById('metric-loss').textContent = totalLoss.toFixed(4);
+                    
+                    // Show change indicator
+                    if (lastLoss !== null) {
+                        const change = totalLoss - lastLoss;
+                        const changeEl = document.getElementById('loss-change');
+                        if (change < -0.0001) {
+                            changeEl.className = 'metric-change positive';
+                            changeEl.textContent = `↓ ${Math.abs(change).toFixed(4)}`;
+                        } else if (change > 0.0001) {
+                            changeEl.className = 'metric-change negative';
+                            changeEl.textContent = `↑ ${change.toFixed(4)}`;
+                        } else {
+                            changeEl.className = 'metric-change neutral';
+                            changeEl.textContent = '→ stable';
+                        }
+                    }
+                    lastLoss = totalLoss;
+                    
+                    // Add to history for chart
+                    lossHistory.push(totalLoss);
+                    epochLabels.push(currentEpoch);
+                }
+                
+                if (clusterLoss !== undefined && clusterLoss !== null) {
+                    document.getElementById('metric-cluster-loss').textContent = clusterLoss.toFixed(4);
+                    clusterLossHistory.push(clusterLoss);
+                } else {
+                    clusterLossHistory.push(null);
+                }
+                
+                if (reconLoss !== undefined && reconLoss !== null) {
+                    document.getElementById('metric-recon-loss').textContent = reconLoss.toFixed(4);
+                    reconLossHistory.push(reconLoss);
+                } else {
+                    reconLossHistory.push(null);
+                }
+                
+                // Update chart
+                if (lossChart) {
+                    lossChart.update('none');
+                }
+                
+                // Add log entry for epoch
+                addLog(`Epoch ${currentEpoch}/${maxEpochs} - Loss: ${totalLoss?.toFixed(4) || '-'}`, 'info');
+            }
+            
+            // Update elapsed time
+            if (startTime) {
+                const elapsed = (Date.now() - startTime) / 1000;
+                document.getElementById('config-time').textContent = formatTime(elapsed);
+            }
+            
+            // Update config from data or data.config
+            const config = data.config || data;
+            if (data.model_name) {
+                document.getElementById('config-model').textContent = data.model_name;
+            }
+            if (data.graph_name) {
+                document.getElementById('config-graph').textContent = data.graph_name;
+            }
+            if (config.num_clusters) {
+                document.getElementById('config-clusters').textContent = config.num_clusters;
+            }
+            if (config.hidden_dim) {
+                document.getElementById('config-hidden').textContent = config.hidden_dim;
+            }
+            if (config.learning_rate) {
+                document.getElementById('config-lr').textContent = config.learning_rate;
+            }
+            
+            // Handle completion
+            if (data.status === 'completed') {
+                document.getElementById('results-section').style.display = 'block';
+                
+                const result = data.result || data;
+                document.getElementById('result-loss').textContent = 
+                    (result.final_loss || result.loss) ? 
+                    (result.final_loss || result.loss).toFixed(4) : '-';
+                document.getElementById('result-silhouette').textContent = 
+                    result.silhouette_score ? result.silhouette_score.toFixed(4) : '-';
+                document.getElementById('result-time').textContent = 
+                    result.training_time ? formatTime(result.training_time) : formatTime((Date.now() - startTime) / 1000);
+                document.getElementById('result-epochs').textContent = 
+                    result.epochs_trained || result.total_epochs || currentEpoch || '-';
+                
+                addLog('Training completed successfully!', 'success');
+            }
+            
+            // Handle failure
+            if (data.status === 'failed') {
+                addLog(`Training failed: ${data.error || 'Unknown error'}`, 'error');
+            }
+        }
+        
+        // Listen for messages from parent window
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'training_update') {
+                handleTrainingUpdate(event.data.data);
+            }
+        });
+        
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            initChart();
+            addLog('Training monitor ready', 'info');
+            
+            // Signal parent window that we're ready
+            if (window.opener) {
+                window.opener.postMessage({ type: 'training_monitor_ready' }, '*');
+            }
+        });
+    </script>
+</body>
+</html>

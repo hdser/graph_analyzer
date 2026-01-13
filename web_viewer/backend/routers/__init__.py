@@ -1,9 +1,7 @@
 """
-API Routers Package
+Graph Analyzer Web Viewer - Routers Package
 
-Exports all API routers for registration in main app.
-
-Location: web_viewer/backend/routers/__init__.py
+All API routers for the application.
 """
 
 from .network import router as network_router
@@ -17,7 +15,7 @@ from .timeseries import router as timeseries_router
 from .temporal_composite import router as temporal_composite_router
 from .graph_algorithms import router as graph_algorithms_router
 from .capacity_flow import router as capacity_flow_router
-
+from .embeddings import router as embeddings_router
 
 __all__ = [
     "network_router",
@@ -31,4 +29,5 @@ __all__ = [
     "temporal_composite_router",
     "graph_algorithms_router",
     "capacity_flow_router",
+    "embeddings_router",
 ]

@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/static/css/path-analysis.css">
     <link rel="stylesheet" href="/static/css/subgraph-tools.css">
     <link rel="stylesheet" href="/static/css/flow-analysis.css">
+    <link rel="stylesheet" href="/static/css/embedding-panel.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.31.0/cytoscape.min.js"></script>
 </head>
 <body>
@@ -62,6 +63,10 @@
                 <button class="nav-btn" data-panel="layout" title="Layout">
                     <span data-icon="nodes" data-icon-size="20"></span>
                     <span class="nav-btn-label">Layout</span>
+                </button>
+                <button class="nav-btn" data-panel="embeddings" title="Deep Learning Embeddings">
+                    <span data-icon="embeddings" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Embeddings</span>
                 </button>
             </div>
             
@@ -655,7 +660,7 @@
                                     <div class="option-row">
                                         <label>Algorithm</label>
                                         <select id="cf-algorithm-select">
-                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ✓</option>
+                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ✔</option>
                                             <option value="networkx:preflow_push">Preflow Push (NetworkX)</option>
                                             <option value="networkx:dinitz">Dinitz (NetworkX)</option>
                                             <option value="ortools:max_flow">Max Flow (OR-Tools)</option>
@@ -900,6 +905,190 @@
                     </div>
                 </div>
 
+                <!-- EMBEDDINGS PANEL (Deep Learning) - UPDATED -->
+                <div class="panel" id="panel-embeddings" data-panel="embeddings">
+                    <div class="panel-header">
+                        <h3>Deep Learning</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Status Indicator -->
+                        <div id="dl-status" class="embedding-status">
+                            <span class="status-dot"></span>
+                            <span class="status-text">Checking availability...</span>
+                        </div>
+                        
+                        <!-- Unavailable Message -->
+                        <div id="dl-unavailable" class="info-box warning" style="display: none;">
+                            <p>Deep learning features require PyTorch and PyTorch Geometric.</p>
+                            <p>Install with: <code>pip install torch torch-geometric</code></p>
+                        </div>
+                        
+                        <!-- Main Content (shown when available) -->
+                        <div id="dl-available" style="display: none;">
+                            <!-- Model Status -->
+                            <div class="style-row">
+                                <label>Current Model</label>
+                                <div id="current-model-status" class="model-status-box">
+                                    <span class="model-name">No model loaded</span>
+                                    <button id="btn-load-model" class="icon-btn" title="Load model" data-icon="folder"></button>
+                                </div>
+                            </div>
+                            
+                            <!-- Tabs -->
+                            <div class="embedding-tabs">
+                                <button class="embed-tab-btn active" data-tab="train-tab">Train</button>
+                                <button class="embed-tab-btn" data-tab="communities-tab">Communities</button>
+                                <button class="embed-tab-btn" data-tab="similarity-tab">Similarity</button>
+                            </div>
+                            
+                            <!-- Train Tab -->
+                            <div id="train-tab" class="embed-tab-content active">
+                                <!-- Training Graph Info -->
+                                <div class="training-graph-info" style="background: #1a2332; border: 1px solid #2a4a6a; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span style="font-size: 11px; color: #888;">Training Graph</span>
+                                        <span id="training-graph-name" style="font-size: 13px; font-weight: 600; color: #4A90E2;">No graph loaded</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="style-row">
+                                    <label>Model Name</label>
+                                    <input type="text" id="model-name-input" placeholder="Auto: gitcd_[graph_name]">
+                                </div>
+                                <div class="style-row">
+                                    <label>Clusters</label>
+                                    <input type="number" id="num-clusters-input" value="20" min="2" max="1000" style="width: 80px;">
+                                </div>
+                                <div class="style-row">
+                                    <label>Hidden Dim</label>
+                                    <input type="number" id="hidden-dim-input" value="128" min="32" max="512" step="32" style="width: 80px;">
+                                </div>
+                                
+                                <!-- Advanced Options (Collapsible) -->
+                                <details class="embed-advanced">
+                                    <summary>Advanced Options</summary>
+                                    <div class="style-row">
+                                        <label>Max Epochs</label>
+                                        <input type="number" id="max-epochs-input" value="200" min="10" max="1000" style="width: 80px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>Learning Rate</label>
+                                        <input type="number" id="learning-rate-input" value="0.0003" min="0.000001" max="0.1" step="0.0001" style="width: 100px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>Patience</label>
+                                        <input type="number" id="patience-input" value="5" min="1" max="50" style="width: 80px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>Dropout</label>
+                                        <input type="number" id="dropout-input" value="0.5" min="0" max="0.9" step="0.1" style="width: 80px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>GNN Layers</label>
+                                        <input type="number" id="gnn-layers-input" value="1" min="1" max="5" style="width: 80px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>Transformer Layers</label>
+                                        <input type="number" id="transformer-layers-input" value="2" min="1" max="6" style="width: 80px;">
+                                    </div>
+                                </details>
+                                
+                                <button id="btn-train-model" class="primary-btn" style="width: 100%; margin-top: 12px;">
+                                    Train Model
+                                </button>
+                                
+                                <button id="btn-open-training-monitor" class="secondary-btn" style="width: 100%; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                        <line x1="3" y1="9" x2="21" y2="9"/>
+                                        <line x1="9" y1="21" x2="9" y2="9"/>
+                                    </svg>
+                                    Open Training Monitor
+                                </button>
+                                
+                                <!-- Training Progress -->
+                                <div id="training-progress" class="embed-progress" style="display: none;">
+                                    <div class="progress-bar-wrapper">
+                                        <div class="embed-progress-bar"></div>
+                                    </div>
+                                    <div class="progress-text">Training...</div>
+                                </div>
+                                
+                                <!-- Training Results -->
+                                <div id="training-results" class="embed-results" style="display: none;">
+                                    <h4>Results</h4>
+                                    <div class="result-row">
+                                        <span>Epochs:</span>
+                                        <span id="result-epochs">-</span>
+                                    </div>
+                                    <div class="result-row">
+                                        <span>Loss:</span>
+                                        <span id="result-loss">-</span>
+                                    </div>
+                                    <div class="result-row">
+                                        <span>Silhouette:</span>
+                                        <span id="result-silhouette">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Communities Tab -->
+                            <div id="communities-tab" class="embed-tab-content" style="display: none;">
+                                <p class="embed-info">Detect communities using learned embeddings from GIT-CD model.</p>
+                                <button id="btn-detect-communities" class="primary-btn" style="width: 100%;">
+                                    Detect Communities
+                                </button>
+                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                    <button id="btn-apply-communities" class="secondary-btn" style="flex: 1;">
+                                        Apply to Graph
+                                    </button>
+                                    <button id="btn-clear-communities" class="secondary-btn" style="flex: 1;">
+                                        Clear
+                                    </button>
+                                </div>
+                                <div id="communities-results" class="embed-results" style="display: none;">
+                                    <h4>Communities</h4>
+                                    <div class="result-row">
+                                        <span>Count:</span>
+                                        <span id="community-count">-</span>
+                                    </div>
+                                    <div id="community-sizes-list" class="community-list"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Similarity Tab -->
+                            <div id="similarity-tab" class="embed-tab-content" style="display: none;">
+                                <p class="embed-info">Find nodes with similar embeddings.</p>
+                                <div class="style-row">
+                                    <label>Query Node</label>
+                                    <input type="text" id="similarity-query-input" placeholder="Node ID...">
+                                </div>
+                                <div class="style-row">
+                                    <label>Top K</label>
+                                    <input type="number" id="similarity-k-input" value="10" min="1" max="100" style="width: 80px;">
+                                </div>
+                                <button id="btn-find-similar" class="primary-btn" style="width: 100%;">
+                                    Find Similar
+                                </button>
+                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                    <button id="btn-apply-similar" class="secondary-btn" style="flex: 1;">
+                                        Highlight in Graph
+                                    </button>
+                                    <button id="btn-clear-similar" class="secondary-btn" style="flex: 1;">
+                                        Clear
+                                    </button>
+                                </div>
+                                <div id="similarity-results" class="embed-results" style="display: none;">
+                                    <h4>Similar Nodes</h4>
+                                    <div id="similar-nodes-list" class="similar-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
             </div>
         </div>
 
@@ -1087,6 +1276,8 @@
     <script src="/static/js/subgraph-tools.js"></script>
     <script src="/static/js/flow-analysis.js"></script>
     <script src="/static/js/capacity-flow.js"></script>
+    <script src="/static/js/embeddings.js"></script>
+    <script src="/static/js/embedding-panel.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>
