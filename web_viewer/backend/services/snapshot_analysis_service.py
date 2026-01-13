@@ -34,11 +34,11 @@ from .snapshot_storage import SnapshotStorage
 
 # Conditional imports
 try:
-    from engines.graph_metrics import GraphMetrics
+    from engines.metrics import MetricEngine, METRIC_CATEGORIES, METRIC_PRESETS
     HAS_METRICS = True
 except ImportError:
     HAS_METRICS = False
-    print("[SNAPSHOT_ANALYSIS] Warning: GraphMetrics not available")
+    print("[SNAPSHOT_ANALYSIS] Warning: MetricEngine not available")
 
 if HAS_ANOMALY:
     try:
@@ -279,8 +279,24 @@ class SnapshotAnalysisService:
             return None, []
         
         try:
-            calculator = GraphMetrics(G, metrics_mode=metrics_mode)
-            metrics_df = calculator.compute_all()
+            # Parse metrics_mode
+            metrics_mode = metrics_mode.lower().strip() if metrics_mode else "basic"
+            preset = None
+            categories = None
+            
+            if metrics_mode in METRIC_PRESETS:
+                preset = metrics_mode
+            elif ',' in metrics_mode:
+                categories = [c.strip() for c in metrics_mode.split(',') if c.strip() in METRIC_CATEGORIES]
+                if not categories:
+                    preset = "basic"
+            elif metrics_mode in METRIC_CATEGORIES:
+                categories = [metrics_mode]
+            else:
+                preset = "basic"
+            
+            engine = MetricEngine(G)
+            metrics_df = engine.compute(preset=preset, categories=categories)
             
             if metrics_df is not None and len(metrics_df) > 0:
                 # Ensure avatar column

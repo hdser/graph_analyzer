@@ -82,7 +82,7 @@ DB_PASSWORD=secret123
 | `MAX_NODES_FOR_LOF` | `50000` | LOF algorithm node limit |
 | `EDGE_CHUNK_SIZE` | `50000` | Edges per loading chunk |
 
-**LOF Warning**: LOF has O(n²) complexity. For datasets larger than `MAX_NODES_FOR_LOF`, consider using Isolation Forest or sampling.
+**LOF Warning**: LOF has O(nÂ²) complexity. For datasets larger than `MAX_NODES_FOR_LOF`, consider using Isolation Forest or sampling.
 
 ---
 
@@ -100,29 +100,69 @@ DB_PASSWORD=secret123
 
 ### UI Mode Configuration
 
+Graph Analyzer supports flexible UI customization through a panel-based system. You can configure which panels are visible based on your deployment needs.
+
+#### Core Settings
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HIDE_DATA_SOURCE_UI` | `false` | Hide data source controls |
-| `DEFAULT_SQL_FILES` | (empty) | Comma-separated SQL files |
-| `DEFAULT_PROPERTIES_FILES` | (empty) | Comma-separated properties files |
+| `PRODUCTION_MODE` | `false` | Master toggle: `true` = production, `false` = admin |
+| `UI_HIDDEN_PANELS` | `load,reload` | Comma-separated panels to hide (only applies when `PRODUCTION_MODE=true`) |
+| `AUTO_LOAD_ON_STARTUP` | (matches PRODUCTION_MODE) | Auto-load data when server starts |
+| `DEFAULT_SQL_FILES` | (empty) | Comma-separated SQL files to auto-load |
+| `DEFAULT_PROPERTIES_FILES` | (empty) | Comma-separated properties files to auto-load |
 
-**Admin Mode** (`HIDE_DATA_SOURCE_UI=false`):
-- Full UI with all controls
-- Manual data source selection
-- Development and exploration
+#### Available Panels
 
-**Production Mode** (`HIDE_DATA_SOURCE_UI=true`):
-- Hidden data source controls
-- Auto-load from `DEFAULT_SQL_FILES`
-- End-user focused
+The following panel names can be used in `UI_HIDDEN_PANELS`:
 
-**Example Production Config**:
+| Panel Name | Description |
+|------------|-------------|
+| `load` | Data source selection and loading |
+| `reload` | Auto-reload configuration |
+| `snapshots` | Historical snapshot management |
+| `metrics` | Metric computation controls |
+| `paths` | Path analysis tools |
+| `subgraph` | Subgraph extraction |
+| `flow` | Flow analysis |
+| `filter` | Node filtering |
+| `style` | Visual styling options |
+| `layout` | Layout configuration |
+| `embeddings` | Deep learning embeddings |
+
+#### Mode Examples
+
+**Admin Mode** (default - all panels visible):
 ```bash
-HIDE_DATA_SOURCE_UI=true
+PRODUCTION_MODE=false
+# All panels visible, manual control
+```
+
+**Production Mode** (hide data loading only):
+```bash
+PRODUCTION_MODE=true
+UI_HIDDEN_PANELS=load,reload
+AUTO_LOAD_ON_STARTUP=true
 DEFAULT_SQL_FILES=crc_v2_trusts.sql,crc_v2_flows.sql
 DEFAULT_PROPERTIES_FILES=crc_v2_avatars.sql
 DEFAULT_METRICS_MODE=essential
-AUTO_RELOAD_DEFAULT_INTERVAL=300
+```
+
+**Minimal Production Mode** (analytics only):
+```bash
+PRODUCTION_MODE=true
+UI_HIDDEN_PANELS=load,reload,snapshots,embeddings
+AUTO_LOAD_ON_STARTUP=true
+DEFAULT_SQL_FILES=crc_v2_trusts.sql
+```
+
+**Kiosk Mode** (visualization only):
+```bash
+PRODUCTION_MODE=true
+UI_HIDDEN_PANELS=load,reload,snapshots,metrics,paths,subgraph,flow,filter,embeddings
+AUTO_LOAD_ON_STARTUP=true
+DEFAULT_SQL_FILES=crc_v2_trusts.sql
+# Only Style and Layout panels visible
 ```
 
 ---
@@ -258,8 +298,16 @@ EXTERNAL_API_BLACKLIST_ENABLED=true
 EXTERNAL_API_BLACKLIST_ENDPOINT=/aboutcircles-advanced-analytics2/bot-analytics/blacklist
 EXTERNAL_API_BLACKLIST_V2_ONLY=true
 
-# UI Mode (Production)
-# HIDE_DATA_SOURCE_UI=true
+# =============================================================================
+# UI MODE CONFIGURATION
+# =============================================================================
+# Admin Mode (default): All panels visible, manual control
+# PRODUCTION_MODE=false
+
+# Production Mode: Configure for end-users
+# PRODUCTION_MODE=true
+# UI_HIDDEN_PANELS=load,reload
+# AUTO_LOAD_ON_STARTUP=true
 # DEFAULT_SQL_FILES=crc_v2_trusts.sql,crc_v2_flows.sql
 # DEFAULT_PROPERTIES_FILES=crc_v2_avatars.sql
 ```
@@ -285,7 +333,10 @@ services:
       - DB_USER=readonly_user
       - DB_PASSWORD=${DB_PASSWORD}
       - LAYOUT_SERVICE_URL=http://layout:3000/layout
-      - HIDE_DATA_SOURCE_UI=true
+      # UI Mode Configuration
+      - PRODUCTION_MODE=true
+      - UI_HIDDEN_PANELS=load,reload
+      - AUTO_LOAD_ON_STARTUP=true
       - DEFAULT_SQL_FILES=crc_v2_trusts.sql
       - DEFAULT_METRICS_MODE=essential
       # External API
@@ -322,28 +373,59 @@ The startup banner displays current settings:
 
 ```
 ============================================================
-  Graph Analyzer Web Viewer v2.0.0
+  Graph Analyzer Web Viewer v2.2.0
 ============================================================
   Database: localhost:5432/circles
   SQL Dir:  /path/to/sql
   Properties Dir: /path/to/sql/properties
   Cache:    /path/to/cache
 ------------------------------------------------------------
-  SSE Support:        Y
-  Anomaly Detection:  Y
-  Cytoscape Desktop:  N
+  Core Features:
+    SSE Support:        Y
+    Anomaly Detection:  Y
+------------------------------------------------------------
+  Layout Backends:
+    Cytoscape Desktop:  N
+    igraph:             Y
+    ForceAtlas2:        N
+    Local Spring:       Y
 ------------------------------------------------------------
   External API Properties:
     Base URL: https://squid-app-3gxnl.ondigitalocean.app
     Providers: blacklist
     Blacklist: Y
 ------------------------------------------------------------
-  Mode: Admin (manual control)
+  UI Mode Configuration:
+    Mode: Admin (all panels visible, manual control)
+============================================================
+```
+
+In production mode:
+
+```
+------------------------------------------------------------
+  UI Mode Configuration:
+    Mode: Production
+    Hidden Panels: load, reload
+    Auto-Load: Y
+    SQL Files: crc_v2_trusts.sql, crc_v2_flows.sql
+    Properties: crc_v2_avatars.sql
+    Reload Interval: 300s
 ============================================================
 ```
 
 Or via API:
 
 ```bash
-curl http://localhost:8000/api/config | jq
+curl http://localhost:8000/api/config | jq '.ui_mode'
+```
+
+Response:
+```json
+{
+  "production_mode": true,
+  "hidden_panels": ["load", "reload"],
+  "auto_load_on_startup": true,
+  "available_panels": ["load", "reload", "snapshots", "metrics", "paths", ...]
+}
 ```

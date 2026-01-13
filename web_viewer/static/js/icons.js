@@ -110,10 +110,60 @@ const Icons = {
             <path d="M10.5 5.5l-2 4.5"/>
         </svg>`,
         
+        flow: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="8" r="2"/>
+            <circle cx="13" cy="8" r="2"/>
+            <path d="M5 8h6"/>
+            <path d="M8 5l3 3-3 3"/>
+        </svg>`,
+        
+        paths: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="3" r="2"/>
+            <circle cx="13" cy="13" r="2"/>
+            <path d="M5 5l6 6"/>
+            <path d="M5 3h4"/>
+            <path d="M13 7v4"/>
+        </svg>`,
+        
+        subgraph: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="12" height="12" rx="2" stroke-dasharray="2 2"/>
+            <circle cx="5" cy="8" r="1.5" fill="currentColor"/>
+            <circle cx="11" cy="5" r="1.5" fill="currentColor"/>
+            <circle cx="11" cy="11" r="1.5" fill="currentColor"/>
+            <path d="M6.5 7.5l3-2"/>
+            <path d="M6.5 8.5l3 2"/>
+        </svg>`,
+        
         filter: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 3h12"/>
             <path d="M4 7h8"/>
             <path d="M6 11h4"/>
+        </svg>`,
+
+        // Deep Learning / Embeddings - neural network icon
+        embeddings: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="4" r="1.5"/>
+            <circle cx="3" cy="8" r="1.5"/>
+            <circle cx="3" cy="12" r="1.5"/>
+            <circle cx="8" cy="5" r="1.5"/>
+            <circle cx="8" cy="11" r="1.5"/>
+            <circle cx="13" cy="8" r="1.5"/>
+            <path d="M4.5 4.5l2 0.5M4.5 7.5l2 -2M4.5 8.5l2 2M4.5 11.5l2 -0.5M9.5 5.5l2 2M9.5 10.5l2 -2"/>
+        </svg>`,
+        
+        // Folder icon for model loading
+        folder: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 4v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6 3H3a1 1 0 0 0-1 1z"/>
+        </svg>`,
+        
+        // Brain icon (alternative for embeddings)
+        brain: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 14V8"/>
+            <path d="M5.5 3.5a2.5 2.5 0 0 1 5 0c0 .5-.2 1-.5 1.3"/>
+            <path d="M4 6a2 2 0 0 0 0 4"/>
+            <path d="M12 6a2 2 0 0 1 0 4"/>
+            <path d="M4.5 10.5a2.5 2.5 0 0 0 3.5 2.3"/>
+            <path d="M11.5 10.5a2.5 2.5 0 0 1-3.5 2.3"/>
         </svg>`,
         
         chart: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -259,6 +309,38 @@ const Icons = {
             <circle cx="8" cy="8" r="1" fill="currentColor"/>
             <circle cx="3" cy="8" r="1" fill="currentColor"/>
             <circle cx="13" cy="8" r="1" fill="currentColor"/>
+        </svg>`,
+        
+        // Additional icons for sidebar navigation
+        upload: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 10v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-3"/>
+            <path d="M8 2v8"/>
+            <path d="M4 6l4-4 4 4"/>
+        </svg>`,
+        
+        camera: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="3" width="14" height="10" rx="1"/>
+            <circle cx="8" cy="8" r="2.5"/>
+            <path d="M5 3L6 1h4l1 2"/>
+        </svg>`,
+        
+        palette: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 1.5c3.5 0 6.5 3 6.5 6.5 0 1.5-.5 2.5-1.5 2.5h-1c-.5 0-1 .5-1 1 0 .5.2 1 .5 1.3.3.3.5.7.5 1.2 0 1-1 1.5-2 1.5-3.5 0-6.5-3-6.5-6.5S4.5 1.5 8 1.5z"/>
+            <circle cx="5.5" cy="6.5" r="0.8" fill="currentColor"/>
+            <circle cx="8" cy="5" r="0.8" fill="currentColor"/>
+            <circle cx="10.5" cy="6.5" r="0.8" fill="currentColor"/>
+        </svg>`,
+        
+        layers: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 11l6 3 6-3"/>
+            <path d="M2 8l6 3 6-3"/>
+            <path d="M8 2L2 5l6 3 6-3-6-3z"/>
+        </svg>`,
+        
+        database: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="8" cy="3" rx="6" ry="2"/>
+            <path d="M2 3v8c0 1.1 2.7 2 6 2s6-.9 6-2V3"/>
+            <path d="M2 7c0 1.1 2.7 2 6 2s6-.9 6-2"/>
         </svg>`,
         
         // App logo - network pattern inspired design

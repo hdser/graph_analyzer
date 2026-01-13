@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Setup event listeners
     setupEventListeners();
     setupDropdownLogic();
-    setupCollapsibleSections();
+    setupPanelNavigation();  // NEW: Setup button-based panel system
     setupSubsectionCollapsibles();
     
     // Initialize features
@@ -34,8 +34,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     AutoReload.setup();
     CompositeMetrics.setup();
     InfoPanel.setupNeighborClicks();
-    Metrics.initFilterUI();
     Snapshots.init();
+
+    // Initialize Embedding Panel (Deep Learning)
+    try {
+        await EmbeddingPanel.init();
+        console.log('[App] EmbeddingPanel initialized');
+    } catch (error) {
+        console.warn('[App] EmbeddingPanel init failed:', error);
+    }
+    
+    // Initialize Metrics module
+    try {
+        await Metrics.init();
+        console.log('[App] Metrics module initialized');
+    } catch (error) {
+        console.error('[App] Failed to initialize Metrics:', error);
+    }
     
     console.log('Graph Analyzer initialized');
 });
@@ -97,44 +112,45 @@ async function loadAvailableConfig() {
 
         // Populate metrics target graph dropdown
         const metricsGraphSelect = document.getElementById('metrics-graph');
-        metricsGraphSelect.innerHTML = '<option value="">Auto (first selected)</option>' + 
-            config.sql_files.map(file => `<option value="${file.graph_id}">${file.graph_id}</option>`).join('');
-        metricsGraphSelect.value = 'crc_v2_invites';
-
-        // Populate custom metrics checkboxes
-        if (config.metric_modes?.categories) {
-            const customDiv = document.getElementById('custom-metrics');
-            customDiv.innerHTML = Object.entries(config.metric_modes.categories)
-                .map(([key, desc]) => 
-                    `<label title="${desc}">
-                        <input type="checkbox" name="custom-metric" value="${key}" 
-                            ${['topology', 'clustering'].includes(key) ? 'checked' : ''}>
-                        <span style="font-weight:500;">${key}</span>
-                        <span style="color:#808080; font-size:11px; display:block; margin-left:20px; margin-bottom:4px;">${desc}</span>
-                    </label>`
-                ).join('');
+        if (metricsGraphSelect) {
+            metricsGraphSelect.innerHTML = '<option value="">Auto (first selected)</option>' + 
+                config.sql_files.map(file => `<option value="${file.graph_id}">${file.graph_id}</option>`).join('');
+            metricsGraphSelect.value = 'crc_v2_invites';
         }
 
-        // Hide data source UI elements in production mode
-        if (config.hide_data_source_ui) {
-            console.log('[CONFIG] Production mode - hiding admin UI sections');
+        // Metrics UI is now initialized by Metrics.init()
+        // (Old metrics-graph and custom-metrics elements removed)
+
+        // Apply UI mode configuration
+        const uiMode = config.ui_mode || {};
+        const hiddenPanels = uiMode.hidden_panels || [];
+        const productionMode = uiMode.production_mode || false;
+        const autoLoadOnStartup = uiMode.auto_load_on_startup || false;
+        
+        if (productionMode && hiddenPanels.length > 0) {
+            console.log('[CONFIG] Production mode - hiding panels:', hiddenPanels);
             
-            // Hide entire sections using their IDs
-            // Note: metrics-section stays visible - users can still run metrics
-            const sectionsToHide = [
-                'data-source-section',   // Data Source (Load) section
-                'auto-reload-section',   // Auto Reload section  
-            ];
-            
-            sectionsToHide.forEach(id => {
-                const section = document.getElementById(id);
-                if (section) {
-                    section.style.display = 'none';
-                    console.log(`[CONFIG] Hidden section: ${id}`);
-                } else {
-                    console.warn(`[CONFIG] Section not found: ${id}`);
+            // Hide navigation buttons and panels for hidden panels
+            hiddenPanels.forEach(panelName => {
+                // Hide nav button
+                const navBtn = document.querySelector(`.nav-btn[data-panel="${panelName}"]`);
+                if (navBtn) {
+                    navBtn.style.display = 'none';
+                    console.log(`[CONFIG] Hidden nav button: ${panelName}`);
+                }
+                
+                // Hide panel
+                const panel = document.getElementById(`panel-${panelName}`);
+                if (panel) {
+                    panel.style.display = 'none';
+                    console.log(`[CONFIG] Hidden panel: ${panelName}`);
                 }
             });
+        }
+        
+        // Handle auto-load on startup
+        if (autoLoadOnStartup) {
+            console.log('[CONFIG] Auto-load enabled - waiting for data...');
             
             // Show loading indicator and start polling for data
             DOMCache.loading.style.display = 'flex';
@@ -158,7 +174,7 @@ async function loadAvailableConfig() {
 
 /**
  * Wait for background data load to complete using SSE.
- * Used in production mode when HIDE_DATA_SOURCE_UI is true.
+ * Used in production mode when AUTO_LOAD_ON_STARTUP is true.
  * SSE is much more efficient than polling - single connection, server pushes updates.
  */
 async function pollForDataReady() {
@@ -192,11 +208,11 @@ async function pollForDataReady() {
         if (status.status === 'loading') {
             updateStatus(`Loading: ${status.message}`, 'info');
         } else if (status.status === 'ready') {
-            console.log('[STARTUP] ✓ Data ready!');
+            console.log('[STARTUP] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Data ready!');
             eventSource.close();
             await displayLoadedGraph(status);
         } else if (status.status === 'error') {
-            console.error('[STARTUP] ✗ Error:', status.message);
+            console.error('[STARTUP] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Error:', status.message);
             eventSource.close();
             updateStatus(`Error: ${status.message}`, 'error');
             DOMCache.loading.style.display = 'none';
@@ -253,24 +269,29 @@ async function startPollingFallback() {
  * Display graph after background load completes
  */
 async function displayLoadedGraph(status) {
-    console.log('[STARTUP] Displaying loaded graph:', status);
+    console.log('[STARTUP] displayLoadedGraph called with status:', JSON.stringify(status, null, 2));
     
-    // The graphs are already loaded in State.graphs by the background loader
-    // We just need to fetch them via the API and display
-    const graphs = status.graphs || [];
+    // The backend returns 'loaded_graphs' - check both for compatibility
+    const graphs = status.loaded_graphs || status.graphs || [];
     
-    if (graphs.length === 0) {
-        updateStatus('No graphs loaded', 'error');
+    console.log('[STARTUP] Extracted graphs array:', graphs);
+    console.log('[STARTUP] graphs.length:', graphs.length);
+    
+    if (!graphs || graphs.length === 0) {
+        console.error('[STARTUP] No graphs in status! Full status object:', status);
+        updateStatus('No graphs loaded - check server logs', 'error');
         DOMCache.loading.style.display = 'none';
         return;
     }
     
-    // Fetch each graph's data
+    // Fetch each graph's data from the API
+    console.log(`[STARTUP] Fetching ${graphs.length} graphs from API...`);
     for (const graphId of graphs) {
         try {
+            console.log(`[STARTUP] Fetching graph: ${graphId}`);
             const graphData = await API.getGraph(graphId);
             State.graphs[graphId] = graphData;
-            console.log(`[STARTUP] Loaded ${graphId}: ${graphData.nodes?.length || 0} nodes`);
+            console.log(`[STARTUP] Loaded ${graphId}: ${graphData.nodes?.length || 0} nodes, ${graphData.edges?.length || 0} edges`);
         } catch (err) {
             console.error(`[STARTUP] Error loading ${graphId}:`, err);
         }
@@ -281,54 +302,143 @@ async function displayLoadedGraph(status) {
         const selector = document.getElementById('graph-selector');
         const select = document.getElementById('graph-select');
         
-        select.innerHTML = graphs.map(id => 
-            `<option value="${id}">${id}</option>`
-        ).join('');
+        if (select) {
+            select.innerHTML = graphs.map(id => 
+                `<option value="${id}">${id}</option>`
+            ).join('');
+        }
         
-        selector.style.display = 'block';
+        if (selector) {
+            selector.style.display = 'block';
+        }
     }
     
     // Display first graph
     const firstGraph = graphs[0];
+    console.log(`[STARTUP] Displaying first graph: ${firstGraph}`);
     GraphLoader.displayGraph(firstGraph);
     
-    // Enable metrics
-    document.getElementById('metrics-btn').disabled = false;
+    // Enable metrics button
+    const metricsBtn = document.getElementById('compute-metrics-btn');
+    if (metricsBtn) {
+        metricsBtn.disabled = false;
+    }
     
     DOMCache.loading.style.display = 'none';
-    updateStatus(`Loaded ${graphs.length} graph(s)`, 'success');
+    updateStatus(`Loaded ${graphs.length} graph(s): ${graphs.join(', ')}`, 'success');
 }
 
 // =============================================================================
-// COLLAPSIBLE SECTIONS
+// PANEL NAVIGATION SYSTEM
 // =============================================================================
 
-function setupCollapsibleSections() {
-    document.querySelectorAll('.section.collapsible .collapsible-header').forEach(header => {
-        header.addEventListener('click', () => {
-            header.classList.toggle('collapsed');
-            
-            // Find the content element (next sibling with class style-subsection)
-            const content = header.nextElementSibling;
-            if (content) {
-                if (header.classList.contains('collapsed')) {
-                    content.style.display = 'none';
-                } else {
-                    content.style.display = '';
-                }
-            }
-            
-            // Rotate chevron icon
-            const icon = header.querySelector('.collapse-icon');
-            if (icon) {
-                icon.style.transform = header.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
-            }
+/**
+ * Setup the new button-based panel navigation system
+ */
+function setupPanelNavigation() {
+    const navButtons = document.querySelectorAll('.nav-btn[data-panel]');
+    const panels = document.querySelectorAll('.panel[data-panel]');
+    const panelCloseButtons = document.querySelectorAll('.panel-close');
+    
+    console.log('[Panel Nav] Found', navButtons.length, 'buttons and', panels.length, 'panels');
+    
+    // Store active panel
+    let activePanel = null;
+    
+    /**
+     * Close all panels
+     */
+    function closeAllPanels() {
+        panels.forEach(panel => {
+            panel.classList.remove('active');
+        });
+        navButtons.forEach(btn => {
+            btn.classList.remove('active');
+        });
+        activePanel = null;
+        console.log('[Panel Nav] All panels closed');
+    }
+    
+    /**
+     * Open a specific panel
+     */
+    function openPanel(panelName) {
+        console.log('[Panel Nav] Opening panel:', panelName);
+        const panel = document.getElementById(`panel-${panelName}`);
+        const button = document.querySelector(`.nav-btn[data-panel="${panelName}"]`);
+        
+        if (!panel) {
+            console.error('[Panel Nav] Panel not found:', `panel-${panelName}`);
+            return;
+        }
+        if (!button) {
+            console.error('[Panel Nav] Button not found for panel:', panelName);
+            return;
+        }
+        
+        // If clicking the same button, close the panel
+        if (activePanel === panelName) {
+            console.log('[Panel Nav] Closing active panel:', panelName);
+            closeAllPanels();
+            return;
+        }
+        
+        // Close all panels first
+        closeAllPanels();
+        
+        // Open the requested panel
+        panel.classList.add('active');
+        button.classList.add('active');
+        activePanel = panelName;
+        
+        console.log('[Panel Nav] Panel opened:', panelName);
+        
+        // Inject icons in the panel content
+        setTimeout(() => {
+            Icons.inject();
+            console.log('[Panel Nav] Icons injected');
+        }, 50);
+    }
+    
+    // Setup button click handlers
+    navButtons.forEach(btn => {
+        const panelName = btn.dataset.panel;
+        console.log('[Panel Nav] Setting up button for panel:', panelName);
+        
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[Panel Nav] Button clicked:', panelName);
+            openPanel(panelName);
         });
     });
+    
+    // Setup panel close buttons
+    panelCloseButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[Panel Nav] Close button clicked');
+            closeAllPanels();
+        });
+    });
+    
+    // Setup ESC key to close panels
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && activePanel) {
+            console.log('[Panel Nav] ESC pressed, closing panel');
+            closeAllPanels();
+        }
+    });
+    
+    console.log('[Panel Nav] Setup complete');
+    
+    // Inject icons in buttons
+    Icons.inject();
 }
 
 /**
- * Setup collapsible subsections (like create snapshot section)
+ * Setup collapsible subsections within panels
  */
 function setupSubsectionCollapsibles() {
     document.querySelectorAll('.collapsible-sub').forEach(header => {
@@ -344,6 +454,8 @@ function setupSubsectionCollapsibles() {
                     content.style.display = 'none';
                 } else {
                     content.style.display = '';
+                    // Inject icons when content is shown
+                    Icons.inject();
                 }
             }
             
@@ -363,13 +475,11 @@ function setupSubsectionCollapsibles() {
 function setupEventListeners() {
     // Core buttons
     document.getElementById('load-btn').addEventListener('click', () => GraphLoader.loadGraphs());
-    document.getElementById('metrics-btn').addEventListener('click', () => Metrics.run());
-    document.getElementById('filter-btn').addEventListener('click', () => Metrics.filter());
-    document.getElementById('reset-filter-btn').addEventListener('click', () => Metrics.reset());
-    document.getElementById('neighbor-toggle-btn').addEventListener('click', () => CytoscapeManager.toggleNeighborHighlight());
+    // Metrics button handled by Metrics module itself
+    document.getElementById('neighbor-toggle-btn')?.addEventListener('click', () => CytoscapeManager.toggleNeighborHighlight());
 
     // Graph selector
-    document.getElementById('graph-select').addEventListener('change', (e) => {
+    document.getElementById('graph-select')?.addEventListener('change', (e) => {
         if (e.target.value) GraphLoader.displayGraph(e.target.value);
     });
 
@@ -442,6 +552,15 @@ function setupEventListeners() {
             DataExplorer.open();
         }
     });
+    
+    // Filter nodes
+    document.getElementById('filter-btn')?.addEventListener('click', () => Metrics.filter());
+    document.getElementById('reset-filter-btn')?.addEventListener('click', () => Metrics.reset());
+    
+    // Node visibility controls
+    document.getElementById('show-only-selected-btn')?.addEventListener('click', () => Metrics.showOnlySelected());
+    document.getElementById('hide-selected-btn')?.addEventListener('click', () => Metrics.hideSelected());
+    document.getElementById('show-all-nodes-btn')?.addEventListener('click', () => Metrics.showAllNodes());
 }
 
 // =============================================================================

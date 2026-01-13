@@ -1,6 +1,6 @@
 # Features Guide
 
-This guide provides comprehensive documentation of all features in Graph Analyzer.
+This guide provides comprehensive documentation of all features in Graph Analyzer, a web-based dashboard for large-scale graph visualization and analysis.
 
 ## Table of Contents
 
@@ -11,10 +11,17 @@ This guide provides comprehensive documentation of all features in Graph Analyze
 5. [Node Information](#node-information)
 6. [Metrics Computation](#metrics-computation)
 7. [Anomaly Detection](#anomaly-detection)
-8. [Distribution Analysis](#distribution-analysis)
-9. [Data Explorer](#data-explorer)
-10. [Auto-Reload](#auto-reload)
-11. [Export Functions](#export-functions)
+8. [Deep Learning & Embeddings](#deep-learning--embeddings)
+9. [Composite Metrics](#composite-metrics)
+10. [Distribution Analysis](#distribution-analysis)
+11. [Path Analysis](#path-analysis)
+12. [Flow Analysis](#flow-analysis)
+13. [Subgraph Tools](#subgraph-tools)
+14. [Snapshots & Time Series](#snapshots--time-series)
+15. [Data Explorer](#data-explorer)
+16. [Auto-Reload](#auto-reload)
+17. [Export Functions](#export-functions)
+18. [Keyboard Shortcuts](#keyboard-shortcuts)
 
 ---
 
@@ -27,7 +34,8 @@ This guide provides comprehensive documentation of all features in Graph Analyze
 3. **Configure Options**:
    - **Use Cached Layout**: Load pre-computed positions
    - **Skip SQL**: Use cached edge data
-   - **Metrics Mode**: basic, essential, moderate, or all
+   - **Metrics Mode**: basic, essential, moderate, comprehensive, or all
+   - **Load API Properties**: Fetch external API data
 4. **Click "Load Graphs"**
 
 ### SQL File Structure
@@ -47,6 +55,19 @@ Supported column names:
 - `source` / `target`
 - `truster` / `trustee`
 - `sender` / `receiver`
+- `from` / `to`
+
+### Weighted Edges
+
+Include a `weight` column for weighted graphs:
+
+```sql
+SELECT 
+    sender AS source,
+    receiver AS target,
+    amount AS weight
+FROM transfers
+```
 
 ### Multi-Graph Support
 
@@ -54,6 +75,16 @@ Load multiple SQL files simultaneously:
 - Each file creates a separate graph layer
 - Switch between graphs using the dropdown
 - Shared node properties across layers
+- Compare metrics across different relationship types
+
+### Graph Info Display
+
+After loading, view:
+- Node count
+- Edge count
+- Connected components
+- Average degree
+- Density
 
 ---
 
@@ -69,32 +100,46 @@ SELECT
     avatar,
     name,
     signup_timestamp,
-    verified
+    verified,
+    balance
 FROM circles_v2.avatars
 ```
 
 **Requirements**:
 - Must include `avatar` column (used as join key)
 - Column names become property names
-- Supports all data types (string, number, boolean, timestamp, arrays)
+- Supports all data types
+
+### Property Types
+
+| Type | Example | Use Case |
+|------|---------|----------|
+| String | name, address | Labels, identification |
+| Number | balance, age | Metrics, filtering |
+| Boolean | verified, isBot | Binary classification |
+| Timestamp | signup_date | Temporal analysis |
+| Array | tags, categories | Multi-value attributes |
 
 ### Property Sources
 
 Node properties can come from multiple sources:
 
-| Source | Description | Example Properties |
-|--------|-------------|-------------------|
-| SQL Properties | From PostgreSQL via properties SQL files | name, signup_timestamp, verified |
-| Computed Metrics | Calculated from graph structure | in_degree, pagerank, clustering |
-| External APIs | Fetched from REST APIs | isBlacklisted, blacklistReason |
-| Anomaly Scores | From anomaly detection | anomaly_score, is_anomaly |
-| Composite Metrics | User-defined combinations | influence_score, activity_ratio |
+| Source | Priority | Description |
+|--------|----------|-------------|
+| SQL Properties | 1 | From PostgreSQL via properties SQL files |
+| External APIs | 2 | Fetched from REST APIs (blacklist, etc.) |
+| Computed Metrics | 3 | Calculated from graph structure |
+| Composite Metrics | 4 | User-defined combinations |
+| Anomaly Scores | 5 | From anomaly detection |
+| Deep Learning | 6 | Embeddings and communities |
 
 ---
 
 ## External API Properties
 
-Graph Analyzer can enrich node data with properties from external REST APIs. This is useful for incorporating data that isn't stored in your PostgreSQL database, such as:
+### Overview
+
+Graph Analyzer can enrich node data with properties from external REST APIs:
 
 - Bot detection / blacklist status
 - Reputation scores
@@ -106,55 +151,25 @@ Graph Analyzer can enrich node data with properties from external REST APIs. Thi
 The built-in blacklist provider fetches bot detection data:
 
 **Properties Added**:
+
 | Property | Type | Description |
 |----------|------|-------------|
-| `isBlacklisted` | boolean | `true` if address is flagged as a bot |
+| `isBlacklisted` | boolean | `true` if flagged as bot |
 | `blacklistReason` | string | Reason for blacklisting |
 
 **Blacklist Reasons**:
 - `repeated_username` - Multiple accounts with same username pattern
 - `duplicate_avatar` - Multiple accounts with same avatar image
 - `suspicious_activity` - Unusual transaction patterns
-- Other custom reasons from the detection system
 
-### How It Works
+### Caching
 
-1. **During Load**: When you load a graph, the system:
-   - Fetches data from configured API endpoints
-   - Caches results for performance (configurable TTL)
-   - Merges API properties with SQL properties
-   - Applies all properties to graph nodes
-
-2. **Caching**: API results are cached to avoid repeated requests:
-   - Default cache TTL: 1 hour (3600 seconds)
-   - Cache stored in `cache/data/api_properties_{provider}_{version}.parquet`
-   - On API failure, falls back to cached data
-
-3. **Load Options**:
-   - `load_api_properties`: Enable/disable API fetching (default: true)
-   - `skip_api_cache`: Force fresh fetch from API
-   - `api_properties_providers`: Select specific providers
-
-### Using API Properties
-
-**In Visualization**:
-- Color nodes by `isBlacklisted` to highlight bots
-- Filter to show only blacklisted nodes
-- Use in anomaly detection as a feature
-
-**In Data Explorer**:
-- Filter table by `isBlacklisted = true`
-- Export blacklisted nodes for review
-- Cross-reference with other properties
-
-**In Anomaly Detection**:
-- Include `isBlacklisted` as a feature
-- Compare ML-detected anomalies with known bots
-- Validate detection algorithms
+API results are cached to avoid repeated requests:
+- Default cache TTL: 1 hour (3600 seconds)
+- Cache location: `cache/data/api_properties_{provider}_{version}.parquet`
+- Fallback to cached data on API failure
 
 ### API Endpoints
-
-Manage external API properties via REST API:
 
 ```bash
 # List available providers
@@ -170,35 +185,16 @@ curl -X DELETE "http://localhost:8000/api/api-properties/cache?provider=blacklis
 curl -X POST "http://localhost:8000/api/api-properties/refresh?version=v2"
 ```
 
-### Configuration
-
-Configure in `.env`:
-
-```bash
-# Enable external API properties
-EXTERNAL_API_PROVIDERS=blacklist
-
-# Base URL for APIs
-EXTERNAL_API_BASE_URL=https://your-api-server.com
-
-# Cache TTL (seconds)
-EXTERNAL_API_CACHE_TTL=3600
-
-# Blacklist provider settings
-EXTERNAL_API_BLACKLIST_ENABLED=true
-EXTERNAL_API_BLACKLIST_ENDPOINT=/bot-analytics/blacklist
-EXTERNAL_API_BLACKLIST_V2_ONLY=true
-```
-
-See [Configuration Guide](CONFIGURATION.md#external-api-properties) for full details.
-
 ---
 
 ## Visualization
 
 ### Cytoscape.js Renderer
 
-The graph uses WebGL-accelerated rendering for performance.
+The graph uses WebGL-accelerated Cytoscape.js for high-performance rendering:
+- Supports 100K+ nodes
+- Hardware-accelerated pan/zoom
+- Efficient edge bundling
 
 ### Navigation Controls
 
@@ -209,48 +205,70 @@ The graph uses WebGL-accelerated rendering for performance.
 | Select node | Click | - |
 | Multi-select | Shift+Click | - |
 | Box select | Click+Drag on empty | - |
-| Fit to view | - | Button or F |
-| Center | - | Button or C |
+| Fit to view | - | F |
+| Center | - | C |
+| Reset zoom | - | R |
 
 ### Performance Mode
 
-For large graphs, enable performance mode:
+For large graphs (>50K nodes), enable performance mode:
 - Simplified node styling
 - No dynamic colors/sizes
-- Faster rendering
+- Reduced edge rendering
+- Faster interactions
 
-Toggle in the toolbar: "⚡ Performance Mode"
+Toggle: "⚡ Performance Mode" in toolbar
 
 ### Visual Styling
 
 #### Node Size
 
-Map metric to node size:
+Map any numeric metric to node size:
 
 1. Select metric from "Node Size" dropdown
 2. Set min/max size range (default: 8-25 pixels)
-3. Click "Apply Style"
+3. Choose scaling: linear, log, sqrt
+4. Click "Apply Style"
 
 #### Node Color
 
-Map metric to color gradient:
+Map any metric to color gradient:
 
 1. Select metric from "Node Color" dropdown
 2. Choose gradient:
    - **Spectral**: Blue → Yellow → Red
    - **Viridis**: Purple → Blue → Green → Yellow
+   - **Plasma**: Purple → Pink → Orange → Yellow
    - **Blues**: Light blue → Dark blue
    - **Reds**: Light red → Dark red
+   - **Greens**: Light green → Dark green
    - **Purples**: Light purple → Dark purple
+   - **RdYlBu**: Red → Yellow → Blue (diverging)
 3. Click "Apply Style"
 
 #### Boolean Properties
 
 For boolean properties like `isBlacklisted`:
+- `true` values: Red
+- `false`/null values: Default color
 
-1. Select the boolean property for Node Color
-2. Nodes with `true` values appear in red
-3. Nodes with `false`/null appear in default color
+#### Community Coloring
+
+For community IDs:
+- Automatic categorical color assignment
+- Up to 20 distinct colors
+- Beyond 20: color cycling
+
+### Layout Algorithms
+
+| Layout | Description | Best For |
+|--------|-------------|----------|
+| Force-Directed | Physics simulation | General |
+| Cytoscape Desktop | External layout server | High quality |
+| Grid | Regular grid positions | Uniform display |
+| Circle | Circular arrangement | Ring structures |
+| Concentric | Concentric circles by metric | Hierarchical |
+| Breadthfirst | Tree-like layout | DAGs |
 
 ---
 
@@ -260,89 +278,346 @@ For boolean properties like `isBlacklisted`:
 
 Click any node to see its details:
 
-- **ID**: Node identifier (address)
-- **Metrics**: All computed metrics with values
-- **Properties**: Loaded properties from SQL and APIs
-- **Neighbors**: In/out degree links
+**Sections**:
+- **Identity**: Node ID, name, address
+- **Properties**: All loaded properties
+- **Metrics**: Computed graph metrics
+- **Neighbors**: In/out connections with counts
+- **Community**: Community assignment and confidence
+- **Embedding**: Deep learning embedding info
 
 ### Copy Functions
 
 - Copy node ID to clipboard
+- Copy address to clipboard
 - Copy all data as JSON
 - Link to external explorer (Etherscan, etc.)
+
+### Multi-Node Selection
+
+Select multiple nodes to see:
+- Combined statistics
+- Common properties
+- Induced subgraph metrics
 
 ---
 
 ## Metrics Computation
 
-### Available Metrics
+### Overview
 
-Graph Analyzer computes 120+ metrics in categories:
+Graph Analyzer computes **150+ metrics** in **25 categories**.
 
-| Category | Example Metrics |
-|----------|-----------------|
-| Topology | in_degree, out_degree, total_degree |
-| Centrality | pagerank, betweenness, eigenvector |
-| Clustering | clustering_coefficient, triangles |
-| Community | component_id, component_size |
-| Paths | eccentricity, avg_path_length |
-| Structural | core_number, authority, hub |
+See [METRICS.md](METRICS.md) for complete documentation.
+
+### Quick Reference
+
+| Category | Example Metrics | Cost |
+|----------|-----------------|------|
+| Topology | in_degree, out_degree | Low |
+| Centrality | pagerank, betweenness | Medium-High |
+| Clustering | clustering_coefficient | Medium |
+| Community | louvain, leiden | Medium |
+| Paths | shortest_paths, eccentricity | High |
+| Trust | eigentrust, appleseed | Medium |
 
 ### Metrics Modes
 
-| Mode | Categories | Use Case |
-|------|------------|----------|
-| basic | topology, community | Quick overview |
-| essential | + centrality, clustering | Standard analysis |
-| moderate | + paths, structural | Detailed analysis |
-| all | all categories | Complete analysis |
+| Mode | Categories | Speed |
+|------|------------|-------|
+| basic | topology, community basics | Very Fast |
+| essential | + centrality, clustering | Fast |
+| moderate | + paths, structural | Medium |
+| comprehensive | most categories | Slow |
+| all | all categories | Very Slow |
+
+### Custom Metric Selection
+
+Via UI:
+1. Open Metrics panel
+2. Select categories or individual metrics
+3. Configure parameters
+4. Click "Compute"
+
+Via API:
+```bash
+curl -X POST "http://localhost:8000/api/metrics/run" \
+  -H "Content-Type: application/json" \
+  -d '{"metrics": ["pagerank", "betweenness_centrality"]}'
+```
 
 ---
 
 ## Anomaly Detection
 
-### Algorithms
+### Overview
+
+Eight algorithms for detecting anomalous nodes.
+
+See [ALGORITHMS.md](ALGORITHMS.md) for complete documentation.
+
+### Available Algorithms
 
 | Algorithm | Type | Best For |
 |-----------|------|----------|
-| Z-Score | Statistical | Single metrics, normal distributions |
+| Z-Score | Statistical | Normal distributions |
 | IQR | Statistical | Robust to outliers |
-| Isolation Forest | ML | Multivariate, unknown patterns |
-| LOF | Density | Local anomalies, clusters |
-| DBSCAN | Clustering | Density-based outliers |
+| Isolation Forest | ML | High-dimensional |
+| LOF | Density | Local anomalies |
+| DBSCAN | Clustering | Clustered data |
 | Mahalanobis | Distance | Correlated features |
-| PCA Reconstruction | Dimensionality | High-dimensional data |
-| One-Class SVM | ML | Complex boundaries |
+| PCA | Manifold | Linear relationships |
+| One-Class SVM | Boundary | Complex patterns |
 
 ### Running Detection
 
-1. Select metrics to analyze
-2. Choose algorithm
-3. Configure parameters
-4. Set threshold method
-5. Click "Run Detection"
+1. **Select Metrics**: Choose metrics to analyze
+2. **Choose Algorithm**: Select from dropdown
+3. **Configure Parameters**: Adjust algorithm settings
+4. **Set Threshold**: Choose threshold method
+5. **Run Detection**: Click "Detect Anomalies"
+
+### Results
 
 Results are applied as node attributes:
 - `anomaly_score`: Normalized score (0-1)
 - `is_anomaly`: Boolean flag
+- `anomaly_rank`: Rank by score
+
+### Visualization
+
+- Color nodes by `anomaly_score`
+- Filter to show only anomalies
+- View distribution in Distributions panel
+
+---
+
+## Deep Learning & Embeddings
+
+### Overview
+
+GIT-CD (Graph-Informed Transformer for Community Detection) provides:
+- Node embeddings
+- Learned community detection
+- Similarity search
+- Visualization
+
+See [DEEP_LEARNING.md](DEEP_LEARNING.md) for complete documentation.
+
+### Quick Start
+
+1. **Load Graph**: Ensure a graph is loaded with metrics computed
+2. **Open Panel**: Click the 🧠 neural network icon
+3. **Configure**: Set clusters, hidden dim, epochs
+4. **Train**: Click "Train Model"
+5. **Monitor**: Open Training Monitor for progress
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| Training | Background training with progress updates |
+| Communities | Soft clustering with confidence scores |
+| Similarity | Find similar nodes by embedding |
+| Visualization | UMAP/t-SNE projection |
+
+### Requirements
+
+```bash
+pip install torch torch-geometric umap-learn
+```
+
+---
+
+## Composite Metrics
+
+### Overview
+
+Create custom metrics by combining existing ones.
+
+See [COMPOSITE_METRICS.md](COMPOSITE_METRICS.md) for complete documentation.
+
+### Available Operations
+
+| Operation | Formula | Use Case |
+|-----------|---------|----------|
+| Multiply | M1 × M2 | Joint importance |
+| Add | M1 + M2 | Aggregation |
+| Subtract | M1 - M2 | Difference/imbalance |
+| Divide | M1 / M2 | Ratios |
+| Average | (M1 + M2) / 2 | Balanced score |
+| Maximum | max(M1, M2) | Upper bound |
+| Minimum | min(M1, M2) | Lower bound |
+| Weighted | w1×M1 + w2×M2 | Custom weighting |
+
+### Creating Composites
+
+Via UI:
+1. Open Composite Metrics panel
+2. Select two metrics
+3. Choose operation
+4. Enable normalization (optional)
+5. Name and create
+
+Via API:
+```bash
+curl -X POST "http://localhost:8000/api/metrics/composite/create" \
+  -d '{"name": "influence", "metrics": ["pagerank", "betweenness"], "operation": "multiply"}'
+```
 
 ---
 
 ## Distribution Analysis
 
-### Viewing Distributions
+### Opening Distributions
 
-1. Click "Distributions" in toolbar
-2. Select metrics to analyze
-3. View histograms and statistics
+Click "📊 Distributions" in toolbar or press D.
 
-### Statistics Shown
+### Features
 
-- Count, unique values
-- Min, max, mean, median
-- Standard deviation
-- Percentiles (25th, 75th, 95th, 99th)
-- Skewness, kurtosis
+- **Histograms**: Distribution visualization
+- **Statistics**: min, max, mean, median, std
+- **Percentiles**: 25th, 50th, 75th, 95th, 99th
+- **Skewness/Kurtosis**: Distribution shape
+- **Correlation Matrix**: Metric relationships
+- **Scatter Plots**: Pairwise comparisons
+
+### Composite Preview
+
+Create and preview composite metrics:
+1. Select metrics and operation
+2. View resulting distribution
+3. Check correlations
+4. Create if satisfied
+
+---
+
+## Path Analysis
+
+### Overview
+
+Analyze shortest paths and reachability between nodes.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| Shortest Path | Find path between two nodes |
+| All Paths | List all paths up to length k |
+| Path Statistics | Length distribution |
+| Reachability | Nodes reachable from source |
+
+### Usage
+
+1. Select source node (click or search)
+2. Select target node
+3. Click "Find Path"
+4. View highlighted path
+
+### API
+
+```bash
+curl "http://localhost:8000/api/paths/shortest?source=0x123&target=0x456"
+```
+
+---
+
+## Flow Analysis
+
+### Circles Capacity Flow
+
+Analyze token flow capacity in trust networks using the Circles protocol model.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| Max Flow | Maximum flow between addresses |
+| Flow Decomposition | Path-by-path flow breakdown |
+| Capacity Graph | Build capacity-weighted graph |
+| Bottleneck Analysis | Identify flow constraints |
+
+### Usage
+
+1. Open Flow Analysis panel
+2. Enter source and target addresses
+3. Set max flow amount
+4. Click "Calculate Max Flow"
+5. View decomposed flows
+
+### Configuration
+
+| Parameter | Description |
+|-----------|-------------|
+| Max Hops | Maximum path length (default: 10) |
+| Simplify Paths | Remove redundant edges |
+| Use Netted | Use netted balances |
+
+---
+
+## Subgraph Tools
+
+### Overview
+
+Extract and analyze subgraphs based on selection or criteria.
+
+### Selection Methods
+
+| Method | Description |
+|--------|-------------|
+| Manual | Click/box-select nodes |
+| Ego | N-hop neighborhood of node |
+| Community | All nodes in a community |
+| Filter | Nodes matching criteria |
+| Path | Nodes on path between two points |
+
+### Operations
+
+| Operation | Description |
+|-----------|-------------|
+| Extract | Create subgraph from selection |
+| Analyze | Compute metrics on subgraph |
+| Export | Save subgraph data |
+| Highlight | Visual emphasis |
+
+### Ego Networks
+
+1. Select center node
+2. Set radius (1-5 hops)
+3. Choose direction (in, out, both)
+4. Extract ego network
+
+---
+
+## Snapshots & Time Series
+
+### Snapshots
+
+Save graph state at points in time for comparison.
+
+| Feature | Description |
+|---------|-------------|
+| Create | Save current state |
+| Compare | Diff two snapshots |
+| Load | Restore previous state |
+| Delete | Remove saved snapshot |
+
+### Time Series
+
+Analyze metric changes over time when multiple snapshots exist.
+
+| Analysis | Description |
+|----------|-------------|
+| Trend | Metric value over time |
+| Velocity | Rate of change |
+| Anomaly | Deviation from trend |
+
+### Temporal Composite
+
+Combine metrics across time periods:
+- Rolling averages
+- Time-weighted scores
+- Change detection
 
 ---
 
@@ -350,15 +625,35 @@ Results are applied as node attributes:
 
 ### Features
 
-- Sortable columns
-- Search/filter
-- Column visibility toggle
-- Pagination
-- Export to CSV
+Full-featured data table for node analysis:
+
+| Feature | Description |
+|---------|-------------|
+| Sorting | Click column headers |
+| Filtering | Search box and column filters |
+| Column Toggle | Show/hide columns |
+| Pagination | Navigate large datasets |
+| Export | CSV, JSON download |
+| Selection | Click to highlight on graph |
 
 ### Accessing
 
-Click "Data Explorer" in toolbar or navigate to `/data-explorer.html`
+- Click "Data Explorer" in toolbar
+- Or navigate to `/data-explorer.html`
+- Or press E
+
+### Column Categories
+
+| Category | Columns |
+|----------|---------|
+| Identity | id, name, address |
+| Properties | SQL-loaded properties |
+| API Properties | isBlacklisted, etc. |
+| Topology | degrees, ratios |
+| Centrality | pagerank, betweenness, etc. |
+| Community | community_id, core_number |
+| Anomaly | anomaly_score, is_anomaly |
+| Embedding | community, confidence |
 
 ---
 
@@ -366,10 +661,10 @@ Click "Data Explorer" in toolbar or navigate to `/data-explorer.html`
 
 ### Purpose
 
-Automatically refresh graph data at intervals:
-- Detect new nodes/edges
-- Update properties
-- Maintain real-time view
+Automatically refresh graph data at intervals for:
+- Detecting new nodes/edges
+- Updating properties
+- Maintaining real-time view
 
 ### Configuration
 
@@ -379,13 +674,27 @@ Automatically refresh graph data at intervals:
    - Preserve layout positions
    - Recompute metrics
    - Refresh API properties
+   - Detect changes only
 
-### Events
+### Events (SSE Stream)
 
-Monitor via SSE stream:
-- `reload_started`: Reload beginning
-- `reload_complete`: Success with stats
-- `reload_error`: Failure with message
+```javascript
+// Connect to event stream
+const events = new EventSource('/api/auto-reload/events');
+
+events.addEventListener('reload_started', (e) => {
+  console.log('Reload beginning');
+});
+
+events.addEventListener('reload_complete', (e) => {
+  const data = JSON.parse(e.data);
+  console.log('New nodes:', data.new_nodes);
+});
+
+events.addEventListener('reload_error', (e) => {
+  console.error('Reload failed:', e.data);
+});
+```
 
 ---
 
@@ -393,19 +702,119 @@ Monitor via SSE stream:
 
 ### Export Options
 
-| Format | Contents |
-|--------|----------|
-| PNG | Graph visualization |
-| JSON | Node/edge data |
-| CSV | Tabular node data |
+| Format | Contents | Use Case |
+|--------|----------|----------|
+| PNG | Graph visualization | Reports |
+| SVG | Vector visualization | High-quality |
+| JSON | Complete node/edge data | Analysis |
+| CSV | Tabular node data | Spreadsheets |
+| GraphML | Standard graph format | Other tools |
 
 ### Node Selection Export
 
-Export selected nodes:
 1. Select nodes (click or box select)
 2. Click "Export Selected"
 3. Choose format
+4. Download file
 
 ### Full Export
 
-Export entire dataset from Data Explorer.
+Export entire dataset from Data Explorer:
+- All nodes with all properties
+- Filtered view export
+- Custom column selection
+
+### API Export
+
+```bash
+# Export nodes as JSON
+curl "http://localhost:8000/api/export/nodes?format=json"
+
+# Export edges as CSV
+curl "http://localhost:8000/api/export/edges?format=csv"
+
+# Export subgraph
+curl "http://localhost:8000/api/export/subgraph?nodes=0x123,0x456"
+```
+
+---
+
+## Keyboard Shortcuts
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| Arrow keys | Pan graph |
+| +/- | Zoom in/out |
+| F | Fit to view |
+| C | Center on selection |
+| R | Reset zoom |
+| Home | Reset view |
+
+### Selection
+
+| Key | Action |
+|-----|--------|
+| Escape | Clear selection |
+| A | Select all |
+| Delete | Remove selected (temporary) |
+
+### Panels
+
+| Key | Action |
+|-----|--------|
+| I | Toggle Info panel |
+| M | Toggle Metrics panel |
+| D | Open Distributions |
+| E | Open Data Explorer |
+| S | Toggle Search |
+
+### Actions
+
+| Key | Action |
+|-----|--------|
+| Ctrl+S | Save snapshot |
+| Ctrl+E | Export selection |
+| Ctrl+F | Search nodes |
+| ? | Show help |
+
+---
+
+## Configuration
+
+### Environment Variables
+
+See [CONFIGURATION.md](CONFIGURATION.md) for complete settings.
+
+Key variables:
+```bash
+# Database
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=circles
+
+# Server
+HOST=0.0.0.0
+PORT=8000
+
+# Performance
+N_JOBS=-1
+CACHE_DIR=cache
+
+# External APIs
+EXTERNAL_API_PROVIDERS=blacklist
+EXTERNAL_API_BASE_URL=https://api.example.com
+```
+
+### Cache Management
+
+```bash
+# Clear all caches
+curl -X DELETE http://localhost:8000/api/cache/all
+
+# Clear specific cache
+curl -X DELETE http://localhost:8000/api/cache/metrics
+curl -X DELETE http://localhost:8000/api/cache/layouts
+curl -X DELETE http://localhost:8000/api/cache/api-properties
+```

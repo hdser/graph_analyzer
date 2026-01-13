@@ -5,37 +5,93 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Graph Analyzer Web Viewer</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/path-analysis.css">
+    <link rel="stylesheet" href="/static/css/subgraph-tools.css">
+    <link rel="stylesheet" href="/static/css/flow-analysis.css">
+    <link rel="stylesheet" href="/static/css/embedding-panel.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.31.0/cytoscape.min.js"></script>
 </head>
 <body>
     <div class="container">
-        <div class="sidebar">
+        <!-- NEW SIDEBAR STRUCTURE -->
+        <div class="sidebar" id="sidebar">
+            <!-- Header -->
             <div class="app-header">
-                <span class="app-logo" data-icon="appLogo"></span>
+                <span class="app-logo" data-icon="appLogo" data-icon-size="36"></span>
                 <span class="app-title">Network <span style="color: #d33a47;">Analyzer</span></span>
+                <button id="sidebar-collapse-toggle" class="sidebar-collapse-toggle" data-icon="chevronLeft" title="Collapse sidebar"></button>
             </div>
-            <div class="sidebar-content">
+            
+            <!-- Button Navigation Bar -->
+            <div class="nav-buttons" id="nav-buttons">
+                <button class="nav-btn" data-panel="load" title="Load Data">
+                    <span data-icon="upload" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Load</span>
+                </button>
+                <button class="nav-btn" data-panel="reload" title="Auto Reload">
+                    <span data-icon="refresh" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Reload</span>
+                </button>
+                <button class="nav-btn" data-panel="snapshots" title="Snapshots">
+                    <span data-icon="camera" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Snapshots</span>
+                </button>
+                <button class="nav-btn" data-panel="metrics" title="Metrics">
+                    <span data-icon="chart" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Metrics</span>
+                </button>
+                <button class="nav-btn" data-panel="paths" title="Path Analysis">
+                    <span data-icon="paths" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Paths</span>
+                </button>
+                <button class="nav-btn" data-panel="subgraph" title="Subgraph Extraction">
+                    <span data-icon="subgraph" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Subgraph</span>
+                </button>
+                <button class="nav-btn" data-panel="flow" title="Flow Analysis">
+                    <span data-icon="flow" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Flow</span>
+                </button>
+                <button class="nav-btn" data-panel="filter" title="Filter">
+                    <span data-icon="filter" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Filter</span>
+                </button>
+                <button class="nav-btn" data-panel="style" title="Style">
+                    <span data-icon="palette" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Style</span>
+                </button>
+                <button class="nav-btn" data-panel="layout" title="Layout">
+                    <span data-icon="nodes" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Layout</span>
+                </button>
+                <button class="nav-btn" data-panel="embeddings" title="Deep Learning Embeddings">
+                    <span data-icon="embeddings" data-icon-size="20"></span>
+                    <span class="nav-btn-label">Embeddings</span>
+                </button>
+            </div>
+            
+            <!-- Slide-out Panels Container -->
+            <div class="sidebar-panels" id="sidebar-panels">
                 
-                <div class="section collapsible" id="data-source-section">
-                    <div class="collapsible-header">
-                        <h3>Data Source (Load)</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                <!-- LOAD PANEL -->
+                <div class="panel" id="panel-load" data-panel="load">
+                    <div class="panel-header">
+                        <h3>Load Data</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                   <div class="style-subsection">
+                    <div class="panel-content">
                         <div class="style-row">
                             <label>SQL Files</label>
                             <div class="custom-dropdown" id="sql-files-dropdown">
                                 <div class="dropdown-header" id="sql-dropdown-header">Select files...</div>
-                                <div class="dropdown-list" id="sql-files-list">
-                                </div>
+                                <div class="dropdown-list" id="sql-files-list"></div>
                             </div>
                         </div>
                         <div class="style-row" id="properties-dropdown-container">
                             <label>Node Properties</label>
                             <div class="custom-dropdown" id="properties-files-dropdown">
                                 <div class="dropdown-header" id="properties-dropdown-header">Select properties...</div>
-                                <div class="dropdown-list" id="properties-files-list">
-                                </div>
+                                <div class="dropdown-list" id="properties-files-list"></div>
                             </div>
                         </div>
                         <div class="style-row">
@@ -56,14 +112,13 @@
                     </div>
                 </div>
 
-                <!-- Auto-Reload Section -->
-                <div class="section collapsible" id="auto-reload-section">
-                    <div class="collapsible-header">
+                <!-- AUTO RELOAD PANEL -->
+                <div class="panel" id="panel-reload" data-panel="reload">
+                    <div class="panel-header">
                         <h3>Auto Reload</h3>
-                        <span class="auto-reload-indicator" id="reload-indicator" title="Auto-reload status"></span>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
+                    <div class="panel-content">
                         <div class="style-row">
                             <label>Enable</label>
                             <label class="toggle-switch">
@@ -108,13 +163,13 @@
                     </div>
                 </div>
 
-                <!-- Historical Snapshots Section -->
-                <div class="section collapsible" id="snapshots-section">
-                    <div class="collapsible-header">
+                <!-- SNAPSHOTS PANEL -->
+                <div class="panel" id="panel-snapshots" data-panel="snapshots">
+                    <div class="panel-header">
                         <h3>Historical Snapshots</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
+                    <div class="panel-content">
                         <!-- Status indicator -->
                         <div id="snapshot-status" class="snapshot-status-indicator">Live View</div>
                         
@@ -140,7 +195,7 @@
                         <div class="snapshot-compare-subsection">
                             <div class="subsection-header collapsible-sub" data-target="snapshot-compare-content">
                                 <span>Compare Snapshots</span>
-                                <span class="collapse-icon-small">▼</span>
+                                <span class="collapse-icon-small" data-icon="chevronDown"></span>
                             </div>
                             
                             <div id="snapshot-compare-content" class="subsection-content" style="display: none;">
@@ -191,15 +246,15 @@
                         <div class="snapshot-animation-subsection">
                             <div class="subsection-header collapsible-sub" data-target="snapshot-animation-content">
                                 <span>Timeline Animation</span>
-                                <span class="collapse-icon-small">▼</span>
+                                <span class="collapse-icon-small" data-icon="chevronDown"></span>
                             </div>
                             
                             <div id="snapshot-animation-content" class="subsection-content" style="display: none;">
                                 <div class="animation-controls">
                                     <div class="animation-buttons">
-                                        <button id="anim-prev-btn" class="anim-btn" title="Previous">⏮</button>
-                                        <button id="anim-play-btn" class="anim-btn play" title="Play/Pause">▶</button>
-                                        <button id="anim-next-btn" class="anim-btn" title="Next">⏭</button>
+                                        <button id="anim-prev-btn" class="anim-btn" title="Previous" data-icon="arrowLeft"></button>
+                                        <button id="anim-play-btn" class="anim-btn play" title="Play/Pause" data-icon="play"></button>
+                                        <button id="anim-next-btn" class="anim-btn" title="Next" data-icon="arrowRight"></button>
                                     </div>
                                     <div class="animation-speed">
                                         <label>Speed</label>
@@ -233,7 +288,7 @@
                         <div class="snapshot-create-subsection">
                             <div class="subsection-header collapsible-sub" data-target="snapshot-create-content">
                                 <span>Create Snapshot</span>
-                                <span class="collapse-icon-small">▼</span>
+                                <span class="collapse-icon-small" data-icon="chevronDown"></span>
                             </div>
                             
                             <div id="snapshot-create-content" class="subsection-content">
@@ -241,9 +296,10 @@
                                     <label>Block Number</label>
                                     <div class="input-with-button">
                                         <input type="number" id="snapshot-block-input" 
-                                               class="block-input" placeholder="e.g., 12345678">
+                                               class="block-input" placeholder="e.g., 12345678"
+                                               style="width: auto !important; min-width: 170px; font-size: 14px; padding: 8px; height: 38px;">
                                         <button id="suggest-blocks-btn" class="mini-icon-btn" title="Suggest block">
-                                            💡
+                                            <span data-icon="refresh"></span>
                                         </button>
                                     </div>
                                 </div>
@@ -287,39 +343,396 @@
                     </div>
                 </div>
 
-                <div class="section collapsible" id="metrics-section">
-                    <div class="collapsible-header">
-                        <h3>Metrics Analysis</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                <!-- METRICS PANEL -->
+                <div class="panel" id="panel-metrics" data-panel="metrics">
+                    <div class="panel-header">
+                        <h3>Metrics</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
-                        <div class="style-row">
-                            <label>Target Graph</label>
-                            <select id="metrics-graph"></select>
+                    <div class="panel-content">
+                        <!-- Target Selection (always visible) -->
+                        <div class="style-row" style="margin-bottom: 16px;">
+                            <label>Target:</label>
+                            <select id="metrics-graph" style="flex: 1;">
+                                <option value="">Auto (first selected)</option>
+                            </select>
                         </div>
                         
-                        <div class="style-row">
-                            <label style="font-size: 11px; color: #808080; width: 100%;">Select Categories:</label>
+                        <!-- Metrics Selection -->
+                        <div id="metrics-custom-mode">
+                            <div class="style-row">
+                                <input type="text" id="metrics-search" placeholder="Search metrics..." style="width: 100%; padding: 6px; background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; border-radius: 3px;">
+                            </div>
+                            <div id="metrics-tree" style="max-height: 300px; overflow-y: auto; margin-top: 8px;"></div>
                         </div>
-                        <div id="custom-metrics" class="checkbox-group"></div>
                         
-                        <button id="metrics-btn" class="primary-btn" disabled>Run Metrics</button>
-                        <div id="metrics-status" style="text-align:center; font-size:11px; color:#808080; display:none">Calculating...</div>
+                        <!-- Actions -->
+                        <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+                            <span id="metrics-selection-count" style="color: #888; font-size: 12px;">0 selected</span>
+                            <button id="compute-metrics-btn" class="primary-btn" disabled>Compute</button>
+                        </div>
                         
-                        <button id="distributions-btn" class="secondary-btn" title="Open distribution analysis in new window">
-                            Analyze Distributions
-                        </button>
+                        <button id="distributions-btn" class="secondary-btn" style="width: 100%; margin-top: 10px;">Distributions</button>
                     </div>
                 </div>
 
-
-
-                <div class="section collapsible">
-                    <div class="collapsible-header">
-                        <h3>Filter Nodes</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                <!-- Parameter Modal -->
+                <div id="parameter-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center;">
+                    <div style="background: #1a1a1a; border: 1px solid #4A90E2; border-radius: 8px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                            <h3 style="margin: 0;">Parameters</h3>
+                            <button class="parameter-modal-close" style="background: none; border: none; color: #888; font-size: 24px; cursor: pointer;">&times;</button>
+                        </div>
+                        <div id="parameter-modal-content"></div>
                     </div>
-                    <div class="style-subsection">
+                </div>
+
+                <!-- PATH ANALYSIS PANEL -->
+                <div class="panel" id="panel-paths" data-panel="paths">
+                    <div class="panel-header">
+                        <h3>Path Analysis</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Source Node -->
+                        <div class="style-row">
+                            <label>Source Node</label>
+                            <input type="text" id="path-source-input" placeholder="Enter or click node" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
+                        </div>
+                        
+                        <!-- Target Node -->
+                        <div class="style-row">
+                            <label>Target Node</label>
+                            <input type="text" id="path-target-input" placeholder="Enter or click node" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
+                        </div>
+                        
+                        <!-- Swap Button -->
+                        <div class="style-row" style="justify-content: center;">
+                            <button id="swap-nodes-btn" class="secondary-btn" style="padding: 4px 12px; font-size: 11px;">
+                                ↑↓ Swap
+                            </button>
+                        </div>
+                        
+                        <!-- Algorithm Selection -->
+                        <div class="style-row">
+                            <label>Algorithm</label>
+                            <select id="path-algorithm-select">
+                                <option value="shortest_path">Shortest Path</option>
+                                <option value="all_shortest_paths">All Shortest Paths</option>
+                                <option value="k_shortest_paths">K Shortest Paths</option>
+                                <option value="all_simple_paths">All Simple Paths</option>
+                                <option value="dijkstra">Dijkstra (Weighted)</option>
+                                <option value="node_disjoint_paths">Node-Disjoint Paths</option>
+                                <option value="edge_disjoint_paths">Edge-Disjoint Paths</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Algorithm Parameters -->
+                        <div id="path-params" class="path-params-section">
+                            <div class="style-row">
+                                <label>
+                                    <input type="checkbox" id="path-directed" checked> Directed
+                                </label>
+                            </div>
+                            <div class="style-row" id="param-k-row" style="display: none;">
+                                <label>K (paths)</label>
+                                <input type="number" id="path-k" value="5" min="1" max="100" style="width: 60px;">
+                            </div>
+                            <div class="style-row" id="param-cutoff-row" style="display: none;">
+                                <label>Cutoff</label>
+                                <input type="number" id="path-cutoff" value="10" min="1" max="15" style="width: 60px;">
+                            </div>
+                            <div class="style-row" id="param-weight-row" style="display: none;">
+                                <label>Weight Attr</label>
+                                <input type="text" id="path-weight" placeholder="weight" style="width: 80px;">
+                            </div>
+                        </div>
+                        
+                        <!-- Actions -->
+                        <div class="button-group">
+                            <button id="find-paths-btn" class="primary-btn">Find Paths</button>
+                            <button id="clear-paths-btn" class="secondary-btn">Clear</button>
+                        </div>
+                        
+                        <!-- Results -->
+                        <div id="path-results" class="path-results-section" style="display: none;">
+                            <div class="path-results-header">
+                                <span id="path-results-summary">No paths found</span>
+                                <span id="path-results-time" class="path-results-time"></span>
+                            </div>
+                            <div id="path-results-list" class="path-results-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUBGRAPH PANEL -->
+                <div class="panel" id="panel-subgraph" data-panel="subgraph">
+                    <div class="panel-header">
+                        <h3>Subgraph Extraction</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Extraction Mode -->
+                        <div class="style-row">
+                            <label>Mode</label>
+                            <select id="subgraph-mode">
+                                <option value="neighborhood">Neighborhood</option>
+                                <option value="ego">Ego Graph</option>
+                                <option value="component">Connected Component</option>
+                                <option value="induced">Induced Subgraph</option>
+                                <option value="k_hop">K-Hop from Seeds</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Center Node -->
+                        <div class="style-row">
+                            <label>Center Node</label>
+                            <input type="text" id="subgraph-center-input" placeholder="Node ID..." style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
+                        </div>
+                        
+                        <!-- Seed Nodes (for induced/k_hop) -->
+                        <div id="seed-nodes-section" style="display: none;">
+                            <div class="style-row">
+                                <label>Seed Nodes</label>
+                                <button id="add-selected-seeds-btn" class="secondary-btn" style="font-size: 11px; padding: 4px 8px;">
+                                    + Add Selected
+                                </button>
+                            </div>
+                            <div id="seed-nodes-list" class="seed-nodes-list"></div>
+                        </div>
+                        
+                        <!-- Parameters -->
+                        <div class="style-row" id="subgraph-hops-row">
+                            <label>Hops/Radius</label>
+                            <input type="number" id="subgraph-hops" value="1" min="1" max="5" style="width: 60px;">
+                        </div>
+                        
+                        <div class="style-row">
+                            <label>
+                                <input type="checkbox" id="subgraph-directed"> Directed
+                            </label>
+                        </div>
+                        
+                        <!-- Actions -->
+                        <div class="button-group">
+                            <button id="extract-subgraph-btn" class="primary-btn">Extract</button>
+                            <button id="clear-subgraph-btn" class="secondary-btn">Clear</button>
+                        </div>
+                        
+                        <!-- Results -->
+                        <div id="subgraph-results" class="subgraph-results-section" style="display: none;">
+                            <div class="result-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">Nodes</span>
+                                    <span id="subgraph-node-count" class="stat-value">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Edges</span>
+                                    <span id="subgraph-edge-count" class="stat-value">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Time</span>
+                                    <span id="subgraph-time" class="stat-value">0ms</span>
+                                </div>
+                            </div>
+                            
+                            <div class="button-group" style="margin-top: 12px;">
+                                <button id="highlight-subgraph-btn" class="secondary-btn">Highlight</button>
+                                <button id="isolate-subgraph-btn" class="secondary-btn">Isolate</button>
+                            </div>
+                            <div class="button-group" style="margin-top: 8px;">
+                                <button id="show-all-subgraph-btn" class="secondary-btn">Show All</button>
+                                <button id="export-subgraph-btn" class="secondary-btn">Export</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FLOW PANEL -->
+                <div class="panel" id="panel-flow" data-panel="flow">
+                    <div class="panel-header">
+                        <h3>Flow Analysis</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Shared Source/Sink Inputs -->
+                        <div class="flow-endpoints">
+                            <div class="endpoint-row">
+                                <label>Source</label>
+                                <input type="text" id="flow-source-input" placeholder="Click node or paste address...">
+                            </div>
+                            <button id="swap-flow-nodes-btn" class="swap-btn" title="Swap">⇅</button>
+                            <div class="endpoint-row">
+                                <label>Sink</label>
+                                <input type="text" id="flow-target-input" placeholder="Click node or paste address...">
+                            </div>
+                        </div>
+                        
+                        <!-- Tab Switcher -->
+                        <div class="flow-tabs">
+                            <button class="flow-tab active" data-tab="graph-flow">Graph Flow</button>
+                            <button class="flow-tab" data-tab="circles-flow">Circles Capacity</button>
+                        </div>
+                        
+                        <!-- GRAPH FLOW TAB -->
+                        <div id="graph-flow-tab" class="flow-tab-content active">
+                            <div class="flow-options">
+                                <div class="option-row">
+                                    <label>Analysis</label>
+                                    <select id="flow-analysis-type">
+                                        <option value="max_flow">Maximum Flow</option>
+                                        <option value="min_cut">Minimum Cut</option>
+                                        <option value="edge_connectivity">Edge Connectivity</option>
+                                        <option value="node_connectivity">Node Connectivity</option>
+                                    </select>
+                                </div>
+                                <div class="option-row" id="flow-capacity-row">
+                                    <label>Capacity</label>
+                                    <select id="flow-capacity-attr">
+                                        <option value="">Unit Capacity (1.0)</option>
+                                        <option value="weight">weight</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="flow-actions">
+                                <button id="compute-flow-btn" class="primary-btn">Compute</button>
+                                <button id="clear-flow-btn" class="secondary-btn">Clear</button>
+                            </div>
+                            
+                            <!-- Graph Flow Results -->
+                            <div id="flow-results" class="flow-results" style="display: none;">
+                                <div class="result-row main">
+                                    <span id="flow-result-type">Maximum Flow</span>
+                                    <span id="flow-value" class="result-value">0</span>
+                                </div>
+                                <div class="result-row meta">
+                                    <span id="flow-edge-count">0 edges</span>
+                                    <span id="flow-result-time"></span>
+                                </div>
+                                
+                                <div id="flow-edges-section" class="edges-section">
+                                    <div class="section-header">
+                                        <span id="flow-edges-title">Flow Edges</span>
+                                    </div>
+                                    <div id="flow-edges-list" class="edges-list"></div>
+                                </div>
+                                
+                                <div id="partition-section" class="partition-section" style="display: none;">
+                                    <div class="section-header">Partition</div>
+                                    <div class="partition-counts">
+                                        <span class="source-side">Source: <b id="partition-source-count">0</b></span>
+                                        <span class="target-side">Sink: <b id="partition-target-count">0</b></span>
+                                    </div>
+                                </div>
+                                
+                                <div class="viz-actions">
+                                    <button id="highlight-flow-btn" class="small-btn">Highlight</button>
+                                    <button id="isolate-flow-btn" class="small-btn">Isolate</button>
+                                    <button id="show-partition-btn" class="small-btn" style="display: none;">Partition</button>
+                                    <button id="show-all-flow-btn" class="small-btn">Reset</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- CIRCLES CAPACITY FLOW TAB -->
+                        <div id="circles-flow-tab" class="flow-tab-content">
+                            <!-- Build Status -->
+                            <div class="cf-build-section">
+                                <div class="cf-build-row">
+                                    <span id="cf-status" class="cf-badge not-built">Not Built</span>
+                                    <button id="cf-build-btn" class="small-btn">Build Graph</button>
+                                    <button id="cf-view-graph-btn" class="small-btn" disabled>View Graph</button>
+                                </div>
+                                <div id="cf-graph-stats" class="cf-stats" style="display: none;"></div>
+                            </div>
+                            
+                            <!-- Edge Loading (shown after View Graph) -->
+                            <div id="cf-edge-loading" class="cf-edge-loading" style="display: none;">
+                                <span id="cf-edge-progress" class="progress">0 / 0 edges</span>
+                                <button id="cf-load-edges-btn" class="small-btn">Load Edges</button>
+                            </div>
+                            
+                            <!-- Options (collapsible) -->
+                            <details class="cf-options">
+                                <summary>Options</summary>
+                                <div class="cf-options-content">
+                                    <div class="option-row">
+                                        <label>Algorithm</label>
+                                        <select id="cf-algorithm-select">
+                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ✔</option>
+                                            <option value="networkx:preflow_push">Preflow Push (NetworkX)</option>
+                                            <option value="networkx:dinitz">Dinitz (NetworkX)</option>
+                                            <option value="ortools:max_flow">Max Flow (OR-Tools)</option>
+                                        </select>
+                                    </div>
+                                    <div class="option-row">
+                                        <label>Cutoff</label>
+                                        <input type="number" id="cf-cutoff-input" placeholder="No limit" min="0">
+                                        <span id="cf-cutoff-note" class="note" style="display: none;"></span>
+                                    </div>
+                                    <div class="checkbox-row">
+                                        <label><input type="checkbox" id="cf-decompose-paths" checked> Decompose paths</label>
+                                        <label><input type="checkbox" id="cf-simplify-paths" checked> Simplify paths</label>
+                                    </div>
+                                </div>
+                            </details>
+                            
+                            <div class="flow-actions">
+                                <button id="cf-compute-btn" class="primary-btn">Compute Flow</button>
+                                <button id="cf-clear-btn" class="secondary-btn">Clear</button>
+                            </div>
+                            
+                            <!-- Loading -->
+                            <div id="cf-loading" class="cf-loading" style="display: none;">
+                                <div class="spinner-small"></div>
+                                <span>Computing...</span>
+                            </div>
+                            
+                            <!-- Error -->
+                            <div id="cf-error" class="cf-error" style="display: none;"></div>
+                            
+                            <!-- Results -->
+                            <div id="cf-results" class="flow-results" style="display: none;">
+                                <div class="result-row main">
+                                    <span>Maximum Flow</span>
+                                    <span id="cf-max-flow-value" class="result-value">0</span>
+                                </div>
+                                <div class="result-row meta">
+                                    <span id="cf-path-count">0 paths</span>
+                                    <span id="cf-computation-time"></span>
+                                    <span id="cf-backend-used"></span>
+                                </div>
+                                
+                                <!-- Token Flows -->
+                                <div id="cf-token-flows" class="token-flows-section" style="display: none;">
+                                    <div class="section-header">Token Flows</div>
+                                    <div id="cf-token-flows-list" class="token-flows-list"></div>
+                                </div>
+                                
+                                <!-- Paths -->
+                                <div class="paths-section">
+                                    <div class="section-header">Paths</div>
+                                    <div id="cf-paths-list" class="paths-list"></div>
+                                </div>
+                                
+                                <div class="viz-actions">
+                                    <button id="cf-highlight-btn" class="small-btn">Highlight</button>
+                                    <button id="cf-isolate-btn" class="small-btn">Isolate</button>
+                                    <button id="cf-show-all-btn" class="small-btn">Reset</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILTER PANEL -->
+                <div class="panel" id="panel-filter" data-panel="filter">
+                    <div class="panel-header">
+                        <h3>Filter Nodes</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
                         <div class="style-row">
                             <label>Property</label>
                             <select id="filter-metric">
@@ -331,8 +744,8 @@
                                 <option value="gt">&gt;</option>
                                 <option value="lt">&lt;</option>
                                 <option value="eq">=</option>
-                                <option value="gte">≥</option>
-                                <option value="lte">≤</option>
+                                <option value="gte">&gt;=</option>
+                                <option value="lte">&lt;=</option>
                             </select>
                             <input type="number" id="filter-value" placeholder="Value" style="flex:1;">
                         </div>
@@ -359,15 +772,30 @@
                         <div class="style-row">
                             <button id="reset-filter-btn" class="secondary-btn" style="margin-top:5px;">Reset Selection</button>
                        </div>
+                       
+                       <!-- Node Visibility Controls -->
+                       <div style="border-top: 1px solid #3a3a3a; margin-top: 12px; padding-top: 12px;">
+                           <h4 style="font-size: 12px; color: #888; margin-bottom: 8px;">Selected Nodes Visibility</h4>
+                           <div class="style-row">
+                               <button id="show-only-selected-btn" class="secondary-btn" title="Hide all non-selected nodes">Show Only Selected</button>
+                           </div>
+                           <div class="style-row">
+                               <button id="hide-selected-btn" class="secondary-btn" style="margin-top:5px;" title="Hide selected nodes, show others">Hide Selected</button>
+                           </div>
+                           <div class="style-row">
+                               <button id="show-all-nodes-btn" class="secondary-btn" style="margin-top:5px;" title="Show all nodes">Show All</button>
+                           </div>
+                       </div>
                     </div>
                 </div>
 
-                <div class="section collapsible">
-                    <div class="collapsible-header">
+                <!-- STYLE PANEL -->
+                <div class="panel" id="panel-style" data-panel="style">
+                    <div class="panel-header">
                         <h3>Visual Style</h3>
-                        <span class="collapse-icon" data-icon="chevronDown"></span>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
-                    <div class="style-subsection">
+                    <div class="panel-content">
                         <h4>Node Size</h4>
                         <div class="style-row">
                             <label>Metric</label>
@@ -416,9 +844,255 @@
                     </div>
                 </div>
 
+                <!-- LAYOUT PANEL -->
+                <div class="panel" id="panel-layout" data-panel="layout">
+                    <div class="panel-header">
+                        <h3>Layout Settings</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <h4>Saved Layouts</h4>
+                        <div class="style-row">
+                            <label>Layout</label>
+                            <div style="display:flex; gap:8px; flex:1; align-items:center;">
+                                <select id="layout-saved-select" style="flex:1; margin:0;">
+                                    <option value="">Select layout...</option>
+                                </select>
+                                <button id="refresh-layouts-btn" class="icon-btn" title="Refresh list" data-icon="refresh" style="flex-shrink:0;"></button>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px; margin-bottom:16px;">
+                            <button id="load-layout-btn" class="secondary-btn" style="flex:1; margin:0; padding:8px 12px; white-space:nowrap;" disabled>Load</button>
+                            <button id="set-default-layout-btn" class="secondary-btn" style="flex:1; margin:0; padding:8px 12px; white-space:nowrap;" disabled>Default</button>
+                            <button id="delete-layout-btn" class="secondary-btn" style="flex:1; margin:0; padding:8px 12px; white-space:nowrap; border-color:#d33a47; color:#d33a47;" disabled>Delete</button>
+                        </div>
+                        
+                        <h4 style="margin-top:20px">Compute Layout</h4>
+                        <div class="style-row">
+                            <label>Backend</label>
+                            <select id="layout-backend-select">
+                                <option value="auto">Auto (Best Available)</option>
+                            </select>
+                        </div>
+                        <div class="style-row" id="layout-algorithm-group" style="display: none;">
+                            <label>Algorithm</label>
+                            <select id="layout-algorithm-select">
+                                <option value="auto">Auto</option>
+                            </select>
+                        </div>
+                        <div class="style-row">
+                            <label>Iterations</label>
+                            <input type="number" id="layout-iterations" placeholder="Default" min="100" max="10000" step="100" style="width:100px;">
+                        </div>
+                        <div class="style-row">
+                            <label title="Use existing node positions as starting point for refinement">Warm Start</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="layout-warm-start">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="style-row">
+                            <label title="Save computed layout as the default for this graph">Save as Default</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="layout-save-as-base">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <button id="recompute-layout-btn" class="primary-btn">Recompute Layout</button>
+                        
+                        <h4 style="margin-top:20px">Available Backends</h4>
+                        <div id="layout-backends-info" class="backends-info"></div>
+                    </div>
+                </div>
+
+                <!-- EMBEDDINGS PANEL (Deep Learning) - UPDATED -->
+                <div class="panel" id="panel-embeddings" data-panel="embeddings">
+                    <div class="panel-header">
+                        <h3>Deep Learning</h3>
+                        <button class="panel-close" data-icon="close" title="Close panel"></button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- Status Indicator -->
+                        <div id="dl-status" class="embedding-status">
+                            <span class="status-dot"></span>
+                            <span class="status-text">Checking availability...</span>
+                        </div>
+                        
+                        <!-- Unavailable Message -->
+                        <div id="dl-unavailable" class="info-box warning" style="display: none;">
+                            <p>Deep learning features require PyTorch and PyTorch Geometric.</p>
+                            <p>Install with: <code>pip install torch torch-geometric</code></p>
+                        </div>
+                        
+                        <!-- Main Content (shown when available) -->
+                        <div id="dl-available" style="display: none;">
+                            <!-- Model Status -->
+                            <div class="style-row">
+                                <label>Current Model</label>
+                                <div id="current-model-status" class="model-status-box">
+                                    <span class="model-name">No model loaded</span>
+                                    <button id="btn-load-model" class="icon-btn" title="Load model" data-icon="folder"></button>
+                                </div>
+                            </div>
+                            
+                            <!-- Tabs -->
+                            <div class="embedding-tabs">
+                                <button class="embed-tab-btn active" data-tab="train-tab">Train</button>
+                                <button class="embed-tab-btn" data-tab="communities-tab">Communities</button>
+                                <button class="embed-tab-btn" data-tab="similarity-tab">Similarity</button>
+                            </div>
+                            
+                            <!-- Train Tab -->
+                            <div id="train-tab" class="embed-tab-content active">
+                                <!-- Training Graph Info -->
+                                <div class="training-graph-info" style="background: #1a2332; border: 1px solid #2a4a6a; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span style="font-size: 11px; color: #888;">Training Graph</span>
+                                        <span id="training-graph-name" style="font-size: 13px; font-weight: 600; color: #4A90E2;">No graph loaded</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="style-row">
+                                    <label>Model Name</label>
+                                    <input type="text" id="model-name-input" placeholder="Auto: gitcd_[graph_name]">
+                                </div>
+                                <div class="style-row">
+                                    <label>Clusters</label>
+                                    <input type="number" id="num-clusters-input" value="20" min="2" max="1000" style="width: 80px;">
+                                </div>
+                                <div class="style-row">
+                                    <label>Hidden Dim</label>
+                                    <input type="number" id="hidden-dim-input" value="128" min="32" max="512" step="32" style="width: 80px;">
+                                </div>
+                                
+                                <!-- Advanced Options (Collapsible) -->
+                                <details class="embed-advanced">
+                                    <summary>Advanced Options</summary>
+                                    <div class="style-row">
+                                        <label>Max Epochs</label>
+                                        <input type="number" id="max-epochs-input" value="200" min="10" max="1000" style="width: 80px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>Learning Rate</label>
+                                        <input type="number" id="learning-rate-input" value="0.0003" min="0.000001" max="0.1" step="0.0001" style="width: 100px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>Patience</label>
+                                        <input type="number" id="patience-input" value="5" min="1" max="50" style="width: 80px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>Dropout</label>
+                                        <input type="number" id="dropout-input" value="0.5" min="0" max="0.9" step="0.1" style="width: 80px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>GNN Layers</label>
+                                        <input type="number" id="gnn-layers-input" value="1" min="1" max="5" style="width: 80px;">
+                                    </div>
+                                    <div class="style-row">
+                                        <label>Transformer Layers</label>
+                                        <input type="number" id="transformer-layers-input" value="2" min="1" max="6" style="width: 80px;">
+                                    </div>
+                                </details>
+                                
+                                <button id="btn-train-model" class="primary-btn" style="width: 100%; margin-top: 12px;">
+                                    Train Model
+                                </button>
+                                
+                                <button id="btn-open-training-monitor" class="secondary-btn" style="width: 100%; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                        <line x1="3" y1="9" x2="21" y2="9"/>
+                                        <line x1="9" y1="21" x2="9" y2="9"/>
+                                    </svg>
+                                    Open Training Monitor
+                                </button>
+                                
+                                <!-- Training Progress -->
+                                <div id="training-progress" class="embed-progress" style="display: none;">
+                                    <div class="progress-bar-wrapper">
+                                        <div class="embed-progress-bar"></div>
+                                    </div>
+                                    <div class="progress-text">Training...</div>
+                                </div>
+                                
+                                <!-- Training Results -->
+                                <div id="training-results" class="embed-results" style="display: none;">
+                                    <h4>Results</h4>
+                                    <div class="result-row">
+                                        <span>Epochs:</span>
+                                        <span id="result-epochs">-</span>
+                                    </div>
+                                    <div class="result-row">
+                                        <span>Loss:</span>
+                                        <span id="result-loss">-</span>
+                                    </div>
+                                    <div class="result-row">
+                                        <span>Silhouette:</span>
+                                        <span id="result-silhouette">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Communities Tab -->
+                            <div id="communities-tab" class="embed-tab-content" style="display: none;">
+                                <p class="embed-info">Detect communities using learned embeddings from GIT-CD model.</p>
+                                <button id="btn-detect-communities" class="primary-btn" style="width: 100%;">
+                                    Detect Communities
+                                </button>
+                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                    <button id="btn-apply-communities" class="secondary-btn" style="flex: 1;">
+                                        Apply to Graph
+                                    </button>
+                                    <button id="btn-clear-communities" class="secondary-btn" style="flex: 1;">
+                                        Clear
+                                    </button>
+                                </div>
+                                <div id="communities-results" class="embed-results" style="display: none;">
+                                    <h4>Communities</h4>
+                                    <div class="result-row">
+                                        <span>Count:</span>
+                                        <span id="community-count">-</span>
+                                    </div>
+                                    <div id="community-sizes-list" class="community-list"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Similarity Tab -->
+                            <div id="similarity-tab" class="embed-tab-content" style="display: none;">
+                                <p class="embed-info">Find nodes with similar embeddings.</p>
+                                <div class="style-row">
+                                    <label>Query Node</label>
+                                    <input type="text" id="similarity-query-input" placeholder="Node ID...">
+                                </div>
+                                <div class="style-row">
+                                    <label>Top K</label>
+                                    <input type="number" id="similarity-k-input" value="10" min="1" max="100" style="width: 80px;">
+                                </div>
+                                <button id="btn-find-similar" class="primary-btn" style="width: 100%;">
+                                    Find Similar
+                                </button>
+                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                    <button id="btn-apply-similar" class="secondary-btn" style="flex: 1;">
+                                        Highlight in Graph
+                                    </button>
+                                    <button id="btn-clear-similar" class="secondary-btn" style="flex: 1;">
+                                        Clear
+                                    </button>
+                                </div>
+                                <div id="similarity-results" class="embed-results" style="display: none;">
+                                    <h4>Similar Nodes</h4>
+                                    <div id="similar-nodes-list" class="similar-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
             </div>
         </div>
 
+        <!-- MAIN CONTENT AREA -->
         <div class="main-content">
             <div class="toolbar">
                 <div class="toolbar-search">
@@ -435,8 +1109,8 @@
                     <span id="edges-progress"></span>
                 </div>
                 <div class="toolbar-actions">
-                    <button id="fit-btn">Fit</button>
-                    <button id="center-btn">Center</button>
+                    <button id="fit-btn" data-icon="fit">Fit</button>
+                    <button id="center-btn" data-icon="center">Center</button>
                     <button id="load-edges-btn" title="Incrementally load edges for large graphs">Load edges</button>
                     <button id="data-explorer-btn" title="Explore all node data">Data Explorer</button>
                 </div>
@@ -452,6 +1126,7 @@
             </div>
         </div>
 
+       <!-- INFO PANEL (RIGHT SIDE) -->
        <div id="info-panel" class="info-panel-right" style="display:none">
             <div class="info-header">
                 <h3>Node Information</h3>
@@ -470,9 +1145,9 @@
                 
                 <!-- Navigation -->
                 <div class="nav-bar">
-                    <button class="nav-btn nav-back-btn" disabled>← Back</button>
-                    <button class="nav-btn nav-in-btn" title="Select incoming neighbors">← In</button>
-                    <button class="nav-btn nav-out-btn" title="Select outgoing neighbors">Out →</button>
+                    <button class="nav-btn nav-back-btn" disabled>&larr; Back</button>
+                    <button class="nav-btn nav-in-btn" title="Select incoming neighbors">&larr; In</button>
+                    <button class="nav-btn nav-out-btn" title="Select outgoing neighbors">Out &rarr;</button>
                     <button id="neighbor-toggle-btn" class="nav-btn" title="Highlight neighbors">Highlight</button>
                 </div>
                 
@@ -513,7 +1188,7 @@
                     <h3>Multiple Selection</h3>
                     <div class="multi-actions">
                         <button id="copy-selected-btn" class="icon-btn" title="Copy selected data" data-icon="copy"></button>
-                        <button id="export-csv-btn" class="icon-btn" title="Export to CSV" data-icon="save"></button>
+                        <button id="export-csv-btn" class="icon-btn" title="Export to CSV" data-icon="download"></button>
                     </div>
                 </div>
                 
@@ -534,10 +1209,10 @@
                 
                 <!-- Navigation -->
                 <div class="nav-bar">
-                    <button class="nav-btn nav-back-btn" disabled>← Back</button>
+                    <button class="nav-btn nav-back-btn" disabled>&larr; Back</button>
                     <button class="nav-btn nav-origin-btn" title="Reset to origin">Origin</button>
-                    <button class="nav-btn nav-in-btn" title="Add incoming neighbors">← In</button>
-                    <button class="nav-btn nav-out-btn" title="Add outgoing neighbors">Out →</button>
+                    <button class="nav-btn nav-in-btn" title="Add incoming neighbors">&larr; In</button>
+                    <button class="nav-btn nav-out-btn" title="Add outgoing neighbors">Out &rarr;</button>
                 </div>
                 
                 <!-- Scrollable content area -->
@@ -568,7 +1243,7 @@
         <div class="tokens-modal">
             <div class="tokens-modal-header">
                 <h3>Tokens (<span id="modal-token-count">0</span>)</h3>
-                <button class="tokens-modal-close" onclick="InfoPanel.closeTokensModal()">×</button>
+                <button class="tokens-modal-close" onclick="InfoPanel.closeTokensModal()">&times;</button>
             </div>
             <div class="tokens-modal-body">
                 <div class="tokens-list" id="tokens-list"></div>
@@ -596,6 +1271,13 @@
     <script src="/static/js/snapshot-analysis.js"></script>
     <script src="/static/js/timeseries.js"></script>
     <script src="/static/js/temporal-composite.js"></script>
+    <script src="/static/js/layout.js"></script>
+    <script src="/static/js/path-analysis.js"></script>
+    <script src="/static/js/subgraph-tools.js"></script>
+    <script src="/static/js/flow-analysis.js"></script>
+    <script src="/static/js/capacity-flow.js"></script>
+    <script src="/static/js/embeddings.js"></script>
+    <script src="/static/js/embedding-panel.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

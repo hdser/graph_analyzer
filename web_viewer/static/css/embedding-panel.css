@@ -1,0 +1,395 @@
+/* Embedding Panel CSS Fixes */
+
+/* Fix button overflow - override the margin from .primary-btn */
+#panel-embeddings .primary-btn,
+#panel-embeddings .secondary-btn {
+    width: 100% !important;
+    margin: 12px 0 !important;
+    box-sizing: border-box;
+}
+
+/* First button after text - less top margin */
+#panel-embeddings .embed-info + .primary-btn,
+#panel-embeddings .style-row + .primary-btn,
+#panel-embeddings details + .primary-btn {
+    margin-top: 12px !important;
+}
+
+/* Fix tab overflow - wrap to multiple lines */
+.embedding-tabs,
+#panel-embeddings .embedding-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 12px;
+}
+
+.embed-tab-btn,
+#panel-embeddings .embed-tab-btn {
+    flex: 1 1 auto;
+    min-width: 70px;
+    padding: 8px 10px;
+    font-size: 11px;
+    white-space: nowrap;
+    box-sizing: border-box;
+    margin: 0 !important;
+}
+
+/* Status indicator */
+.embedding-status,
+#panel-embeddings .embedding-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #252525;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.embedding-status .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #888;
+    flex-shrink: 0;
+}
+
+.embedding-status.available .status-dot {
+    background: #4CAF50;
+    box-shadow: 0 0 6px #4CAF50;
+}
+
+.embedding-status.unavailable .status-dot {
+    background: #f44336;
+}
+
+/* Model status box */
+.model-status-box,
+#panel-embeddings .model-status-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #252525;
+    padding: 6px 10px;
+    border-radius: 4px;
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.model-status-box .model-name {
+    font-size: 13px;
+    color: #fff;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Results styling */
+.embed-results,
+#panel-embeddings .embed-results {
+    margin-top: 12px;
+    padding: 12px;
+    background: #1e2a3a;
+    border: 1px solid #2a4a6a;
+    border-radius: 6px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.embed-results h4 {
+    font-size: 11px;
+    font-weight: 600;
+    color: #4A90E2;
+    margin: 0 0 10px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.result-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+.result-row span:first-child {
+    color: #888;
+}
+
+.result-row span:last-child {
+    color: #fff;
+    font-weight: 500;
+}
+
+/* Progress bar */
+.embed-progress,
+#panel-embeddings .embed-progress {
+    margin-top: 12px;
+    padding: 12px;
+    background: #252525;
+    border-radius: 6px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.progress-bar-wrapper {
+    height: 6px;
+    background: #333;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.embed-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #4A90E2, #63B3ED);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.progress-text {
+    font-size: 11px;
+    color: #888;
+    text-align: center;
+}
+
+/* Community list */
+.community-list,
+#panel-embeddings .community-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-top: 8px;
+}
+
+.community-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px;
+    background: #252525;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.community-item:hover {
+    background: #333;
+}
+
+.community-id {
+    font-size: 12px;
+    color: #ccc;
+}
+
+.community-size {
+    font-size: 11px;
+    color: #888;
+}
+
+/* Similar nodes list */
+.similar-list,
+#panel-embeddings .similar-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-top: 8px;
+}
+
+.similar-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px;
+    background: #252525;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.similar-item:hover {
+    background: #333;
+}
+
+.similar-id {
+    font-size: 12px;
+    color: #ccc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.similar-score {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4CAF50;
+}
+
+/* Info text */
+.embed-info,
+#panel-embeddings .embed-info {
+    font-size: 12px;
+    color: #888;
+    margin: 0 0 12px 0;
+    line-height: 1.4;
+}
+
+/* Advanced details styling */
+.embed-advanced,
+#panel-embeddings .embed-advanced {
+    margin: 12px 0;
+}
+
+.embed-advanced summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: #aaa;
+    padding: 8px 0;
+}
+
+.embed-advanced summary:hover {
+    color: #fff;
+}
+
+.embed-advanced[open] summary {
+    margin-bottom: 8px;
+}
+
+/* Secondary button fixes */
+#panel-embeddings .secondary-btn {
+    background: #2a2a2a;
+    border: 1px solid #333;
+    color: #ccc;
+}
+
+#panel-embeddings .secondary-btn:hover {
+    background: #333;
+    border-color: #444;
+}
+
+/* Model dropdown styles */
+.model-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #252525;
+    border: 1px solid #444;
+    border-radius: 6px;
+    margin-top: 4px;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+}
+
+.model-dropdown-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #333;
+    background: #1e1e1e;
+}
+
+.model-dropdown-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.model-dropdown-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: 1px solid #333;
+}
+
+.model-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.model-dropdown-item:hover {
+    background: #333;
+}
+
+.model-item-name {
+    font-size: 13px;
+    color: #fff;
+}
+
+.model-item-info {
+    font-size: 11px;
+    color: #888;
+}
+
+/* Training info box - shows current graph */
+.training-info-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #1a2332;
+    border: 1px solid #2a3a4a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.training-info-box .label {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.training-info-box .graph-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #5dade2;
+}
+
+/* Button row for Apply/Clear */
+.btn-row {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-row .btn-secondary {
+    flex: 1;
+    margin: 0 !important;
+}
+
+/* Form hint text */
+.form-hint {
+    display: block;
+    font-size: 10px;
+    color: #666;
+    margin-top: 4px;
+}
+
+/* Style row with relative position for dropdown */
+#panel-embeddings .style-row {
+    position: relative;
+}
+
+/* Scrollbar for lists */
+.community-list::-webkit-scrollbar,
+.similar-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.community-list::-webkit-scrollbar-track,
+.similar-list::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+.community-list::-webkit-scrollbar-thumb,
+.similar-list::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+}

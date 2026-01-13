@@ -118,7 +118,9 @@ services:
       - LAYOUT_SERVICE_URL=http://layout:3000/layout
       
       # UI Mode
-      - HIDE_DATA_SOURCE_UI=true
+      - PRODUCTION_MODE=true
+      - UI_HIDDEN_PANELS=load,reload
+      - AUTO_LOAD_ON_STARTUP=true
       - DEFAULT_SQL_FILES=crc_v2_trusts.sql
       - DEFAULT_METRICS_MODE=essential
       
@@ -209,7 +211,9 @@ DB_PASSWORD=strong-password-here
 LAYOUT_SERVICE_URL=http://layout:3000/layout
 
 # UI Mode
-HIDE_DATA_SOURCE_UI=true
+PRODUCTION_MODE=true
+UI_HIDDEN_PANELS=load,reload
+AUTO_LOAD_ON_STARTUP=true
 DEFAULT_SQL_FILES=production_trusts.sql,production_flows.sql
 DEFAULT_PROPERTIES_FILES=production_avatars.sql
 DEFAULT_METRICS_MODE=essential
@@ -308,7 +312,9 @@ DB_PASSWORD=***
 DB_SSLMODE=require
 ENVIRONMENT=production
 PORT=8080
-HIDE_DATA_SOURCE_UI=true
+PRODUCTION_MODE=true
+UI_HIDDEN_PANELS=load,reload
+AUTO_LOAD_ON_STARTUP=true
 DEFAULT_SQL_FILES=crc_v2_trusts.sql
 EXTERNAL_API_BASE_URL=https://squid-app-3gxnl.ondigitalocean.app
 EXTERNAL_API_PROVIDERS=blacklist
@@ -473,7 +479,7 @@ LOG_FORMAT=json  # json or text
 |--------|--------|-----------------|
 | Response time | Application logs | > 5s average |
 | Memory usage | Container metrics | > 80% |
-| API cache age | `/api/api-properties/cache` | > TTL × 2 |
+| API cache age | `/api/api-properties/cache` | > TTL Ã— 2 |
 | Error rate | Application logs | > 1% |
 
 ---
@@ -670,6 +676,8 @@ docker-compose -f docker-compose.green.yml down
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HIDE_DATA_SOURCE_UI` | `false` | Hide data source controls |
+| `PRODUCTION_MODE` | `false` | Enable production mode |
+| `UI_HIDDEN_PANELS` | `load,reload` | Panels to hide (comma-separated) |
+| `AUTO_LOAD_ON_STARTUP` | (matches PRODUCTION_MODE) | Auto-load data on startup |
 | `DEFAULT_SQL_FILES` | (empty) | Auto-load SQL files |
 | `DEFAULT_PROPERTIES_FILES` | (empty) | Auto-load properties |

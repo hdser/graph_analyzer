@@ -4,13 +4,14 @@ Layout Service
 Handles graph layout computation with multiple backends:
 1. Cache lookup
 2. Cytoscape Desktop (py4cytoscape)
-3. External layout service (Node.js)
-4. Local spring layout (NumPy)
-5. Circular layout (fallback)
+3. igraph (python-igraph)
+4. ForceAtlas2 (fa2)
+5. External layout service (Node.js)
+6. Local spring layout (NumPy)
+7. Circular layout (fallback)
 """
 
 import time
-import json
 from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
@@ -21,6 +22,14 @@ from ..config import settings, HAS_CYTOSCAPE_DESKTOP
 
 if HAS_CYTOSCAPE_DESKTOP:
     import py4cytoscape as p4c
+
+from .layout_backends import (
+    IGraphLayoutBackend,
+    FA2LayoutBackend,
+    get_backend_info,
+    HAS_IGRAPH,
+    HAS_FA2
+)
 
 
 class LocalSpringLayout:
@@ -93,7 +102,6 @@ class LocalSpringLayout:
         unfixed_indices = np.where(~fixed_mask)[0]
         if len(unfixed_indices) > 0:
             if fixed_positions:
-                # Place near centroid of fixed nodes
                 fixed_indices = np.where(fixed_mask)[0]
                 if len(fixed_indices) > 0:
                     centroid = positions[fixed_indices].mean(axis=0)
@@ -111,48 +119,39 @@ class LocalSpringLayout:
                 edges.append((node_to_idx[u], node_to_idx[v]))
         edges = np.array(edges) if edges else np.empty((0, 2), dtype=int)
         
-        # Velocity
         velocity = np.zeros((n, 2))
         
-        # Iterate
         for iteration in range(self.max_iterations):
             forces = np.zeros((n, 2))
             
-            # Repulsion forces (all pairs) - use batched computation for efficiency
+            # Repulsion forces
             if n > 1:
                 for i in range(n):
                     if fixed_mask[i]:
                         continue
                     
-                    # Vector from all other nodes to this node
                     diff = positions[i] - positions
                     dist_sq = np.sum(diff ** 2, axis=1)
-                    dist_sq[i] = 1  # Avoid self
-                    dist_sq = np.maximum(dist_sq, 1)  # Minimum distance
+                    dist_sq[i] = 1
+                    dist_sq = np.maximum(dist_sq, 1)
                     
-                    # Repulsion force magnitude
                     force_mag = self.repulsion_strength / dist_sq
-                    
-                    # Direction
                     dist = np.sqrt(dist_sq)
                     direction = diff / dist[:, np.newaxis]
                     direction[i] = 0
                     
-                    # Sum forces
                     forces[i] = np.sum(force_mag[:, np.newaxis] * direction, axis=0)
             
-            # Spring forces (connected nodes)
+            # Spring forces
             if len(edges) > 0:
                 for u_idx, v_idx in edges:
                     diff = positions[v_idx] - positions[u_idx]
                     dist = np.linalg.norm(diff)
                     
                     if dist > 0:
-                        # Spring force
                         displacement = dist - self.spring_length
                         force_mag = self.spring_strength * displacement
                         direction = diff / dist
-                        
                         force = force_mag * direction
                         
                         if not fixed_mask[u_idx]:
@@ -160,10 +159,8 @@ class LocalSpringLayout:
                         if not fixed_mask[v_idx]:
                             forces[v_idx] -= force
             
-            # Update velocity and position
             velocity = velocity * self.damping + forces
             
-            # Limit velocity
             speed = np.linalg.norm(velocity, axis=1, keepdims=True)
             speed = np.maximum(speed, 1e-10)
             velocity = np.where(
@@ -172,16 +169,13 @@ class LocalSpringLayout:
                 velocity
             )
             
-            # Update positions for unfixed nodes
             positions[~fixed_mask] += velocity[~fixed_mask]
             
-            # Check convergence
             max_movement = np.max(np.linalg.norm(velocity[~fixed_mask], axis=1)) if np.any(~fixed_mask) else 0
             if max_movement < self.convergence_threshold:
                 print(f"[LAYOUT] Converged at iteration {iteration}")
                 break
         
-        # Build result
         result = {}
         for node, idx in node_to_idx.items():
             result[str(node)] = {
@@ -196,18 +190,32 @@ class LayoutService:
     """
     Service for computing graph layouts with multiple backends.
     
-    Backend priority:
+    Backend priority (configurable via LAYOUT_BACKEND_PRIORITY):
     1. Cache lookup
     2. Cytoscape Desktop (if available and graph is small enough)
-    3. External layout service
-    4. Local spring layout
-    5. Circular layout (fallback)
+    3. igraph (if available)
+    4. ForceAtlas2 (if available)
+    5. External layout service
+    6. Local spring layout
+    7. Circular layout (fallback)
     """
     
     def __init__(self):
-        """Initialize layout service."""
+        """Initialize layout service with all available backends."""
         self.local_spring = LocalSpringLayout()
         self.cytoscape_available = self._check_cytoscape()
+        
+        # Initialize new backends
+        self.igraph_backend = IGraphLayoutBackend()
+        self.fa2_backend = FA2LayoutBackend()
+        
+        # Log available backends
+        print(f"[LAYOUT] Available backends:")
+        print(f"  Cytoscape Desktop: {'Y' if self.cytoscape_available else 'N'}")
+        print(f"  igraph: {'Y' if self.igraph_backend.is_available else 'N'}")
+        print(f"  ForceAtlas2: {'Y' if self.fa2_backend.is_available else 'N'}")
+        print(f"  Local Spring: Y")
+        print(f"  Circular: Y")
     
     def _check_cytoscape(self) -> bool:
         """Check if Cytoscape Desktop is available."""
@@ -220,12 +228,59 @@ class LayoutService:
         except Exception:
             return False
     
+    def get_available_backends(self) -> List[Dict]:
+        """Get list of available backends with their info."""
+        backends = []
+        
+        backends.append({
+            "id": "cytoscape_desktop",
+            "name": "Cytoscape Desktop",
+            "available": self.cytoscape_available,
+            "description": "Professional layouts via CyREST API",
+            "algorithms": ["force-directed-cl"],
+            "requires": "Cytoscape Desktop running"
+        })
+        
+        backends.extend(get_backend_info())
+        
+        backends.append({
+            "id": "layout_service",
+            "name": "External Layout Service",
+            "available": True,
+            "description": "Node.js Cytoscape.js headless",
+            "algorithms": ["cose"],
+            "requires": "Node.js server"
+        })
+        
+        backends.append({
+            "id": "local_spring",
+            "name": "Local Spring (NumPy)",
+            "available": True,
+            "description": "Built-in force-directed layout",
+            "algorithms": ["spring"],
+            "requires": "None"
+        })
+        
+        backends.append({
+            "id": "circular",
+            "name": "Circular",
+            "available": True,
+            "description": "Simple circular layout (fallback)",
+            "algorithms": ["circular"],
+            "requires": "None"
+        })
+        
+        return backends
+    
     def compute_layout(
         self,
         G: nx.Graph,
         graph_id: str,
         cached_layout: Optional[Dict[str, Dict[str, float]]] = None,
-        use_cytoscape: bool = True
+        use_cytoscape: bool = True,
+        preferred_backend: Optional[str] = None,
+        algorithm: Optional[str] = None,
+        **kwargs
     ) -> Tuple[Dict[str, Dict[str, float]], str, float]:
         """
         Compute layout for graph using best available backend.
@@ -235,6 +290,9 @@ class LayoutService:
             graph_id: Graph identifier
             cached_layout: Pre-computed layout to use if available
             use_cytoscape: Whether to try Cytoscape Desktop
+            preferred_backend: Force specific backend
+            algorithm: Algorithm for backends that support multiple
+            **kwargs: Backend-specific parameters
             
         Returns:
             Tuple of (positions, algorithm_name, computation_time)
@@ -243,7 +301,6 @@ class LayoutService:
         
         # Use cached layout if available
         if cached_layout:
-            # Filter to only include nodes in current graph
             positions = {
                 node: cached_layout[node]
                 for node in G.nodes()
@@ -253,7 +310,6 @@ class LayoutService:
             if len(positions) == len(G.nodes()):
                 return positions, "cached", time.time() - start_time
             elif len(positions) > 0:
-                # Partial cache - compute incremental layout
                 print(f"[LAYOUT] Partial cache hit: {len(positions)}/{len(G.nodes())} nodes")
                 new_nodes = [n for n in G.nodes() if n not in positions]
                 positions = self.compute_incremental_layout(G, positions, new_nodes)
@@ -262,53 +318,121 @@ class LayoutService:
         n_nodes = G.number_of_nodes()
         n_edges = G.number_of_edges()
         
-        # Try Cytoscape Desktop for small-medium graphs
-        if (use_cytoscape and self.cytoscape_available and 
-            n_edges <= settings.MAX_EDGES_FOR_CYTOSCAPE_DESKTOP):
-            try:
-                positions = self.compute_layout_via_cytoscape_desktop(G, graph_id)
-                if positions:
-                    return positions, "cytoscape_desktop", time.time() - start_time
-            except Exception as e:
-                print(f"[LAYOUT] Cytoscape Desktop failed: {e}")
-        
-        # Try external layout service
-        try:
-            positions = self.compute_layout_via_service(G)
+        # If preferred backend specified, try it first
+        if preferred_backend:
+            positions = self._try_backend(
+                preferred_backend, G, graph_id, n_edges, use_cytoscape, algorithm, **kwargs
+            )
             if positions:
-                return positions, "layout_service", time.time() - start_time
-        except Exception as e:
-            print(f"[LAYOUT] External service failed: {e}")
+                return positions, f"{preferred_backend}", time.time() - start_time
         
-        # Fall back to local spring layout for smaller graphs
-        if n_nodes <= 10000:
-            print(f"[LAYOUT] Using local spring layout for {n_nodes} nodes")
-            positions = self.local_spring.compute_layout(G)
-            return positions, "local_spring", time.time() - start_time
+        # Follow configured priority order
+        for backend in settings.LAYOUT_BACKEND_PRIORITY:
+            if backend == "cached":
+                continue  # Already handled
+            
+            positions = self._try_backend(
+                backend, G, graph_id, n_edges, use_cytoscape, algorithm, **kwargs
+            )
+            if positions:
+                return positions, backend, time.time() - start_time
         
-        # Final fallback: circular layout
-        print(f"[LAYOUT] Using circular layout for {n_nodes} nodes")
+        # Final fallback
+        print(f"[LAYOUT] All backends failed, using circular for {n_nodes} nodes")
         positions = self.compute_circular_layout(G)
         return positions, "circular", time.time() - start_time
+    
+    def _try_backend(
+        self,
+        backend: str,
+        G: nx.Graph,
+        graph_id: str,
+        n_edges: int,
+        use_cytoscape: bool,
+        algorithm: Optional[str] = None,
+        initial_positions: Optional[Dict[str, Dict[str, float]]] = None,
+        **kwargs
+    ) -> Optional[Dict[str, Dict[str, float]]]:
+        """
+        Try a specific layout backend.
+        
+        Args:
+            backend: Backend name
+            G: NetworkX graph  
+            graph_id: Graph identifier
+            n_edges: Number of edges
+            use_cytoscape: Whether to try Cytoscape Desktop
+            algorithm: Algorithm for backends that support multiple
+            initial_positions: Starting positions for warm start
+            **kwargs: Backend-specific parameters
+        """
+        n_nodes = G.number_of_nodes()
+        
+        if backend == "cytoscape_desktop":
+            if use_cytoscape and self.cytoscape_available and n_edges <= settings.MAX_EDGES_FOR_CYTOSCAPE_DESKTOP:
+                try:
+                    return self.compute_layout_via_cytoscape_desktop(G, graph_id)
+                except Exception as e:
+                    print(f"[LAYOUT] Cytoscape Desktop failed: {e}")
+        
+        elif backend == "igraph":
+            if self.igraph_backend.is_available:
+                try:
+                    algo = algorithm or settings.IGRAPH_DEFAULT_ALGORITHM
+                    positions = self.igraph_backend.compute_layout(
+                        G,
+                        algorithm=algo,
+                        scale=settings.IGRAPH_SCALE,
+                        initial_positions=initial_positions,
+                        **kwargs
+                    )
+                    if positions:
+                        return positions
+                except Exception as e:
+                    print(f"[LAYOUT] igraph failed: {e}")
+        
+        elif backend == "fa2":
+            if self.fa2_backend.is_available:
+                try:
+                    positions = self.fa2_backend.compute_layout(
+                        G,
+                        iterations=kwargs.get('iterations', settings.FA2_ITERATIONS),
+                        barnes_hut_optimize=kwargs.get('barnes_hut_optimize', settings.FA2_BARNES_HUT_OPTIMIZE),
+                        barnes_hut_theta=kwargs.get('barnes_hut_theta', settings.FA2_BARNES_HUT_THETA),
+                        scaling_ratio=kwargs.get('scaling_ratio', settings.FA2_SCALING_RATIO),
+                        gravity=kwargs.get('gravity', settings.FA2_GRAVITY),
+                        scale=kwargs.get('scale', settings.FA2_SCALE),
+                        initial_positions=initial_positions,
+                    )
+                    if positions:
+                        return positions
+                except Exception as e:
+                    print(f"[LAYOUT] ForceAtlas2 failed: {e}")
+        
+        elif backend == "layout_service":
+            try:
+                positions = self.compute_layout_via_service(G)
+                if positions:
+                    return positions
+            except Exception as e:
+                print(f"[LAYOUT] External service failed: {e}")
+        
+        elif backend == "local_spring":
+            if n_nodes <= settings.MAX_NODES_FOR_LOCAL_SPRING:
+                print(f"[LAYOUT] Using local spring for {n_nodes} nodes")
+                return self.local_spring.compute_layout(G)
+        
+        elif backend == "circular":
+            return self.compute_circular_layout(G)
+        
+        return None
     
     def compute_layout_via_cytoscape_desktop(
         self, 
         G: nx.Graph, 
         graph_id: str
     ) -> Optional[Dict[str, Dict[str, float]]]:
-        """
-        Compute layout using Cytoscape Desktop via CyREST.
-        
-        Uses direct CyREST API calls to bypass vizmap/styles timeout issues
-        that can occur with high-level py4cytoscape functions.
-        
-        Args:
-            G: NetworkX graph
-            graph_id: Graph identifier for naming
-            
-        Returns:
-            Positions dictionary or None if failed
-        """
+        """Compute layout using Cytoscape Desktop via CyREST."""
         if not self.cytoscape_available:
             return None
         
@@ -316,7 +440,6 @@ class LayoutService:
         
         net_suid = None
         try:
-            # Build payloads from NetworkX graph
             nodes_payload = [{"data": {"id": str(node)}} for node in G.nodes()]
             edges_payload = [
                 {"data": {"source": str(src), "target": str(tgt)}} 
@@ -325,22 +448,19 @@ class LayoutService:
             
             title = f"web_viewer_{graph_id}_{int(time.time())}"
             
-            # Create network via direct CyREST (bypassing vizmap/styles timeout issues)
-            print(f"[LAYOUT] Creating network via CyREST (bypassing vizmap/styles)...")
+            print(f"[LAYOUT] Creating network via CyREST...")
             res = p4c.cyrest_post("networks", body={
                 "data": {"name": title},
                 "elements": {"nodes": nodes_payload, "edges": edges_payload}
             })
             net_suid = res['networkSUID']
             
-            # Explicitly create a view (required for layout positions)
             try:
                 p4c.cyrest_post(f"networks/{net_suid}/views")
-                time.sleep(0.2)  # Brief wait for view initialization
+                time.sleep(0.2)
             except Exception as e:
                 print(f"[LAYOUT] View creation note: {e}")
             
-            # Set layout properties
             print(f"[LAYOUT] Applying force-directed layout...")
             p4c.set_layout_properties(
                 'force-directed-cl',
@@ -356,10 +476,8 @@ class LayoutService:
                 }
             )
             
-            # Apply the layout
             p4c.layout_network("force-directed-cl", network=net_suid)
             
-            # Get positions from view (must use view JSON, not node table)
             print(f"[LAYOUT] Getting positions from view...")
             views = p4c.get_network_views(net_suid)
             if not views:
@@ -378,7 +496,6 @@ class LayoutService:
                     if isinstance(node, dict):
                         node_data = node.get('data', {})
                         node_position = node.get('position', {})
-                        # Try multiple possible name fields
                         node_id = (
                             node_data.get('name') or 
                             node_data.get('shared_name') or 
@@ -391,7 +508,6 @@ class LayoutService:
                                 'y': float(node_position['y'])
                             }
             
-            # Clean up - delete the network from Cytoscape
             try:
                 p4c.delete_network(net_suid)
             except Exception:
@@ -406,88 +522,19 @@ class LayoutService:
             
         except Exception as e:
             print(f"[LAYOUT] Cytoscape Desktop error: {e}")
-            # Clean up on error
             try:
                 if net_suid is not None:
                     p4c.delete_network(net_suid)
             except Exception:
                 pass
             return None
-       
-    def compute_layout_via_cytoscape_desktop2(
-        self, 
-        G: nx.Graph, 
-        graph_id: str
-    ) -> Optional[Dict[str, Dict[str, float]]]:
-        """
-        Compute layout using Cytoscape Desktop.
-        
-        Args:
-            G: NetworkX graph
-            graph_id: Graph identifier for naming
-            
-        Returns:
-            Positions dictionary or None if failed
-        """
-        if not self.cytoscape_available:
-            return None
-        
-        print(f"[LAYOUT] Computing via Cytoscape Desktop ({G.number_of_nodes()} nodes)")
-        
-        try:
-            # Create network in Cytoscape
-            network_suid = p4c.create_network_from_networkx(
-                G, 
-                title=graph_id,
-                collection="GraphAnalyzer"
-            )
-            
-            # Apply force-directed layout
-            p4c.layout_network(
-                'force-directed-cl',
-                network=network_suid,
-                parameters={
-                    'numIterations': 400,
-                    'defaultSpringLength': 100,
-                    'defaultSpringCoefficient': 0.0001
-                }
-            )
-            
-            # Get positions
-            node_table = p4c.get_node_table(network=network_suid)
-            
-            positions = {}
-            for _, row in node_table.iterrows():
-                node_name = str(row.get('name', row.get('SUID', '')))
-                x = row.get('x', row.get('X_LOCATION', 0))
-                y = row.get('y', row.get('Y_LOCATION', 0))
-                positions[node_name] = {'x': float(x), 'y': float(y)}
-            
-            # Clean up
-            p4c.delete_network(network=network_suid)
-            
-            print(f"[LAYOUT] Cytoscape Desktop complete: {len(positions)} positions")
-            return positions
-            
-        except Exception as e:
-            print(f"[LAYOUT] Cytoscape Desktop error: {e}")
-            return None
     
     def compute_layout_via_service(
         self, 
         G: nx.Graph
     ) -> Optional[Dict[str, Dict[str, float]]]:
-        """
-        Compute layout via external Node.js service.
-        
-        Args:
-            G: NetworkX graph
-            
-        Returns:
-            Positions dictionary or None if failed
-        """
+        """Compute layout via external Node.js service."""
         try:
-            # Prepare elements for Cytoscape.js
             elements = []
             
             for node in G.nodes():
@@ -506,7 +553,6 @@ class LayoutService:
                     }
                 })
             
-            # Send to layout service
             response = requests.post(
                 settings.LAYOUT_SERVICE_URL,
                 json={'elements': elements},
@@ -536,16 +582,7 @@ class LayoutService:
         G: nx.Graph,
         radius: float = 1000
     ) -> Dict[str, Dict[str, float]]:
-        """
-        Compute simple circular layout as fallback.
-        
-        Args:
-            G: NetworkX graph
-            radius: Circle radius
-            
-        Returns:
-            Positions dictionary
-        """
+        """Compute simple circular layout as fallback."""
         nodes = list(G.nodes())
         n = len(nodes)
         
@@ -568,29 +605,17 @@ class LayoutService:
         existing_positions: Dict[str, Dict[str, float]],
         new_nodes: List[str]
     ) -> Dict[str, Dict[str, float]]:
-        """
-        Compute positions for new nodes while keeping existing nodes fixed.
-        
-        Args:
-            G: NetworkX graph
-            existing_positions: Positions of existing nodes
-            new_nodes: List of new node IDs to position
-            
-        Returns:
-            Complete positions dictionary
-        """
+        """Compute positions for new nodes while keeping existing nodes fixed."""
         if not new_nodes:
             return existing_positions
         
         print(f"[LAYOUT] Incremental layout for {len(new_nodes)} new nodes")
         
-        # Convert existing positions to tuple format
         fixed_positions = {
             node: (pos['x'], pos['y'])
             for node, pos in existing_positions.items()
         }
         
-        # Compute layout with fixed positions
         positions = self.local_spring.compute_layout(
             G,
             fixed_positions=fixed_positions,
@@ -598,3 +623,77 @@ class LayoutService:
         )
         
         return positions
+    
+    def recompute_layout(
+        self,
+        G: nx.Graph,
+        graph_id: str,
+        backend: Optional[str] = None,
+        algorithm: Optional[str] = None,
+        initial_positions: Optional[Dict[str, Dict[str, float]]] = None,
+        from_scratch: bool = True,
+        **kwargs
+    ) -> Tuple[Dict[str, Dict[str, float]], str, str, float]:
+        """
+        Recompute layout for an existing graph.
+        
+        Args:
+            G: NetworkX graph
+            graph_id: Graph identifier
+            backend: Specific backend to use
+            algorithm: Algorithm for backends that support multiple
+            initial_positions: Starting positions for warm start (overrides from_scratch)
+            from_scratch: If False and no initial_positions, use existing layout as starting point
+            **kwargs: Backend-specific parameters
+            
+        Returns:
+            Tuple of (positions, backend_name, algorithm_name, computation_time)
+        """
+        start_time = time.time()
+        
+        # Determine initial positions for warm start
+        init_pos = None
+        if initial_positions:
+            init_pos = initial_positions
+        elif not from_scratch:
+            # Try to load existing layout for warm start
+            from .cache_service import CacheService
+            cache = CacheService()
+            init_pos = cache.get_cached_layout(graph_id)
+            if init_pos:
+                print(f"[LAYOUT] Using existing layout as starting point ({len(init_pos)} positions)")
+        
+        n_edges = G.number_of_edges()
+        
+        # If specific backend requested
+        if backend:
+            positions = self._try_backend(
+                backend, G, graph_id, n_edges, 
+                use_cytoscape=True,
+                algorithm=algorithm,
+                initial_positions=init_pos,
+                **kwargs
+            )
+            if positions:
+                algo_name = algorithm or (backend if backend == 'cytoscape_desktop' else 'auto')
+                return positions, backend, algo_name, time.time() - start_time
+        
+        # Try backends in priority order
+        for backend_name in settings.LAYOUT_BACKEND_PRIORITY:
+            if backend_name == "cached":
+                continue  # Skip cache for recompute
+            
+            positions = self._try_backend(
+                backend_name, G, graph_id, n_edges,
+                use_cytoscape=True,
+                algorithm=algorithm,
+                initial_positions=init_pos,
+                **kwargs
+            )
+            if positions:
+                algo_name = algorithm or backend_name
+                return positions, backend_name, algo_name, time.time() - start_time
+        
+        # Fallback to circular
+        positions = self.compute_circular_layout(G)
+        return positions, "circular", "circular", time.time() - start_time

@@ -23,8 +23,54 @@ scikit-learn>=1.3.0
 # Server-Sent Events (for auto-reload)
 sse-starlette>=1.6.0
 
-# Optional: Cytoscape Desktop Integration
+# Cytoscape Desktop Integration (optional)
 py4cytoscape>=1.7.0
 requests>=2.31.0
 
+# Data Storage
 pyarrow>=14.0.0
+
+# ===========================================
+# Layout Backends (100% Free & Open Source)
+# ===========================================
+
+# igraph - Fast C-based graph library (REQUIRED)
+# Supports: DrL, Fruchterman-Reingold, Kamada-Kawai, LGL
+# License: GPL-2.0
+igraph>=0.11.0
+
+# OR-Tools for optimized max flow computation 
+ortools>=9.14
+
+# ForceAtlas2 - Gephi's layout algorithm (OPTIONAL)
+# fa2_modified is the maintained fork that works with Python 3.9+
+# License: GPL-3.0
+# https://github.com/AminAlam/fa2_modified
+fa2_modified>=0.4.0
+
+# ===========================================
+# Deep Learning - GIT-CD (OPTIONAL)
+# ===========================================
+# For node embeddings, community detection, and similarity search
+# Install separately based on your CUDA version:
+#
+# CPU only:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install torch-geometric
+#
+# CUDA 11.8:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu118
+#   pip install torch-geometric
+#
+# CUDA 12.1:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   pip install torch-geometric
+
+# PyTorch - Core deep learning framework
+# torch>=2.0.0  # Install separately per instructions above
+
+# PyTorch Geometric - Graph neural networks
+# torch-geometric>=2.4.0  # Install separately per instructions above
+
+# UMAP - Dimensionality reduction for embedding visualization
+umap-learn>=0.5.0

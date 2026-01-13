@@ -39,7 +39,7 @@ from .snapshot_layout import SnapshotLayout
 
 # Conditional imports
 try:
-    from engines.graph_metrics import GraphMetrics
+    from engines.metrics import MetricEngine, METRIC_CATEGORIES, METRIC_PRESETS
     HAS_METRICS = True
 except ImportError:
     HAS_METRICS = False
@@ -91,8 +91,8 @@ class SnapshotService:
         Create a single snapshot.
         
         Process:
-        1. Check if snapshot exists → return existing
-        2. Execute parameterized SQL → edges DataFrame
+        1. Check if snapshot exists â†’ return existing
+        2. Execute parameterized SQL â†’ edges DataFrame
         3. Get block timestamp
         4. Load or initialize master layout
         5. Derive layout for snapshot
@@ -367,24 +367,10 @@ class SnapshotService:
         """
         engine = self._get_db_engine()
         
-        # Apply count limit from settings
-        count = min(request.count or 30, settings.SNAPSHOT_MAX_SUGGESTIONS)
-        
-        # Build date range - calculate start_date based on count and interval if not provided
+        # Build date range
         end_date = request.end_date or datetime.utcnow().date()
-        
-        if request.start_date:
-            start_date = request.start_date
-        else:
-            # Calculate start_date based on count and interval
-            # Add buffer to ensure we get enough periods
-            interval_days = {
-                'daily': 1,
-                'weekly': 7,
-                'monthly': 30
-            }
-            days_needed = count * interval_days.get(request.interval, 1) + 7  # +7 buffer
-            start_date = end_date - timedelta(days=days_needed)
+        start_date = request.start_date or (end_date - timedelta(days=30))
+        count = min(request.count or 30, settings.SNAPSHOT_MAX_SUGGESTIONS)
         
         # Map interval to PostgreSQL date_trunc argument
         interval_map = {
@@ -629,12 +615,10 @@ class SnapshotService:
         print(f"[SNAPSHOT] Computing metrics for {G.number_of_nodes()} nodes")
         
         try:
-            # Map MetricsMode to GraphMetrics mode string
-            # Use the app's DEFAULT_METRICS_MODE from config for STANDARD
+            # Map MetricsMode to mode string
             if metrics_mode == MetricsMode.BASIC:
                 mode = 'basic'
             elif metrics_mode == MetricsMode.STANDARD:
-                # Use the same default as the main app
                 mode = settings.DEFAULT_METRICS_MODE
             elif metrics_mode == MetricsMode.FULL:
                 mode = 'all'
@@ -643,9 +627,24 @@ class SnapshotService:
             
             print(f"[SNAPSHOT] Using metrics mode: {mode}")
             
-            # Compute metrics - mode is passed to constructor
-            calculator = GraphMetrics(G, metrics_mode=mode)
-            metrics_df = calculator.compute_all()
+            # Parse mode to preset or categories
+            preset = None
+            categories = None
+            
+            if mode in METRIC_PRESETS:
+                preset = mode
+            elif ',' in mode:
+                categories = [c.strip() for c in mode.split(',') if c.strip() in METRIC_CATEGORIES]
+                if not categories:
+                    preset = "basic"
+            elif mode in METRIC_CATEGORIES:
+                categories = [mode]
+            else:
+                preset = "basic"
+            
+            # Compute metrics using MetricEngine
+            engine = MetricEngine(G)
+            metrics_df = engine.compute(preset=preset, categories=categories)
             
             if metrics_df is not None and len(metrics_df) > 0:
                 # Ensure avatar column exists
@@ -657,6 +656,8 @@ class SnapshotService:
                 
         except Exception as e:
             print(f"[SNAPSHOT] Warning: Metrics computation failed: {e}")
+        
+        return None, []
         
         return None, []
     

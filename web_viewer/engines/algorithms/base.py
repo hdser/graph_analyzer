@@ -1,200 +1,170 @@
 """
-Base Classes for Anomaly Detection Algorithms
+Anomaly Detection Algorithm Base
 
-Defines the interface all algorithms must implement.
+Base classes and interfaces for anomaly detection algorithms.
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Any, Optional
 from enum import Enum
 
 import numpy as np
+
+
+class AlgorithmType(Enum):
+    """Types of anomaly detection algorithms."""
+    STATISTICAL = "statistical"
+    MACHINE_LEARNING = "machine_learning"
+    DENSITY_BASED = "density_based"
+    DISTANCE_BASED = "distance_based"
 
 
 @dataclass
 class ParameterSpec:
     """Specification for an algorithm parameter."""
     name: str
-    param_type: str  # "float", "int", "bool", "str"
+    param_type: str  # "float", "int", "str", "bool"
     default: Any
     min_value: Optional[float] = None
     max_value: Optional[float] = None
     choices: Optional[List[Any]] = None
     description: str = ""
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            'name': self.name,
-            'type': self.param_type,
-            'default': self.default,
-            'min': self.min_value,
-            'max': self.max_value,
-            'choices': self.choices,
-            'description': self.description,
-        }
-    
-    def validate(self, value: Any) -> Any:
-        """Validate and convert parameter value."""
-        if value is None:
-            return self.default
-        
-        # Type conversion
-        if self.param_type == "float":
-            value = float(value)
-        elif self.param_type == "int":
-            value = int(value)
-        elif self.param_type == "bool":
-            value = bool(value)
-        elif self.param_type == "str":
-            value = str(value)
-        
-        # Range check
-        if self.min_value is not None and value < self.min_value:
-            raise ValueError(f"Parameter {self.name} must be >= {self.min_value}")
-        if self.max_value is not None and value > self.max_value:
-            raise ValueError(f"Parameter {self.name} must be <= {self.max_value}")
-        
-        # Choice check
-        if self.choices is not None and value not in self.choices:
-            raise ValueError(f"Parameter {self.name} must be one of {self.choices}")
-        
-        return value
 
 
 @dataclass
 class AlgorithmInfo:
-    """Information about an algorithm."""
+    """Information about an anomaly detection algorithm."""
     name: str
     display_name: str
     description: str
-    complexity: str
-    supports_multivariate: bool
-    requires_sklearn: bool
-    parameters: Dict[str, ParameterSpec]
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            'name': self.name,
-            'display_name': self.display_name,
-            'description': self.description,
-            'complexity': self.complexity,
-            'multivariate': self.supports_multivariate,
-            'requires_sklearn': self.requires_sklearn,
-            'parameters': {
-                name: spec.to_dict()
-                for name, spec in self.parameters.items()
-            },
-        }
+    algorithm_type: AlgorithmType
+    requires_sklearn: bool = False
+    supports_multivariate: bool = True
+    complexity: str = "O(n)"
+    max_recommended_nodes: Optional[int] = None
+    supports_incremental: bool = False
+    parameters: Dict[str, ParameterSpec] = field(default_factory=dict)
+    default_params: Dict[str, Any] = field(default_factory=dict)
+    param_descriptions: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class AlgorithmOutput:
-    """Output from an algorithm's fit_predict method."""
-    raw_scores: np.ndarray
-    anomaly_mask: np.ndarray
-    threshold_used: float
-    per_metric_scores: Optional[Dict[str, np.ndarray]] = None
-    extra_info: Dict[str, Any] = field(default_factory=dict)
+    """Output from anomaly detection algorithm."""
+    raw_scores: np.ndarray  # Anomaly scores (higher = more anomalous)
+    anomaly_mask: np.ndarray  # Boolean mask (True = anomaly)
+    threshold_used: float  # Threshold value used
+    per_metric_scores: Optional[Dict[str, np.ndarray]] = None  # Per-feature scores
 
 
-class AnomalyAlgorithmBase(ABC):
+class BaseAnomalyAlgorithm(ABC):
     """
-    Base class for all anomaly detection algorithms.
+    Abstract base class for all anomaly detection algorithms.
     
-    Subclasses must implement:
-    - fit_predict(): Run detection and return scores/labels
-    - get_info(): Return algorithm metadata
-    
-    All algorithms are metric-agnostic - they work with 
-    a preprocessed data matrix X.
+    Algorithms compute anomaly scores for each data point.
+    Higher scores indicate more anomalous points.
     """
     
-    # Class attributes to be overridden by subclasses
-    name: str = "base"
-    display_name: str = "Base Algorithm"
-    description: str = "Base anomaly detection algorithm"
-    complexity: str = "O(n)"
-    supports_multivariate: bool = True
+    name: str = ""
+    display_name: str = ""
+    description: str = ""
+    algorithm_type: AlgorithmType = AlgorithmType.STATISTICAL
     requires_sklearn: bool = False
+    supports_multivariate: bool = True
+    complexity: str = "O(n)"
+    max_recommended_nodes: Optional[int] = None
     
-    # Parameter specifications
-    parameters: Dict[str, ParameterSpec] = {}
+    def __init__(self, **kwargs):
+        """Initialize algorithm with parameters."""
+        self.params = kwargs
     
-    def __init__(self):
+    @abstractmethod
+    def fit_predict(self, X: np.ndarray, params: Dict[str, Any]) -> AlgorithmOutput:
+        """
+        Compute anomaly scores for data.
+        
+        Args:
+            X: Feature matrix (n_samples, n_features)
+            params: Algorithm parameters
+            
+        Returns:
+            AlgorithmOutput with scores, mask, and threshold
+        """
         pass
     
-    @classmethod
-    def get_info(cls) -> AlgorithmInfo:
-        """Get algorithm information."""
-        return AlgorithmInfo(
-            name=cls.name,
-            display_name=cls.display_name,
-            description=cls.description,
-            complexity=cls.complexity,
-            supports_multivariate=cls.supports_multivariate,
-            requires_sklearn=cls.requires_sklearn,
-            parameters=cls.parameters,
-        )
-    
-    @classmethod
-    def get_default_params(cls) -> Dict[str, Any]:
-        """Get default parameter values."""
-        return {
-            name: spec.default
-            for name, spec in cls.parameters.items()
-        }
-    
-    def validate_params(self, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    def validate_params(self, parameters: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Validate and fill in default parameters.
         
         Args:
-            params: User-provided parameters (may be None or partial)
+            parameters: User-provided parameters (may be None)
             
         Returns:
-            Complete parameter dictionary with defaults filled in
+            Complete parameter dict with defaults filled in
         """
-        result = self.get_default_params()
+        defaults = self.get_default_params()
+        if parameters is None:
+            return defaults
         
-        if params:
-            for name, value in params.items():
-                if name in self.parameters:
-                    result[name] = self.parameters[name].validate(value)
-        
+        # Merge with defaults
+        result = defaults.copy()
+        result.update(parameters)
         return result
     
-    @abstractmethod
-    def fit_predict(
-        self,
-        X: np.ndarray,
-        params: Dict[str, Any],
-    ) -> AlgorithmOutput:
-        """
-        Run anomaly detection.
-        
-        Args:
-            X: Data matrix (n_samples, n_features), preprocessed
-            params: Algorithm parameters (validated)
-            
-        Returns:
-            AlgorithmOutput with scores, labels, and metadata
-        """
-        pass
+    def get_info(self) -> AlgorithmInfo:
+        """Get algorithm information."""
+        return AlgorithmInfo(
+            name=self.name,
+            display_name=self.display_name,
+            description=self.description,
+            algorithm_type=self.algorithm_type,
+            requires_sklearn=self.requires_sklearn,
+            supports_multivariate=self.supports_multivariate,
+            complexity=self.complexity,
+            max_recommended_nodes=self.max_recommended_nodes,
+            parameters=self.get_parameter_specs(),
+            default_params=self.get_default_params(),
+            param_descriptions=self.get_param_descriptions(),
+        )
     
-    def _validate_input(self, X: np.ndarray) -> None:
-        """Validate input data."""
-        if X.ndim != 2:
-            raise ValueError(f"X must be 2D array, got {X.ndim}D")
+    @classmethod
+    def get_default_params(cls) -> Dict[str, Any]:
+        """Get default parameters for this algorithm."""
+        return {}
+    
+    @classmethod
+    def get_param_descriptions(cls) -> Dict[str, str]:
+        """Get parameter descriptions."""
+        return {}
+    
+    @classmethod
+    def get_parameter_specs(cls) -> Dict[str, ParameterSpec]:
+        """Get full parameter specifications."""
+        specs = {}
+        defaults = cls.get_default_params()
+        descriptions = cls.get_param_descriptions()
         
-        if X.shape[0] == 0:
-            raise ValueError("X has no samples")
+        for name, default in defaults.items():
+            if isinstance(default, bool):
+                param_type = "bool"
+            elif isinstance(default, int):
+                param_type = "int"
+            elif isinstance(default, float):
+                param_type = "float"
+            elif isinstance(default, str):
+                param_type = "str"
+            else:
+                param_type = "any"
+            
+            specs[name] = ParameterSpec(
+                name=name,
+                param_type=param_type,
+                default=default,
+                description=descriptions.get(name, ""),
+            )
         
-        if X.shape[1] == 0:
-            raise ValueError("X has no features")
-        
-        if np.any(np.isnan(X)):
-            raise ValueError("X contains NaN values after preprocessing")
-        
-        if np.any(np.isinf(X)):
-            raise ValueError("X contains infinite values after preprocessing")
+        return specs
+    
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.params})"
