@@ -54,7 +54,12 @@ GET /api/config
   ],
   "anomaly_available": true,
   "auto_reload_available": true,
-  "hide_data_source_ui": false,
+  "ui_mode": {
+    "production_mode": false,
+    "hidden_panels": [],
+    "auto_load_on_startup": false,
+    "available_panels": ["load", "reload", "snapshots", "metrics", "paths", "subgraph", "flow", "filter", "style", "layout", "embeddings"]
+  },
   "api_properties": {
     "enabled": true,
     "providers": [

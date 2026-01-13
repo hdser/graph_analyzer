@@ -89,11 +89,21 @@ async def get_config():
         "cached_layouts": network_service.list_cached_layouts(),
         "anomaly_available": HAS_ANOMALY,
         "auto_reload_available": HAS_SSE,
-        "hide_data_source_ui": settings.HIDE_DATA_SOURCE_UI,
+        
+        # UI Mode configuration
+        "ui_mode": {
+            "production_mode": settings.PRODUCTION_MODE,
+            "hidden_panels": settings.UI_HIDDEN_PANELS if settings.PRODUCTION_MODE else [],
+            "auto_load_on_startup": settings.AUTO_LOAD_ON_STARTUP,
+            "available_panels": settings.AVAILABLE_PANELS,
+        },
+        
+        # Default files for auto-load
         "default_sql_files": settings.DEFAULT_SQL_FILES,
         "default_properties_files": settings.DEFAULT_PROPERTIES_FILES,
         "default_metrics_mode": settings.DEFAULT_METRICS_MODE,
         "auto_reload_interval": settings.AUTO_RELOAD_DEFAULT_INTERVAL,
+        
         "api_properties": {
             "enabled": bool(settings.EXTERNAL_API_PROVIDERS),
             "providers": api_properties_service.available_providers,

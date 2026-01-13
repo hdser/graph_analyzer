@@ -40,10 +40,9 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
     import asyncio
     
-    # Startup: schedule auto-load if HIDE_DATA_SOURCE_UI is enabled
-    # We use a background task so the server can respond to health checks immediately
-    if settings.HIDE_DATA_SOURCE_UI and settings.DEFAULT_SQL_FILES:
-        print("[STARTUP] Production mode - scheduling auto-load in background...")
+    # Startup: schedule auto-load if enabled and SQL files configured
+    if settings.AUTO_LOAD_ON_STARTUP and settings.DEFAULT_SQL_FILES:
+        print("[STARTUP] Auto-load enabled - scheduling background data load...")
         
         async def background_auto_load():
             """Load network data in background after server starts."""
@@ -201,13 +200,13 @@ async def health_check():
     node_count = sum(G.number_of_nodes() for G in network_service.graphs.values()) if graphs_loaded else 0
     
     # Check if background loading is expected but not complete
-    loading_expected = settings.HIDE_DATA_SOURCE_UI and settings.DEFAULT_SQL_FILES
+    loading_expected = settings.AUTO_LOAD_ON_STARTUP and settings.DEFAULT_SQL_FILES
     loading_status = "ready" if graphs_loaded else ("loading" if loading_expected else "idle")
     
     return {
         "status": "healthy",
         "version": "2.2.0",
-        "mode": "production" if settings.HIDE_DATA_SOURCE_UI else "admin",
+        "mode": "production" if settings.PRODUCTION_MODE else "admin",
         "data_status": loading_status,
         "graphs_loaded": graphs_loaded,
         "node_count": node_count,

@@ -121,27 +121,36 @@ async function loadAvailableConfig() {
         // Metrics UI is now initialized by Metrics.init()
         // (Old metrics-graph and custom-metrics elements removed)
 
-
-        // Hide data source UI elements in production mode
-        if (config.hide_data_source_ui) {
-            console.log('[CONFIG] Production mode - hiding admin UI sections');
+        // Apply UI mode configuration
+        const uiMode = config.ui_mode || {};
+        const hiddenPanels = uiMode.hidden_panels || [];
+        const productionMode = uiMode.production_mode || false;
+        const autoLoadOnStartup = uiMode.auto_load_on_startup || false;
+        
+        if (productionMode && hiddenPanels.length > 0) {
+            console.log('[CONFIG] Production mode - hiding panels:', hiddenPanels);
             
-            // Hide entire sections using their IDs
-            // Note: metrics-section stays visible - users can still run metrics
-            const sectionsToHide = [
-                'data-source-section',   // Data Source (Load) section
-                'auto-reload-section',   // Auto Reload section  
-            ];
-            
-            sectionsToHide.forEach(id => {
-                const section = document.getElementById(id);
-                if (section) {
-                    section.style.display = 'none';
-                    console.log(`[CONFIG] Hidden section: ${id}`);
-                } else {
-                    console.warn(`[CONFIG] Section not found: ${id}`);
+            // Hide navigation buttons and panels for hidden panels
+            hiddenPanels.forEach(panelName => {
+                // Hide nav button
+                const navBtn = document.querySelector(`.nav-btn[data-panel="${panelName}"]`);
+                if (navBtn) {
+                    navBtn.style.display = 'none';
+                    console.log(`[CONFIG] Hidden nav button: ${panelName}`);
+                }
+                
+                // Hide panel
+                const panel = document.getElementById(`panel-${panelName}`);
+                if (panel) {
+                    panel.style.display = 'none';
+                    console.log(`[CONFIG] Hidden panel: ${panelName}`);
                 }
             });
+        }
+        
+        // Handle auto-load on startup
+        if (autoLoadOnStartup) {
+            console.log('[CONFIG] Auto-load enabled - waiting for data...');
             
             // Show loading indicator and start polling for data
             DOMCache.loading.style.display = 'flex';
@@ -165,7 +174,7 @@ async function loadAvailableConfig() {
 
 /**
  * Wait for background data load to complete using SSE.
- * Used in production mode when HIDE_DATA_SOURCE_UI is true.
+ * Used in production mode when AUTO_LOAD_ON_STARTUP is true.
  * SSE is much more efficient than polling - single connection, server pushes updates.
  */
 async function pollForDataReady() {
@@ -199,11 +208,11 @@ async function pollForDataReady() {
         if (status.status === 'loading') {
             updateStatus(`Loading: ${status.message}`, 'info');
         } else if (status.status === 'ready') {
-            console.log('[STARTUP] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Data ready!');
+            console.log('[STARTUP] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Data ready!');
             eventSource.close();
             await displayLoadedGraph(status);
         } else if (status.status === 'error') {
-            console.error('[STARTUP] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Error:', status.message);
+            console.error('[STARTUP] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Error:', status.message);
             eventSource.close();
             updateStatus(`Error: ${status.message}`, 'error');
             DOMCache.loading.style.display = 'none';
@@ -260,24 +269,29 @@ async function startPollingFallback() {
  * Display graph after background load completes
  */
 async function displayLoadedGraph(status) {
-    console.log('[STARTUP] Displaying loaded graph:', status);
+    console.log('[STARTUP] displayLoadedGraph called with status:', JSON.stringify(status, null, 2));
     
-    // The graphs are already loaded in State.graphs by the background loader
-    // We just need to fetch them via the API and display
-    const graphs = status.graphs || [];
+    // The backend returns 'loaded_graphs' - check both for compatibility
+    const graphs = status.loaded_graphs || status.graphs || [];
     
-    if (graphs.length === 0) {
-        updateStatus('No graphs loaded', 'error');
+    console.log('[STARTUP] Extracted graphs array:', graphs);
+    console.log('[STARTUP] graphs.length:', graphs.length);
+    
+    if (!graphs || graphs.length === 0) {
+        console.error('[STARTUP] No graphs in status! Full status object:', status);
+        updateStatus('No graphs loaded - check server logs', 'error');
         DOMCache.loading.style.display = 'none';
         return;
     }
     
-    // Fetch each graph's data
+    // Fetch each graph's data from the API
+    console.log(`[STARTUP] Fetching ${graphs.length} graphs from API...`);
     for (const graphId of graphs) {
         try {
+            console.log(`[STARTUP] Fetching graph: ${graphId}`);
             const graphData = await API.getGraph(graphId);
             State.graphs[graphId] = graphData;
-            console.log(`[STARTUP] Loaded ${graphId}: ${graphData.nodes?.length || 0} nodes`);
+            console.log(`[STARTUP] Loaded ${graphId}: ${graphData.nodes?.length || 0} nodes, ${graphData.edges?.length || 0} edges`);
         } catch (err) {
             console.error(`[STARTUP] Error loading ${graphId}:`, err);
         }
@@ -288,15 +302,20 @@ async function displayLoadedGraph(status) {
         const selector = document.getElementById('graph-selector');
         const select = document.getElementById('graph-select');
         
-        select.innerHTML = graphs.map(id => 
-            `<option value="${id}">${id}</option>`
-        ).join('');
+        if (select) {
+            select.innerHTML = graphs.map(id => 
+                `<option value="${id}">${id}</option>`
+            ).join('');
+        }
         
-        selector.style.display = 'block';
+        if (selector) {
+            selector.style.display = 'block';
+        }
     }
     
     // Display first graph
     const firstGraph = graphs[0];
+    console.log(`[STARTUP] Displaying first graph: ${firstGraph}`);
     GraphLoader.displayGraph(firstGraph);
     
     // Enable metrics button
@@ -306,7 +325,7 @@ async function displayLoadedGraph(status) {
     }
     
     DOMCache.loading.style.display = 'none';
-    updateStatus(`Loaded ${graphs.length} graph(s)`, 'success');
+    updateStatus(`Loaded ${graphs.length} graph(s): ${graphs.join(', ')}`, 'success');
 }
 
 // =============================================================================

@@ -123,10 +123,45 @@ class Settings:
     AUTO_RELOAD_DEFAULT_INTERVAL: int = int(os.getenv("AUTO_RELOAD_DEFAULT_INTERVAL", "300"))
     
     # ==========================================================================
-    # UI MODE
+    # UI MODE CONFIGURATION
+    # ==========================================================================
+    # 
+    # PRODUCTION_MODE: Master toggle for production vs admin mode
+    #   - false (default): Admin mode - all panels visible, manual control
+    #   - true: Production mode - applies UI_HIDDEN_PANELS, enables auto-load
+    #
+    # UI_HIDDEN_PANELS: Comma-separated list of panels to hide in production mode
+    #   Available panels: load, reload, snapshots, metrics, paths, subgraph,
+    #                     flow, filter, style, layout, embeddings
+    #   Default hides: load, reload (data source and auto-reload)
+    #
+    # AUTO_LOAD_ON_STARTUP: Auto-load data when server starts (requires DEFAULT_SQL_FILES)
+    #   - true (default when PRODUCTION_MODE is true)
+    #   - false: Manual load required
     # ==========================================================================
     
-    HIDE_DATA_SOURCE_UI: bool = os.getenv("HIDE_DATA_SOURCE_UI", "false").lower() == "true"
+    # Master toggle for production vs admin mode
+    PRODUCTION_MODE: bool = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
+    
+    # Panels to hide in production mode
+    # Default: hide data loading and auto-reload panels (admin functions)
+    UI_HIDDEN_PANELS: List[str] = [
+        p.strip() for p in os.getenv(
+            "UI_HIDDEN_PANELS",
+            "load,reload"  # Default hides load and reload panels
+        ).split(",") if p.strip()
+    ]
+    
+    # Available panel names (for validation/documentation)
+    AVAILABLE_PANELS: List[str] = [
+        "load", "reload", "snapshots", "metrics", "paths",
+        "subgraph", "flow", "filter", "style", "layout", "embeddings"
+    ]
+    
+    # Auto-load on startup - defaults to True when in production mode
+    AUTO_LOAD_ON_STARTUP: bool = (
+        os.getenv("AUTO_LOAD_ON_STARTUP", "true" if PRODUCTION_MODE else "false").lower() == "true"
+    )
     
     DEFAULT_SQL_FILES: List[str] = [
         f.strip() for f in os.getenv("DEFAULT_SQL_FILES", "").split(",") if f.strip()
@@ -302,11 +337,15 @@ def print_startup_banner():
     print(f"    Providers: {', '.join(settings.EXTERNAL_API_PROVIDERS) or 'None'}")
     print(f"    Blacklist: {'Y' if settings.EXTERNAL_API_BLACKLIST_ENABLED else 'N'}")
     print("-" * 60)
-    if settings.HIDE_DATA_SOURCE_UI:
-        print("  Mode: Production (auto-load + auto-reload)")
-        print(f"    SQL Files:      {', '.join(settings.DEFAULT_SQL_FILES) or 'None'}")
-        print(f"    Properties:     {', '.join(settings.DEFAULT_PROPERTIES_FILES) or 'None'}")
-        print(f"    Reload Interval: {settings.AUTO_RELOAD_DEFAULT_INTERVAL}s")
+    print("  UI Mode Configuration:")
+    if settings.PRODUCTION_MODE:
+        print("    Mode: Production")
+        print(f"    Hidden Panels: {', '.join(settings.UI_HIDDEN_PANELS) or 'None'}")
+        print(f"    Auto-Load: {'Y' if settings.AUTO_LOAD_ON_STARTUP else 'N'}")
+        if settings.AUTO_LOAD_ON_STARTUP and settings.DEFAULT_SQL_FILES:
+            print(f"    SQL Files: {', '.join(settings.DEFAULT_SQL_FILES)}")
+            print(f"    Properties: {', '.join(settings.DEFAULT_PROPERTIES_FILES) or 'None'}")
+            print(f"    Reload Interval: {settings.AUTO_RELOAD_DEFAULT_INTERVAL}s")
     else:
-        print("  Mode: Admin (manual control)")
+        print("    Mode: Admin (all panels visible, manual control)")
     print("=" * 60 + "\n")
