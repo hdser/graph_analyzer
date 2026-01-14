@@ -31,6 +31,51 @@ class Settings:
     STATIC_DIR: Path = BASE_DIR / "static"
     
     # ==========================================================================
+    # RENDERER CONFIGURATION
+    # ==========================================================================
+    
+    # Default renderer preference: 'auto', 'cosmos', 'cytoscape'
+    # auto: Select based on graph size and WebGL capabilities
+    # cosmos: Force cosmos.gl (falls back to cytoscape if unavailable)
+    # cytoscape: Force Cytoscape.js
+    RENDERER_PREFERENCE: str = os.getenv("RENDERER_PREFERENCE", "auto")
+    
+    # Node count thresholds for automatic renderer selection
+    # Below this threshold, Cytoscape.js is used (more feature-rich for small graphs)
+    RENDERER_COSMOS_MIN_NODES: int = int(os.getenv("RENDERER_COSMOS_MIN_NODES", "5000"))
+    # Above this threshold, cosmos.gl is strongly preferred (Cytoscape may be slow)
+    RENDERER_COSMOS_PREFERRED_NODES: int = int(os.getenv("RENDERER_COSMOS_PREFERRED_NODES", "50000"))
+    
+    # cosmos.gl specific settings
+    COSMOS_SPACE_SIZE: int = int(os.getenv("COSMOS_SPACE_SIZE", "8192"))
+    COSMOS_POINT_SIZE: float = float(os.getenv("COSMOS_POINT_SIZE", "6"))
+    COSMOS_LINK_WIDTH: float = float(os.getenv("COSMOS_LINK_WIDTH", "1"))
+    COSMOS_BACKGROUND_COLOR: str = os.getenv("COSMOS_BACKGROUND_COLOR", "#1a1a1a")
+    COSMOS_CURVED_LINKS: bool = os.getenv("COSMOS_CURVED_LINKS", "true").lower() == "true"
+    COSMOS_ENABLE_DRAG: bool = os.getenv("COSMOS_ENABLE_DRAG", "true").lower() == "true"
+    
+    # cosmos.gl simulation parameters
+    COSMOS_SIMULATION_FRICTION: float = float(os.getenv("COSMOS_SIMULATION_FRICTION", "0.85"))
+    COSMOS_SIMULATION_GRAVITY: float = float(os.getenv("COSMOS_SIMULATION_GRAVITY", "0.1"))
+    COSMOS_SIMULATION_REPULSION: float = float(os.getenv("COSMOS_SIMULATION_REPULSION", "0.5"))
+    COSMOS_SIMULATION_LINK_DISTANCE: float = float(os.getenv("COSMOS_SIMULATION_LINK_DISTANCE", "10"))
+    COSMOS_SIMULATION_LINK_SPRING: float = float(os.getenv("COSMOS_SIMULATION_LINK_SPRING", "0.3"))
+    
+    # Node size range for metric-based sizing
+    RENDERER_NODE_SIZE_MIN: float = float(os.getenv("RENDERER_NODE_SIZE_MIN", "5"))
+    RENDERER_NODE_SIZE_MAX: float = float(os.getenv("RENDERER_NODE_SIZE_MAX", "30"))
+    
+    # Default color gradient
+    RENDERER_DEFAULT_GRADIENT: str = os.getenv("RENDERER_DEFAULT_GRADIENT", "spectral")
+    
+    # Selection colors (RGBA, 0-1 range for cosmos.gl, hex for cytoscape)
+    RENDERER_SELECTION_COLOR: str = os.getenv("RENDERER_SELECTION_COLOR", "#FF0000")
+    RENDERER_HIGHLIGHT_COLOR: str = os.getenv("RENDERER_HIGHLIGHT_COLOR", "#FFA500")
+    RENDERER_DEFAULT_NODE_COLOR: str = os.getenv("RENDERER_DEFAULT_NODE_COLOR", "#999999")
+    RENDERER_DEFAULT_EDGE_COLOR: str = os.getenv("RENDERER_DEFAULT_EDGE_COLOR", "#f0f0f0")
+    RENDERER_DEFAULT_EDGE_OPACITY: float = float(os.getenv("RENDERER_DEFAULT_EDGE_OPACITY", "0.3"))
+    
+    # ==========================================================================
     # SNAPSHOT CONFIGURATION
     # ==========================================================================
     
@@ -237,6 +282,41 @@ class Settings:
         """Construct database URL from components."""
         return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
     
+    def get_renderer_config(self) -> dict:
+        """Get renderer configuration as dictionary for frontend."""
+        return {
+            "preference": self.RENDERER_PREFERENCE,
+            "thresholds": {
+                "cosmosMinNodes": self.RENDERER_COSMOS_MIN_NODES,
+                "cosmosPreferredNodes": self.RENDERER_COSMOS_PREFERRED_NODES
+            },
+            "cosmos": {
+                "spaceSize": self.COSMOS_SPACE_SIZE,
+                "pointSize": self.COSMOS_POINT_SIZE,
+                "linkWidth": self.COSMOS_LINK_WIDTH,
+                "backgroundColor": self.COSMOS_BACKGROUND_COLOR,
+                "curvedLinks": self.COSMOS_CURVED_LINKS,
+                "enableDrag": self.COSMOS_ENABLE_DRAG,
+                "simulation": {
+                    "friction": self.COSMOS_SIMULATION_FRICTION,
+                    "gravity": self.COSMOS_SIMULATION_GRAVITY,
+                    "repulsion": self.COSMOS_SIMULATION_REPULSION,
+                    "linkDistance": self.COSMOS_SIMULATION_LINK_DISTANCE,
+                    "linkSpring": self.COSMOS_SIMULATION_LINK_SPRING
+                }
+            },
+            "style": {
+                "nodeSizeMin": self.RENDERER_NODE_SIZE_MIN,
+                "nodeSizeMax": self.RENDERER_NODE_SIZE_MAX,
+                "defaultGradient": self.RENDERER_DEFAULT_GRADIENT,
+                "selectionColor": self.RENDERER_SELECTION_COLOR,
+                "highlightColor": self.RENDERER_HIGHLIGHT_COLOR,
+                "defaultNodeColor": self.RENDERER_DEFAULT_NODE_COLOR,
+                "defaultEdgeColor": self.RENDERER_DEFAULT_EDGE_COLOR,
+                "defaultEdgeOpacity": self.RENDERER_DEFAULT_EDGE_OPACITY
+            }
+        }
+    
     def ensure_directories(self):
         """Create required directories if they don't exist."""
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -304,7 +384,7 @@ HAS_ANOMALY = HAS_SKLEARN
 def print_startup_banner():
     """Print startup information banner."""
     print("\n" + "=" * 60)
-    print("  Graph Analyzer Web Viewer v2.2.0")
+    print("  Graph Analyzer Web Viewer v2.3.0")
     print("=" * 60)
     print(f"  Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     print(f"  SQL Dir:  {settings.SQL_DIR}")
@@ -314,6 +394,11 @@ def print_startup_banner():
     print("  Core Features:")
     print(f"    SSE Support:        {'Y' if HAS_SSE else 'N'}")
     print(f"    Anomaly Detection:  {'Y' if HAS_ANOMALY else 'N'}")
+    print("-" * 60)
+    print("  Renderer Configuration:")
+    print(f"    Preference: {settings.RENDERER_PREFERENCE}")
+    print(f"    cosmos.gl Min Nodes: {settings.RENDERER_COSMOS_MIN_NODES}")
+    print(f"    cosmos.gl Preferred Nodes: {settings.RENDERER_COSMOS_PREFERRED_NODES}")
     print("-" * 60)
     print("  Layout Backends:")
     print(f"    Cytoscape Desktop:  {'Y' if HAS_CYTOSCAPE_DESKTOP else 'N'}")

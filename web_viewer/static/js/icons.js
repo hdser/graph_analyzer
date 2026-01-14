@@ -139,6 +139,42 @@ const Icons = {
             <path d="M4 7h8"/>
             <path d="M6 11h4"/>
         </svg>`,
+        
+        // Renderer indicators
+        gpu: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="4" width="14" height="9" rx="1"/>
+            <path d="M4 7h2v3H4z" fill="currentColor"/>
+            <path d="M7 7h2v3H7z" fill="currentColor"/>
+            <path d="M10 7h2v3h-2z" fill="currentColor"/>
+            <path d="M4 2v2"/>
+            <path d="M8 2v2"/>
+            <path d="M12 2v2"/>
+        </svg>`,
+        
+        rocket: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 1c0 0 4 2 4 8-1 1-2.5 1.5-4 1.5S5 10 4 9c0-6 4-8 4-8z"/>
+            <path d="M6 10v3l2-1.5 2 1.5v-3"/>
+            <circle cx="8" cy="6" r="1.5"/>
+            <path d="M3 7c-1 1-2 3-2 4 1.5 0 3-.5 4-1"/>
+            <path d="M13 7c1 1 2 3 2 4-1.5 0-3-.5-4-1"/>
+        </svg>`,
+        
+        canvas: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="12" height="12" rx="1"/>
+            <circle cx="5.5" cy="5.5" r="1.5"/>
+            <circle cx="10.5" cy="5.5" r="1.5"/>
+            <circle cx="8" cy="10.5" r="1.5"/>
+            <path d="M6.5 6.5l1 2.5"/>
+            <path d="M9.5 6.5l-1 2.5"/>
+        </svg>`,
+        
+        graph: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="8" r="2"/>
+            <circle cx="13" cy="4" r="2"/>
+            <circle cx="13" cy="12" r="2"/>
+            <path d="M5 7.5l6-3"/>
+            <path d="M5 8.5l6 3"/>
+        </svg>`,
 
         // Deep Learning / Embeddings - neural network icon
         embeddings: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

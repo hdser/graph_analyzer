@@ -409,7 +409,7 @@
                         <!-- Swap Button -->
                         <div class="style-row" style="justify-content: center;">
                             <button id="swap-nodes-btn" class="secondary-btn" style="padding: 4px 12px; font-size: 11px;">
-                                ↑↓ Swap
+                                â†‘â†“ Swap
                             </button>
                         </div>
                         
@@ -561,7 +561,7 @@
                                 <label>Source</label>
                                 <input type="text" id="flow-source-input" placeholder="Click node or paste address...">
                             </div>
-                            <button id="swap-flow-nodes-btn" class="swap-btn" title="Swap">⇅</button>
+                            <button id="swap-flow-nodes-btn" class="swap-btn" title="Swap">â‡…</button>
                             <div class="endpoint-row">
                                 <label>Sink</label>
                                 <input type="text" id="flow-target-input" placeholder="Click node or paste address...">
@@ -660,7 +660,7 @@
                                     <div class="option-row">
                                         <label>Algorithm</label>
                                         <select id="cf-algorithm-select">
-                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ✔</option>
+                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) âœ”</option>
                                             <option value="networkx:preflow_push">Preflow Push (NetworkX)</option>
                                             <option value="networkx:dinitz">Dinitz (NetworkX)</option>
                                             <option value="ortools:max_flow">Max Flow (OR-Tools)</option>
@@ -851,7 +851,34 @@
                         <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
                     <div class="panel-content">
-                        <h4>Saved Layouts</h4>
+                        <!-- Renderer Settings -->
+                        <h4>Renderer</h4>
+                        <div id="renderer-capability-info" class="capability-info" style="font-size: 11px; color: #888; margin-bottom: 10px;">
+                            Detecting capabilities...
+                        </div>
+                        <div class="style-row">
+                            <label>Engine</label>
+                            <div class="radio-group" style="display: flex; gap: 10px;">
+                                <label class="radio-label">
+                                    <input type="radio" name="renderer-preference" value="auto" checked>
+                                    <span>Auto</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="renderer-preference" value="cosmos">
+                                    <span>cosmos.gl</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="renderer-preference" value="cytoscape">
+                                    <span>Cytoscape</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div id="webgl-warning" class="warning-box" style="display: none; margin-bottom: 12px;">
+                            <span data-icon="warning" data-icon-size="14"></span>
+                            <span id="webgl-warning-details">WebGL not available</span>
+                        </div>
+                        
+                        <h4 style="margin-top: 16px;">Saved Layouts</h4>
                         <div class="style-row">
                             <label>Layout</label>
                             <div style="display:flex; gap:8px; flex:1; align-items:center;">
@@ -899,6 +926,25 @@
                             </label>
                         </div>
                         <button id="recompute-layout-btn" class="primary-btn">Recompute Layout</button>
+                        
+                        <!-- cosmos.gl Simulation Controls (only shown when using cosmos.gl) -->
+                        <div id="cosmos-simulation-controls" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333;">
+                            <h4>Simulation Control</h4>
+                            <p style="font-size: 11px; color: #888; margin-bottom: 10px;">
+                                cosmos.gl uses force-directed simulation. Pause to lock positions.
+                            </p>
+                            <div class="button-row">
+                                <button id="cosmos-pause-btn" class="secondary-btn">
+                                    <span data-icon="pause"></span> Pause
+                                </button>
+                                <button id="cosmos-start-btn" class="secondary-btn" style="display: none;">
+                                    <span data-icon="play"></span> Resume
+                                </button>
+                                <button id="cosmos-fit-btn" class="secondary-btn">
+                                    <span data-icon="zoomIn"></span> Fit View
+                                </button>
+                            </div>
+                        </div>
                         
                         <h4 style="margin-top:20px">Available Backends</h4>
                         <div id="layout-backends-info" class="backends-info"></div>
@@ -1113,6 +1159,7 @@
                     <button id="center-btn" data-icon="center">Center</button>
                     <button id="load-edges-btn" title="Incrementally load edges for large graphs">Load edges</button>
                     <button id="data-explorer-btn" title="Explore all node data">Data Explorer</button>
+                    <div id="renderer-indicator" class="renderer-indicator" title="Current renderer"></div>
                 </div>
             </div>
 
@@ -1252,11 +1299,28 @@
     </div>
 
     <!-- Load JS modules in dependency order -->
+    
+    <!-- cosmos.gl GPU Graph Renderer - locally bundled from @cosmos.gl/graph -->
+    <!-- This exposes window.cosmosgl with { Graph, PointShape, getRgbaColor, clamp } -->
+    <script src="/static/lib/cosmos-gl-browser.min.js"></script>
+    
+    <!-- Core modules -->
     <script src="/static/js/icons.js"></script>
     <script src="/static/js/utils.js"></script>
     <script src="/static/js/state.js"></script>
     <script src="/static/js/toast.js"></script>
     <script src="/static/js/api.js"></script>
+    
+    <!-- Renderer abstraction layer (load before graph modules) -->
+    <script src="/static/js/color-gradients.js"></script>
+    <script src="/static/js/renderer-settings.js"></script>
+    <script src="/static/js/webgl-detector.js"></script>
+    <script src="/static/js/renderer-interface.js"></script>
+    <script src="/static/js/cytoscape-adapter.js"></script>
+    <script src="/static/js/cosmos-adapter.js"></script>
+    <script src="/static/js/renderer-factory.js"></script>
+    
+    <!-- Graph visualization and analysis modules -->
     <script src="/static/js/cytoscape-manager.js"></script>
     <script src="/static/js/info-panel.js"></script>
     <script src="/static/js/graph-loader.js"></script>

@@ -1,6 +1,6 @@
 /**
  * Graph Loader Module
- * Graph loading and edge management
+ * Graph loading and edge management with renderer abstraction
  */
 
 const GraphLoader = {
@@ -90,7 +90,7 @@ const GraphLoader = {
     },
 
     /**
-     * Display a specific graph
+     * Display a specific graph using the appropriate renderer
      */
     async displayGraph(graphId) {
         State.currentGraph = graphId;
@@ -101,21 +101,52 @@ const GraphLoader = {
         }
         
         try {
-            // Initialize Cytoscape if needed
-            if (!State.cy) {
-                CytoscapeManager.initializeCytoscape(DOMCache.cyContainer);
-            }
-            
             // Load nodes first (fast)
             const nodesData = await API.getGraphElements(graphId, 'nodes_only');
             
-            // Clear and add nodes
-            State.cy.elements().remove();
-            State.cy.add(nodesData.elements);
-            State.cy.fit();
+            // Count nodes to determine renderer
+            const nodeElements = nodesData.elements.filter(e => e.group === 'nodes');
+            const nodeCount = nodeElements.length;
+            
+            // Convert from Cytoscape format to unified format
+            const nodes = nodeElements.map(e => ({
+                id: e.data.id,
+                x: e.position?.x || 0,
+                y: e.position?.y || 0,
+                ...e.data
+            }));
+            
+            // Create or recreate renderer based on graph size
+            const renderer = RendererFactory.create(DOMCache.cyContainer, {
+                expectedNodeCount: nodeCount,
+                rendererPreference: State.rendererPreference
+            });
+            
+            // Update state
+            State.setRenderer(renderer);
+            
+            // Set data (no edges initially)
+            renderer.setData(nodes, []);
+            
+            // Setup event handlers based on renderer type
+            // Cytoscape events are handled by cytoscape-manager.js
+            // Cosmos events need explicit handling here
+            if (renderer.getType() === 'cosmos') {
+                this.setupCosmosEventHandlers(renderer);
+                
+                // Pause simulation after initial layout settles
+                setTimeout(() => {
+                    renderer.pauseSimulation();
+                    renderer.fitView();
+                    console.log('[GraphLoader] cosmos.gl simulation paused, layout stabilized');
+                }, 2000);
+            }
+            
+            // Update renderer indicator in UI
+            this.updateRendererIndicator();
             
             // Update counts
-            DOMCache.nodeCount.textContent = `${State.cy.nodes().length} nodes`;
+            DOMCache.nodeCount.textContent = `${nodeCount} nodes`;
             DOMCache.edgeCount.textContent = '0 edges';
             
             // Update load edges button
@@ -135,11 +166,186 @@ const GraphLoader = {
                 detail: { graphId: graphId } 
             }));
             
-            updateStatus(`Graph displayed: ${State.cy.nodes().length} nodes (edges not loaded)`, 'success');
+            const rendererType = renderer.getType();
+            updateStatus(
+                `Graph displayed: ${nodeCount} nodes (edges not loaded) [${rendererType}]`, 
+                'success'
+            );
             
         } catch (error) {
             console.error('Display error:', error);
             updateStatus('Failed to display graph: ' + error.message, 'error');
+        }
+    },
+    
+    /**
+     * Update the renderer indicator in the UI
+     */
+    updateRendererIndicator() {
+        const indicator = document.getElementById('renderer-indicator');
+        if (!indicator) return;
+        
+        const type = State.rendererType;
+        const caps = RendererFactory.getCapabilitySummary();
+        
+        const maxNodesFormatted = caps.maxNodes >= 1000000 
+            ? `${(caps.maxNodes / 1000000).toFixed(1)}M` 
+            : caps.maxNodes >= 1000 
+                ? `${Math.round(caps.maxNodes / 1000)}k`
+                : `${caps.maxNodes}`;
+        
+        // Get appropriate icon
+        const icon = type === 'cosmos' ? Icons.get('rocket') : Icons.get('canvas');
+        const label = type === 'cosmos' ? 'cosmos.gl' : 'Cytoscape.js';
+        
+        indicator.innerHTML = `
+            <span class="renderer-badge renderer-${type}" title="${caps.reason}">
+                <span class="renderer-icon">${icon}</span>
+                <span class="renderer-label">${label}</span>
+            </span>
+            <span class="renderer-info" title="GPU: ${caps.gpuInfo || 'N/A'}">
+                (max ~${maxNodesFormatted} nodes)
+            </span>
+        `;
+        
+        // Show WebGL warning if cosmos not available
+        const warning = document.getElementById('webgl-warning');
+        if (warning) {
+            if (!caps.cosmosAvailable && !caps.cosmosLibraryLoaded) {
+                warning.style.display = 'block';
+                const details = document.getElementById('webgl-warning-details');
+                if (details) {
+                    details.textContent = caps.cosmosLibraryLoaded 
+                        ? caps.reason 
+                        : 'cosmos.gl library not loaded. Using Cytoscape.js fallback.';
+                }
+            } else {
+                warning.style.display = 'none';
+            }
+        }
+    },
+
+    /**
+     * Setup event handlers for cosmos.gl renderer
+     * Cytoscape handlers are set up by cytoscape-manager.js
+     */
+    setupCosmosEventHandlers(renderer) {
+        // Node click - show info panel
+        renderer.on('nodeClick', (e) => {
+            if (e.id) {
+                const selectedNodes = renderer.getSelectedNodes();
+                if (selectedNodes.length > 1) {
+                    // Multi-selection
+                    if (typeof InfoPanel !== 'undefined' && InfoPanel.showMultiSelectFromIds) {
+                        InfoPanel.showMultiSelectFromIds(selectedNodes);
+                    } else {
+                        console.warn('[GraphLoader] InfoPanel.showMultiSelectFromIds not available');
+                    }
+                } else {
+                    // Single node
+                    if (typeof InfoPanel !== 'undefined' && InfoPanel.showNodeFromData) {
+                        InfoPanel.showNodeFromData(e.id, e.data);
+                    } else {
+                        console.warn('[GraphLoader] InfoPanel.showNodeFromData not available');
+                    }
+                }
+            }
+        });
+        
+        // Background click - hide info panel
+        renderer.on('backgroundClick', () => {
+            if (DOMCache.infoPanel) {
+                DOMCache.infoPanel.style.display = 'none';
+            }
+            if (typeof InfoPanel !== 'undefined' && InfoPanel.clearNavigation) {
+                InfoPanel.clearNavigation();
+            }
+        });
+        
+        // Selection change
+        renderer.on('selectionChange', (e) => {
+            if (e.nodes && e.nodes.length > 1) {
+                if (typeof InfoPanel !== 'undefined' && InfoPanel.showMultiSelectFromIds) {
+                    InfoPanel.showMultiSelectFromIds(e.nodes);
+                }
+            }
+        });
+        
+        console.log('[GraphLoader] cosmos.gl event handlers set up');
+    },
+    
+    /**
+     * Apply saved layout positions to current renderer
+     * Works with both Cytoscape.js and cosmos.gl
+     */
+    applyLayoutPositions(positions) {
+        const renderer = State.renderer;
+        if (!renderer) return;
+        
+        if (renderer.getType() === 'cosmos') {
+            // For cosmos.gl, pause simulation first
+            renderer.pauseSimulation();
+            
+            // Apply positions
+            renderer.updatePositions(positions);
+            renderer.fitView();
+            
+            console.log('[GraphLoader] Layout positions applied to cosmos.gl');
+        } else if (State.cy) {
+            // For Cytoscape.js, use batch update
+            State.cy.batch(() => {
+                State.cy.nodes().forEach(node => {
+                    const pos = positions[node.id()];
+                    if (pos) {
+                        node.position(pos);
+                    }
+                });
+            });
+            State.cy.fit();
+            
+            console.log('[GraphLoader] Layout positions applied to Cytoscape.js');
+        }
+    },
+    
+    /**
+     * Control simulation (cosmos.gl only)
+     */
+    toggleSimulation() {
+        const renderer = State.renderer;
+        if (!renderer || renderer.getType() !== 'cosmos') return;
+        
+        if (State.cosmosSimulationPaused) {
+            renderer.startSimulation();
+            State.cosmosSimulationPaused = false;
+            console.log('[GraphLoader] cosmos.gl simulation started');
+        } else {
+            renderer.pauseSimulation();
+            State.cosmosSimulationPaused = true;
+            console.log('[GraphLoader] cosmos.gl simulation paused');
+        }
+        
+        return State.cosmosSimulationPaused;
+    },
+    
+    /**
+     * Pause cosmos.gl simulation
+     */
+    pauseSimulation() {
+        const renderer = State.renderer;
+        if (renderer && renderer.getType() === 'cosmos') {
+            renderer.pauseSimulation();
+            State.cosmosSimulationPaused = true;
+        }
+    },
+    
+    /**
+     * Start cosmos.gl simulation
+     */
+    startSimulation() {
+        const renderer = State.renderer;
+        if (renderer && renderer.getType() === 'cosmos') {
+            renderer.startSimulation();
+            State.cosmosSimulationPaused = false;
         }
     },
 
@@ -147,10 +353,14 @@ const GraphLoader = {
      * Load edges incrementally in batches
      */
     async loadEdgesIncrementally(graphId) {
-        if (!State.cy) return;
+        const renderer = State.renderer;
+        if (!renderer) return;
+        
+        // Get current edge count from renderer
+        const currentStats = renderer.getStats();
         
         // If edges already loaded, clear them instead
-        if (State.cy.edges().length > 0) {
+        if (currentStats.edgeCount > 0) {
             this.clearEdges();
             return;
         }
@@ -168,8 +378,7 @@ const GraphLoader = {
             DOMCache.loadEdgesBtn.textContent = 'Loading...';
         }
         
-        // CRITICAL: Disable pointer events during bulk add to prevent WebGL crash
-        // The crash happens when findNearestElements is called during texture updates
+        // CRITICAL: Disable pointer events during bulk add
         DOMCache.cyContainer.style.pointerEvents = 'none';
         
         try {
@@ -177,10 +386,16 @@ const GraphLoader = {
                 const result = await API.getGraphEdges(graphId, offset, BATCH_SIZE);
                 
                 if (result.edges && result.edges.length > 0) {
-                    // Add edges in batch
-                    State.cy.batch(() => {
-                        State.cy.add(result.edges);
-                    });
+                    // Convert from Cytoscape format to unified format
+                    const edges = result.edges.map(e => ({
+                        source: e.data.source,
+                        target: e.data.target,
+                        id: e.data.id,
+                        ...e.data
+                    }));
+                    
+                    // Add edges to renderer
+                    renderer.addEdges(edges);
                     
                     totalLoaded += result.edges.length;
                     offset = totalLoaded;
@@ -211,14 +426,15 @@ const GraphLoader = {
         } finally {
             State.edgesLoading = false;
             
-            // Re-enable pointer events after WebGL settles (500ms for large edge counts)
+            // Re-enable pointer events after renderer settles
             setTimeout(() => {
                 DOMCache.cyContainer.style.pointerEvents = 'auto';
             }, 500);
             
             if (DOMCache.loadEdgesBtn) {
                 DOMCache.loadEdgesBtn.disabled = false;
-                DOMCache.loadEdgesBtn.textContent = State.cy.edges().length > 0 ? 'Clear Edges' : 'Load Edges';
+                const stats = renderer.getStats();
+                DOMCache.loadEdgesBtn.textContent = stats.edgeCount > 0 ? 'Clear Edges' : 'Load Edges';
             }
         }
     },
@@ -227,10 +443,11 @@ const GraphLoader = {
      * Clear all edges from the graph
      */
     clearEdges() {
-        if (!State.cy) return;
+        const renderer = State.renderer;
+        if (!renderer) return;
         
-        const edges = State.cy.edges();
-        const edgeCount = edges.length;
+        const stats = renderer.getStats();
+        const edgeCount = stats.edgeCount;
         
         if (edgeCount === 0) {
             Toast.show('No edges to clear', 'info');
@@ -240,8 +457,9 @@ const GraphLoader = {
         // Disable pointer events during removal
         DOMCache.cyContainer.style.pointerEvents = 'none';
         
-        // Remove all edges in one operation (faster than batch + forEach)
-        edges.remove();
+        // Get all edge IDs and remove them
+        const edgeIds = renderer.getAllEdgeIds();
+        renderer.removeElements([], edgeIds);
         
         // Re-enable after a delay
         setTimeout(() => {
@@ -273,6 +491,20 @@ const GraphLoader = {
     async refreshCurrentGraph() {
         if (State.currentGraph) {
             await this.displayGraph(State.currentGraph);
+        }
+    },
+    
+    /**
+     * Switch renderer preference and reload current graph
+     */
+    async switchRenderer(preference) {
+        State.setRendererPreference(preference);
+        
+        if (State.currentGraph) {
+            await this.displayGraph(State.currentGraph);
+        } else {
+            // Just update the indicator
+            this.updateRendererIndicator();
         }
     }
 };

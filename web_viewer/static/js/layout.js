@@ -169,7 +169,7 @@ const Layout = (function() {
             
             let label = layout.display_name;
             if (layout.is_base) {
-                label += ' ★';  // Star for default
+                label += ' â˜…';  // Star for default
             }
             label += ` (${layout.node_count} nodes)`;
             
@@ -207,11 +207,11 @@ const Layout = (function() {
         let html = '';
         availableBackends.forEach(backend => {
             const statusClass = backend.available ? 'available' : 'unavailable';
-            const statusText = backend.available ? '✓' : '✗';
+            const statusIcon = backend.available ? Icons.get('check') : Icons.get('close');
             html += `
                 <div class="backend-item">
                     <span class="backend-name">${backend.name}</span>
-                    <span class="backend-status ${statusClass}">${statusText}</span>
+                    <span class="backend-status ${statusClass}">${statusIcon}</span>
                 </div>
             `;
         });
@@ -550,6 +550,7 @@ const Layout = (function() {
     
     /**
      * Reload graph with new layout positions
+     * Supports both Cytoscape.js and cosmos.gl
      */
     async function reloadGraphWithNewLayout(graphId) {
         try {
@@ -560,21 +561,45 @@ const Layout = (function() {
             const data = await response.json();
             const elements = data.elements || [];
             
-            // Update Cytoscape positions
-            const cy = (typeof State !== 'undefined' && State.cy) || window.cy;
-            if (cy) {
-                elements.forEach(el => {
-                    if (el.group === 'nodes' && el.position) {
-                        const cyNode = cy.getElementById(el.data.id);
-                        if (cyNode.length > 0) {
-                            cyNode.position(el.position);
-                        }
-                    }
-                });
+            // Build positions map
+            const positions = {};
+            elements.forEach(el => {
+                if (el.group === 'nodes' && el.position) {
+                    positions[el.data.id] = el.position;
+                }
+            });
+            
+            // Check renderer type and apply positions accordingly
+            const renderer = (typeof State !== 'undefined' && State.renderer);
+            const rendererType = (typeof State !== 'undefined' && State.rendererType);
+            
+            if (rendererType === 'cosmos' && renderer) {
+                // cosmos.gl: pause simulation and update positions
+                renderer.pauseSimulation();
+                renderer.updatePositions(positions);
+                renderer.fitView();
+                State.cosmosSimulationPaused = true;
+                console.log('[Layout] Updated', Object.keys(positions).length, 'node positions (cosmos.gl)');
                 
-                // Fit view to new layout
-                cy.fit(50);
-                console.log('[Layout] Updated', elements.length, 'node positions');
+            } else {
+                // Cytoscape.js: batch update positions
+                const cy = (typeof State !== 'undefined' && State.cy) || window.cy;
+                if (cy) {
+                    cy.batch(() => {
+                        elements.forEach(el => {
+                            if (el.group === 'nodes' && el.position) {
+                                const cyNode = cy.getElementById(el.data.id);
+                                if (cyNode.length > 0) {
+                                    cyNode.position(el.position);
+                                }
+                            }
+                        });
+                    });
+                    
+                    // Fit view to new layout
+                    cy.fit(50);
+                    console.log('[Layout] Updated', elements.length, 'node positions (Cytoscape.js)');
+                }
             }
             
         } catch (error) {
@@ -608,19 +633,19 @@ const Layout = (function() {
             if (resultDiv) {
                 if (result.success) {
                     resultDiv.innerHTML = `
-                        <span class="success">✓ ${result.algorithm}</span><br>
+                        <span class="success">${Icons.get("check")} ${result.algorithm}</span><br>
                         ${result.node_count} nodes in ${result.computation_time.toFixed(3)}s
                     `;
                     resultDiv.className = 'test-result success';
                 } else {
-                    resultDiv.innerHTML = `<span class="error">✗ ${result.error || 'Failed'}</span>`;
+                    resultDiv.innerHTML = `<span class="error">${Icons.get("close")} ${result.error || 'Failed'}</span>`;
                     resultDiv.className = 'test-result error';
                 }
             }
             
         } catch (error) {
             if (resultDiv) {
-                resultDiv.innerHTML = `<span class="error">✗ ${error.message}</span>`;
+                resultDiv.innerHTML = `<span class="error">${Icons.get("close")} ${error.message}</span>`;
                 resultDiv.className = 'test-result error';
             }
         } finally {

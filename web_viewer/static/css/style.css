@@ -3079,3 +3079,169 @@ input[type="range"]::-moz-range-thumb:hover {
     border-color: #4a4a4a !important;
     color: #606060 !important;
 }
+
+/* =============================================================================
+   RENDERER CONTROLS
+   ============================================================================= */
+
+/* Renderer indicator in toolbar */
+.renderer-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    padding: 4px 10px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    border: 1px solid #2a2a2a;
+    margin-left: 8px;
+}
+
+.renderer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.renderer-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+}
+
+.renderer-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.renderer-label {
+    line-height: 1;
+}
+
+.renderer-badge.renderer-cosmos {
+    background: linear-gradient(135deg, #1a3a5c 0%, #2a4a6a 100%);
+    color: #6ad3ff;
+    border: 1px solid #3a6a9a;
+}
+
+.renderer-badge.renderer-cosmos .renderer-icon svg {
+    stroke: #6ad3ff;
+}
+
+.renderer-badge.renderer-cytoscape {
+    background: linear-gradient(135deg, #2a2a3a 0%, #3a3a4a 100%);
+    color: #b0b0d0;
+    border: 1px solid #4a4a6a;
+}
+
+.renderer-badge.renderer-cytoscape .renderer-icon svg {
+    stroke: #b0b0d0;
+}
+
+.renderer-info {
+    color: #808080;
+    font-size: 10px;
+}
+
+/* Capability info display */
+.capability-info {
+    padding: 8px;
+    background: #0f0f0f;
+    border-radius: 4px;
+    border: 1px solid #1a1a1a;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.capability-tier {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+}
+
+.capability-full {
+    background: rgba(100, 200, 100, 0.15);
+    color: #7dde7d;
+}
+
+.capability-mobile {
+    background: rgba(200, 200, 100, 0.15);
+    color: #dede7d;
+}
+
+.capability-constrained,
+.capability-limited {
+    background: rgba(200, 150, 50, 0.15);
+    color: #dec87d;
+}
+
+.capability-software,
+.capability-incompatible,
+.capability-none {
+    background: rgba(200, 100, 100, 0.15);
+    color: #de7d7d;
+}
+
+.gpu-info {
+    color: #606060;
+    font-size: 10px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Warning box for WebGL issues */
+.warning-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(200, 150, 50, 0.1);
+    border: 1px solid rgba(200, 150, 50, 0.3);
+    border-radius: 4px;
+    font-size: 11px;
+    color: #dec87d;
+}
+
+.warning-box [data-icon] {
+    flex-shrink: 0;
+}
+
+/* Radio group for renderer preference */
+.radio-group {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #b0b0b0;
+    transition: color 0.2s;
+}
+
+.radio-label:hover {
+    color: #e0e0e0;
+}
+
+.radio-label input[type="radio"] {
+    cursor: pointer;
+    accent-color: #4a90d9;
+}
+
+.radio-label input[type="radio"]:checked + span {
+    color: #e0e0e0;
+    font-weight: 500;
+}

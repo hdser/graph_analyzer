@@ -16,14 +16,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Cache DOM elements
     cacheDOMElements();
     
-    // Load configuration
+    // Load configuration (includes renderer config)
     await loadAvailableConfig();
+    
+    // Initialize renderer settings and load user preference
+    await initializeRenderer();
     
     // Setup event listeners
     setupEventListeners();
     setupDropdownLogic();
-    setupPanelNavigation();  // NEW: Setup button-based panel system
+    setupPanelNavigation();  // Setup button-based panel system
     setupSubsectionCollapsibles();
+    setupRendererPreferenceControls();
     
     // Initialize features
     initializeDefaultStyle();
@@ -54,6 +58,171 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     console.log('Graph Analyzer initialized');
 });
+
+// =============================================================================
+// RENDERER INITIALIZATION
+// =============================================================================
+
+/**
+ * Initialize renderer settings and load user preference
+ */
+async function initializeRenderer() {
+    try {
+        // Load renderer config from server
+        const rendererConfig = await API.getRendererConfig();
+        
+        // Initialize RendererSettings with server config
+        if (typeof RendererSettings !== 'undefined') {
+            RendererSettings.init(rendererConfig);
+            console.log('[App] RendererSettings initialized');
+        }
+        
+        // Load user's saved preference
+        State.loadRendererPreference();
+        console.log(`[App] Renderer preference: ${State.rendererPreference}`);
+        
+        // Update UI to show capability summary
+        updateRendererCapabilityDisplay();
+        
+    } catch (error) {
+        console.warn('[App] Failed to load renderer config, using defaults:', error);
+        // Continue with defaults
+        if (typeof RendererSettings !== 'undefined') {
+            RendererSettings.init({});
+        }
+    }
+}
+
+/**
+ * Update the renderer capability display in the UI
+ */
+function updateRendererCapabilityDisplay() {
+    const capabilityInfo = document.getElementById('renderer-capability-info');
+    if (!capabilityInfo) return;
+    
+    if (typeof RendererFactory === 'undefined' || typeof WebGLDetector === 'undefined') {
+        capabilityInfo.innerHTML = '<span class="warning">Renderer modules not loaded</span>';
+        return;
+    }
+    
+    const summary = RendererFactory.getCapabilitySummary();
+    const maxNodesFormatted = summary.maxNodes >= 1000000 
+        ? `${(summary.maxNodes / 1000000).toFixed(1)}M` 
+        : `${Math.round(summary.maxNodes / 1000)}k`;
+    
+    let html = `<span class="capability-tier capability-${summary.tier}">`;
+    
+    if (summary.cosmosAvailable && summary.cosmosLibraryLoaded) {
+        html += `✓ cosmos.gl available (max ~${maxNodesFormatted} nodes)`;
+    } else if (summary.cosmosLibraryLoaded && !summary.cosmosAvailable) {
+        html += `⚠ cosmos.gl library loaded but WebGL limited: ${summary.reason}`;
+    } else {
+        html += `ℹ Cytoscape.js only (cosmos.gl library not loaded)`;
+    }
+    
+    html += `</span>`;
+    
+    // Add GPU info if available
+    if (summary.gpuInfo && summary.gpuInfo !== 'Unknown') {
+        html += `<br><span class="gpu-info" title="GPU: ${summary.gpuInfo}">${summary.gpuInfo}</span>`;
+    }
+    
+    capabilityInfo.innerHTML = html;
+}
+
+/**
+ * Setup renderer preference radio controls
+ */
+function setupRendererPreferenceControls() {
+    const radios = document.querySelectorAll('input[name="renderer-preference"]');
+    if (radios.length === 0) return;
+    
+    // Set initial value
+    radios.forEach(radio => {
+        if (radio.value === State.rendererPreference) {
+            radio.checked = true;
+        }
+        
+        radio.addEventListener('change', async (e) => {
+            if (e.target.checked) {
+                const preference = e.target.value;
+                console.log(`[App] Renderer preference changed to: ${preference}`);
+                
+                // Update state and reload graph if one is loaded
+                await GraphLoader.switchRenderer(preference);
+                
+                Toast.show(`Renderer preference set to: ${preference}`, 'success');
+            }
+        });
+    });
+    
+    // Listen for external preference changes
+    document.addEventListener('rendererPreferenceChanged', (e) => {
+        radios.forEach(radio => {
+            radio.checked = (radio.value === e.detail.preference);
+        });
+    });
+    
+    // Listen for renderer changes to show/hide cosmos simulation controls
+    document.addEventListener('rendererChanged', (e) => {
+        const isCosmos = e.detail.type === 'cosmos';
+        const controls = document.getElementById('cosmos-simulation-controls');
+        if (controls) {
+            controls.style.display = isCosmos ? 'block' : 'none';
+        }
+        updateSimulationButtons(State.cosmosSimulationPaused);
+    });
+    
+    // Setup cosmos.gl simulation control buttons
+    setupSimulationControls();
+}
+
+/**
+ * Setup cosmos.gl simulation control buttons
+ */
+function setupSimulationControls() {
+    const pauseBtn = document.getElementById('cosmos-pause-btn');
+    const startBtn = document.getElementById('cosmos-start-btn');
+    const fitBtn = document.getElementById('cosmos-fit-btn');
+    
+    if (pauseBtn) {
+        pauseBtn.addEventListener('click', () => {
+            GraphLoader.pauseSimulation();
+            updateSimulationButtons(true);
+            Toast.show('Simulation paused', 'info');
+        });
+    }
+    
+    if (startBtn) {
+        startBtn.addEventListener('click', () => {
+            GraphLoader.startSimulation();
+            updateSimulationButtons(false);
+            Toast.show('Simulation resumed', 'info');
+        });
+    }
+    
+    if (fitBtn) {
+        fitBtn.addEventListener('click', () => {
+            const renderer = State.renderer;
+            if (renderer && renderer.fitView) {
+                renderer.fitView();
+            }
+        });
+    }
+}
+
+/**
+ * Update simulation button visibility based on pause state
+ */
+function updateSimulationButtons(isPaused) {
+    const pauseBtn = document.getElementById('cosmos-pause-btn');
+    const startBtn = document.getElementById('cosmos-start-btn');
+    
+    if (pauseBtn && startBtn) {
+        pauseBtn.style.display = isPaused ? 'none' : 'inline-flex';
+        startBtn.style.display = isPaused ? 'inline-flex' : 'none';
+    }
+}
 
 // =============================================================================
 // CONFIGURATION
@@ -208,11 +377,11 @@ async function pollForDataReady() {
         if (status.status === 'loading') {
             updateStatus(`Loading: ${status.message}`, 'info');
         } else if (status.status === 'ready') {
-            console.log('[STARTUP] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ Data ready!');
+            console.log('[STARTUP] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Data ready!');
             eventSource.close();
             await displayLoadedGraph(status);
         } else if (status.status === 'error') {
-            console.error('[STARTUP] ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Error:', status.message);
+            console.error('[STARTUP] ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Error:', status.message);
             eventSource.close();
             updateStatus(`Error: ${status.message}`, 'error');
             DOMCache.loading.style.display = 'none';
