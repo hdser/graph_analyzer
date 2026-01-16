@@ -243,7 +243,7 @@ const RendererFactory = {
                 reason = WebGLDetector.detect().reason;
             }
         } else {
-            reason = `Large graph (≥ ${thresholds.cosmosMinNodes} nodes) - cosmos.gl provides better performance`;
+            reason = `Large graph (>= ${thresholds.cosmosMinNodes} nodes) - cosmos.gl provides better performance`;
         }
         
         return { renderer: selected, reason };

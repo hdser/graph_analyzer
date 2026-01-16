@@ -83,7 +83,7 @@ const PathAnalysis = (function() {
     }
     
     // ==========================================================================
-    // CYTOSCAPE ACCESS
+    // RENDERER ACCESS
     // ==========================================================================
     
     function getCytoscape() {
@@ -97,8 +97,33 @@ const PathAnalysis = (function() {
         if (typeof window.cy !== 'undefined') {
             return window.cy;
         }
-        console.warn('[PathAnalysis] Could not find Cytoscape instance');
         return null;
+    }
+    
+    /**
+     * Get the current renderer (either Cytoscape or Cosmos)
+     * @returns {Object|null} The renderer instance
+     */
+    function getRenderer() {
+        if (typeof State !== 'undefined' && State.renderer) {
+            return State.renderer;
+        }
+        if (typeof window.getRenderer === 'function') {
+            return window.getRenderer();
+        }
+        return null;
+    }
+    
+    /**
+     * Check if using CosmosGL renderer
+     * @returns {boolean}
+     */
+    function isCosmosRenderer() {
+        if (typeof State !== 'undefined') {
+            return State.rendererType === 'cosmos';
+        }
+        const renderer = getRenderer();
+        return renderer && typeof renderer.getType === 'function' && renderer.getType() === 'cosmos';
     }
     
     // ==========================================================================
@@ -425,8 +450,7 @@ const PathAnalysis = (function() {
     function highlightMultiplePaths() {
         clearHighlights();
         
-        const cy = getCytoscape();
-        if (!cy || !state.lastResult?.paths) return;
+        if (!state.lastResult?.paths) return;
         
         // Collect all nodes and edges from selected paths
         // Track which nodes are sources/targets
@@ -456,6 +480,16 @@ const PathAnalysis = (function() {
                 pathEdges.push([path.nodes[i], path.nodes[i + 1]]);
             }
         });
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            highlightMultiplePathsCosmos(allPathNodes, pathEdges);
+            return;
+        }
+        
+        // Cytoscape implementation
+        const cy = getCytoscape();
+        if (!cy) return;
         
         cy.batch(() => {
             // Highlight all path nodes with correct colors
@@ -538,6 +572,45 @@ const PathAnalysis = (function() {
     }
     
     /**
+     * Highlight multiple paths using CosmosGL renderer
+     */
+    function highlightMultiplePathsCosmos(allPathNodes, pathEdges) {
+        const renderer = getRenderer();
+        if (!renderer) return;
+        
+        console.log('[PathAnalysis] Highlighting multiple paths (CosmosGL):', allPathNodes.size, 'nodes');
+        
+        // Build node color map
+        const nodeColorMap = new Map();
+        allPathNodes.forEach((type, nodeId) => {
+            let color;
+            if (type === 'source') {
+                color = '#22c55e'; // Green
+            } else if (type === 'target') {
+                color = '#ef4444'; // Red
+            } else {
+                color = '#00d4ff'; // Cyan
+            }
+            nodeColorMap.set(nodeId, { color, type });
+        });
+        
+        // Build edge pairs
+        const edgePairs = pathEdges.map(([source, target]) => ({ source, target }));
+        
+        // Apply highlighting
+        renderer.highlightPathNodes(nodeColorMap);
+        renderer.highlightPathEdges(edgePairs, '#00d4ff', 1.0);
+        
+        // Fit view to all path nodes
+        renderer.fitView(Array.from(allPathNodes.keys()), 0.2);
+        
+        // Show multi-path details panel
+        showMultiplePathDetails();
+        
+        showToast(`Highlighting ${state.selectedPaths.size} paths (${allPathNodes.size} nodes)`, 'info');
+    }
+    
+    /**
      * Show details for multiple selected paths
      */
     function showMultiplePathDetails() {
@@ -602,7 +675,7 @@ const PathAnalysis = (function() {
                     </div>
                     <div class="multi-path-route">
                         <span class="node-badge source">${path.nodes[0].slice(0,8)}...</span>
-                        <span class="route-arrow">→</span>
+                        <span class="route-arrow">-></span>
                         <span class="node-badge target">${path.nodes[path.nodes.length-1].slice(0,8)}...</span>
                     </div>
                 </div>
@@ -641,14 +714,28 @@ const PathAnalysis = (function() {
      * Fit view to all selected paths
      */
     function fitToSelectedPaths() {
-        const cy = getCytoscape();
-        if (!cy || !state.lastResult?.paths) return;
+        if (!state.lastResult?.paths) return;
         
         const allNodes = new Set();
         state.selectedPaths.forEach(idx => {
             const path = state.lastResult.paths[idx];
             if (path?.nodes) path.nodes.forEach(n => allNodes.add(n));
         });
+        
+        if (allNodes.size === 0) return;
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.fitView === 'function') {
+                renderer.fitView(Array.from(allNodes), 0.2);
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
+        const cy = getCytoscape();
+        if (!cy) return;
         
         const pathNodes = cy.nodes().filter(n => allNodes.has(n.id()));
         if (pathNodes.length > 0) {
@@ -669,7 +756,7 @@ const PathAnalysis = (function() {
             .sort((a, b) => a - b)
             .map(idx => {
                 const path = state.lastResult.paths[idx];
-                return `Path #${idx + 1}: ${path.nodes.join(' → ')}`;
+                return `Path #${idx + 1}: ${path.nodes.join(' -> ')}`;
             })
             .join('\n\n');
         
@@ -688,10 +775,10 @@ const PathAnalysis = (function() {
         if (nodes.length > 5) {
             const first = nodes.slice(0, 2).map(fmt);
             const last = nodes.slice(-2).map(fmt);
-            return `${first.join(' → ')} → ... → ${last.join(' → ')}`;
+            return `${first.join(' -> ')} -> ... -> ${last.join(' -> ')}`;
         }
         
-        return nodes.map(fmt).join(' → ');
+        return nodes.map(fmt).join(' -> ');
     }
     
     function selectPath(index) {
@@ -719,13 +806,20 @@ const PathAnalysis = (function() {
         
         clearHighlights();
         
-        const cy = getCytoscape();
-        if (!cy) {
-            console.error('[PathAnalysis] Cytoscape not available');
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            highlightPathCosmos(path);
             return;
         }
         
-        console.log('[PathAnalysis] Highlighting path with', path.nodes.length, 'nodes');
+        // Cytoscape path highlighting
+        const cy = getCytoscape();
+        if (!cy) {
+            console.error('[PathAnalysis] No renderer available');
+            return;
+        }
+        
+        console.log('[PathAnalysis] Highlighting path with', path.nodes.length, 'nodes (Cytoscape)');
         
         cy.batch(() => {
             // DON'T dim - just make path nodes really stand out
@@ -823,9 +917,72 @@ const PathAnalysis = (function() {
         }
     }
     
+    /**
+     * Highlight path using CosmosGL renderer
+     */
+    function highlightPathCosmos(path) {
+        const renderer = getRenderer();
+        if (!renderer) {
+            console.error('[PathAnalysis] CosmosGL renderer not available');
+            return;
+        }
+        
+        console.log('[PathAnalysis] Highlighting path with', path.nodes.length, 'nodes (CosmosGL)');
+        
+        // Build node color map
+        const nodeColorMap = new Map();
+        path.nodes.forEach((nodeId, i) => {
+            let color, type;
+            if (i === 0) {
+                color = '#22c55e'; // Source - green
+                type = 'source';
+            } else if (i === path.nodes.length - 1) {
+                color = '#ef4444'; // Target - red
+                type = 'target';
+            } else {
+                color = '#00d4ff'; // Intermediate - cyan
+                type = 'intermediate';
+            }
+            nodeColorMap.set(nodeId, { color, type });
+        });
+        
+        // Build edge pairs
+        const edgePairs = [];
+        for (let i = 0; i < path.nodes.length - 1; i++) {
+            edgePairs.push({
+                source: path.nodes[i],
+                target: path.nodes[i + 1]
+            });
+        }
+        
+        // Apply highlighting
+        renderer.highlightPathNodes(nodeColorMap);
+        renderer.highlightPathEdges(edgePairs, '#00d4ff', 1.0);
+        
+        // Fit view to path nodes
+        renderer.fitView(path.nodes, 0.2);
+        
+        // Store for cleanup tracking
+        state.originalStyles.set('_cosmosPath', { nodes: path.nodes, edges: edgePairs });
+    }
+    
     function clearHighlights() {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.clearPathHighlights === 'function') {
+                renderer.clearPathHighlights();
+            }
+            state.originalStyles.clear();
+            return;
+        }
+        
+        // Cytoscape cleanup
         const cy = getCytoscape();
-        if (!cy) return;
+        if (!cy) {
+            state.originalStyles.clear();
+            return;
+        }
         
         cy.batch(() => {
             // Remove temporary path edges
@@ -834,6 +991,7 @@ const PathAnalysis = (function() {
             // Reset styled elements
             state.originalStyles.forEach((value, key) => {
                 if (value._isTemp) return; // Already removed above
+                if (key === '_cosmosPath') return; // Cosmos marker
                 
                 const ele = cy.getElementById(key);
                 if (ele.length) {
@@ -912,7 +1070,7 @@ const PathAnalysis = (function() {
             `;
             
             if (i < path.nodes.length - 1) {
-                html += `<div class="path-edge-info">↓ hop ${i + 1}</div>`;
+                html += `<div class="path-edge-info">| hop ${i + 1}</div>`;
             }
         });
         
@@ -963,6 +1121,16 @@ const PathAnalysis = (function() {
     }
     
     function zoomToNode(nodeId) {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.zoomToNode === 'function') {
+                renderer.zoomToNode(nodeId, 2, 400);
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         const cy = getCytoscape();
         if (!cy) return;
         
@@ -982,6 +1150,16 @@ const PathAnalysis = (function() {
         const path = state.lastResult.paths[state.selectedPathIndex];
         if (!path) return;
         
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.fitView === 'function') {
+                renderer.fitView(path.nodes, 0.2);
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         const cy = getCytoscape();
         if (!cy) return;
         
@@ -1000,7 +1178,7 @@ const PathAnalysis = (function() {
         const path = state.lastResult.paths[state.selectedPathIndex];
         if (!path) return;
         
-        navigator.clipboard.writeText(path.nodes.join(' → ')).then(() => {
+        navigator.clipboard.writeText(path.nodes.join(' -> ')).then(() => {
             showToast('Path copied!', 'success');
         });
     }
@@ -1009,9 +1187,6 @@ const PathAnalysis = (function() {
      * Isolate path - hide all nodes except those in the selected path(s)
      */
     function isolatePath() {
-        const cy = getCytoscape();
-        if (!cy) return;
-        
         // Collect all nodes from selected paths
         const pathNodeIds = new Set();
         
@@ -1035,6 +1210,24 @@ const PathAnalysis = (function() {
             showToast('No path selected', 'error');
             return;
         }
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.showOnlyNodes === 'function') {
+                renderer.showOnlyNodes(Array.from(pathNodeIds));
+                renderer.fitView(Array.from(pathNodeIds), 0.1);
+                state.isIsolated = true;
+                state.hiddenNodes = [];
+                showToast(`Isolated ${pathNodeIds.size} path nodes`, 'success');
+                updateIsolateButtons();
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
+        const cy = getCytoscape();
+        if (!cy) return;
         
         cy.batch(() => {
             // Hide nodes not in path
@@ -1074,6 +1267,21 @@ const PathAnalysis = (function() {
      * Show all nodes - restore from isolated view
      */
     function showAllNodes() {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.showAllNodes === 'function') {
+                renderer.showAllNodes();
+                renderer.fitView();
+                state.isIsolated = false;
+                state.hiddenNodes = [];
+                showToast('Showing all nodes', 'success');
+                updateIsolateButtons();
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         const cy = getCytoscape();
         if (!cy) return;
         

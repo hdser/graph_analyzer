@@ -205,7 +205,7 @@ const Utils = {
             summary = items.map(formatItem).join(', ');
         } else {
             const shown = items.slice(0, maxShow).map(formatItem).join(', ');
-            summary = `${shown} (+${count - maxShow} more, Σ${this.formatCompact(total)})`;
+            summary = `${shown} (+${count - maxShow} more, Sum${this.formatCompact(total)})`;
         }
         
         // Full list

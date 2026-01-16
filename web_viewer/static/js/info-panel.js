@@ -582,7 +582,7 @@ const InfoPanel = {
         const backBtns = document.querySelectorAll('.nav-back-btn');
         backBtns.forEach(btn => {
             btn.disabled = this.history.length === 0;
-            btn.textContent = this.history.length > 0 ? `â† Back (${this.history.length})` : 'â† Back';
+            btn.textContent = this.history.length > 0 ? `<- Back (${this.history.length})` : '<- Back';
         });
         
         // Update ALL origin info boxes (both in node-info and multi-info)

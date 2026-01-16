@@ -49,7 +49,7 @@ const Export = {
         const data = State.currentEdgeData;
         const lines = Object.entries(data).map(([k, v]) => `${k}: ${v}`);
         
-        const text = `Edge: ${data.source} â†’ ${data.target}\n${'='.repeat(40)}\n${lines.join('\n')}`;
+        const text = `Edge: ${data.source} -> ${data.target}\n${'='.repeat(40)}\n${lines.join('\n')}`;
         
         const success = await Utils.copyToClipboard(text);
         updateStatus(success ? 'Edge data copied to clipboard' : 'Copy failed', success ? 'success' : 'error');

@@ -169,7 +169,7 @@ const Layout = (function() {
             
             let label = layout.display_name;
             if (layout.is_base) {
-                label += ' â˜…';  // Star for default
+                label += ' *';  // Star for default
             }
             label += ` (${layout.node_count} nodes)`;
             

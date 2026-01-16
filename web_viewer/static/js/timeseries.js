@@ -592,10 +592,10 @@ const Timeseries = {
         if (trendEl) {
             const direction = trend.trend_direction;
             const icons = {
-                'increasing': '↗️',
-                'decreasing': '↘️',
+                'increasing': '↗',
+                'decreasing': '↘',
                 'stable': '→',
-                'volatile': '↕️'
+                'volatile': '↕'
             };
             trendEl.textContent = `${icons[direction] || ''} ${direction}`;
             trendEl.className = `trend-${direction}`;

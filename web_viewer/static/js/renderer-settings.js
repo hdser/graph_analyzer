@@ -3,6 +3,8 @@
  * 
  * Client-side renderer configuration loaded from backend.
  * All settings are configurable via environment variables on the server.
+ * 
+ * Includes cosmos.gl simulation parameter presets and extended configuration.
  */
 
 const RendererSettings = {
@@ -20,12 +22,20 @@ const RendererSettings = {
             backgroundColor: '#1a1a1a',
             curvedLinks: true,
             enableDrag: true,
+            enableRightClickRepulsion: false,
             simulation: {
+                // Core parameters - cosmos.gl defaults from documentation
                 friction: 0.85,
-                gravity: 0.1,
-                repulsion: 0.5,
+                gravity: 0.25,
+                repulsion: 1.0,
                 linkDistance: 10,
-                linkSpring: 0.3
+                linkSpring: 1.0,
+                // Extended parameters
+                decay: 5000,
+                center: 0,
+                repulsionTheta: 1.15,
+                cluster: 0.1,
+                repulsionFromMouse: 2.0
             }
         },
         style: {
@@ -37,6 +47,90 @@ const RendererSettings = {
             defaultNodeColor: '#999999',
             defaultEdgeColor: '#f0f0f0',
             defaultEdgeOpacity: 0.3
+        }
+    },
+    
+    // Simulation presets for quick configuration
+    simulationPresets: {
+        default: {
+            repulsion: 1.0,
+            gravity: 0.25,
+            linkDistance: 10,
+            linkSpring: 1.0,
+            friction: 0.85,
+            decay: 5000,
+            center: 0,
+            cluster: 0.1
+        },
+        dense: {
+            repulsion: 1.5,
+            gravity: 0.05,
+            linkDistance: 5,
+            linkSpring: 0.5,
+            friction: 0.9,
+            decay: 3000,
+            center: 0.1,
+            cluster: 0.05
+        },
+        sparse: {
+            repulsion: 0.3,
+            gravity: 0.15,
+            linkDistance: 30,
+            linkSpring: 0.2,
+            friction: 0.8,
+            decay: 6000,
+            center: 0.2,
+            cluster: 0.1
+        },
+        clustered: {
+            repulsion: 0.8,
+            gravity: 0.2,
+            linkDistance: 15,
+            linkSpring: 0.4,
+            friction: 0.85,
+            decay: 4000,
+            center: 0.3,
+            cluster: 0.8
+        },
+        hierarchical: {
+            repulsion: 0.4,
+            gravity: 0.05,
+            linkDistance: 50,
+            linkSpring: 0.8,
+            friction: 0.7,
+            decay: 7000,
+            center: 0,
+            cluster: 0
+        },
+        radial: {
+            repulsion: 0.6,
+            gravity: 0.3,
+            linkDistance: 20,
+            linkSpring: 0.5,
+            friction: 0.85,
+            decay: 5000,
+            center: 0.5,
+            cluster: 0.2
+        },
+        fast: {
+            repulsion: 0.3,
+            gravity: 0.2,
+            linkDistance: 10,
+            linkSpring: 0.4,
+            friction: 0.6,
+            decay: 2000,
+            center: 0.1,
+            cluster: 0.1
+        },
+        quality: {
+            repulsion: 0.8,
+            gravity: 0.1,
+            linkDistance: 15,
+            linkSpring: 0.3,
+            friction: 0.95,
+            decay: 8000,
+            center: 0,
+            cluster: 0.1
         }
     },
     
@@ -180,6 +274,31 @@ const RendererSettings = {
             this.getStyleConfig().defaultEdgeColor,
             this.getStyleConfig().defaultEdgeOpacity
         );
+    },
+    
+    /**
+     * Get simulation presets
+     * @returns {Object} Named presets with simulation parameters
+     */
+    getSimulationPresets() {
+        return this.simulationPresets;
+    },
+    
+    /**
+     * Get a specific simulation preset
+     * @param {string} name - Preset name
+     * @returns {Object|null} Preset parameters or null if not found
+     */
+    getSimulationPreset(name) {
+        return this.simulationPresets[name] || null;
+    },
+    
+    /**
+     * Get list of available preset names
+     * @returns {string[]}
+     */
+    getPresetNames() {
+        return Object.keys(this.simulationPresets);
     }
 };
 

@@ -203,9 +203,7 @@ const GraphLoader = {
                 <span class="renderer-icon">${icon}</span>
                 <span class="renderer-label">${label}</span>
             </span>
-            <span class="renderer-info" title="GPU: ${caps.gpuInfo || 'N/A'}">
-                (max ~${maxNodesFormatted} nodes)
-            </span>
+            
         `;
         
         // Show WebGL warning if cosmos not available
@@ -447,7 +445,7 @@ const GraphLoader = {
         if (!renderer) return;
         
         const stats = renderer.getStats();
-        const edgeCount = stats.edgeCount;
+        const edgeCount = stats.edgeCount || stats.visibleEdgeCount || 0;
         
         if (edgeCount === 0) {
             Toast.show('No edges to clear', 'info');
@@ -457,9 +455,14 @@ const GraphLoader = {
         // Disable pointer events during removal
         DOMCache.cyContainer.style.pointerEvents = 'none';
         
-        // Get all edge IDs and remove them
-        const edgeIds = renderer.getAllEdgeIds();
-        renderer.removeElements([], edgeIds);
+        // Use renderer-specific clear method if available (cosmos-adapter has position-preserving clearEdges)
+        if (renderer.getType() === 'cosmos' && typeof renderer.clearEdges === 'function') {
+            renderer.clearEdges();
+        } else {
+            // Fallback: Get all edge IDs and remove them
+            const edgeIds = renderer.getAllEdgeIds();
+            renderer.removeElements([], edgeIds);
+        }
         
         // Re-enable after a delay
         setTimeout(() => {
@@ -475,7 +478,11 @@ const GraphLoader = {
             DOMCache.loadEdgesBtn.textContent = 'Load Edges';
         }
         
-        updateStatus(`Cleared ${edgeCount.toLocaleString()} edges`, 'success');
+        // Update edge visibility toggle if present
+        const edgeToggle = document.getElementById('cosmos-edge-visibility');
+        if (edgeToggle) edgeToggle.checked = true;
+        
+        updateStatus(`Cleared ${edgeCount.toLocaleString()} edges (layout preserved)`, 'success');
     },
 
     /**

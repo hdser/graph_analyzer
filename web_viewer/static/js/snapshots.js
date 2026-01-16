@@ -198,7 +198,7 @@ const Snapshots = (function() {
                 day: 'numeric',
                 year: 'numeric'
             });
-            label = `${dateStr} — ${label}`;
+            label = `${dateStr}  -  ${label}`;
         }
         
         if (snapshot.node_count) {
@@ -897,14 +897,14 @@ const Snapshots = (function() {
         elements.statusIndicator.classList.remove('live', 'snapshot-active', 'viewing-snapshot', 'comparing', 'animating');
         
         if (isCompareMode) {
-            elements.statusIndicator.textContent = '🔀 Comparison View';
+            elements.statusIndicator.textContent = '⇋ Comparison View';
             elements.statusIndicator.classList.add('comparing');
         } else if (isAnimMode) {
-            elements.statusIndicator.textContent = `🎬 Animation: ${animFrame}/${animTotal}`;
+            elements.statusIndicator.textContent = `▶ Animation: ${animFrame}/${animTotal}`;
             elements.statusIndicator.classList.add('animating');
         } else if (isActive && snapshotInfo) {
             const label = snapshotInfo.label || `Block ${snapshotInfo.block_number?.toLocaleString()}`;
-            elements.statusIndicator.textContent = `📸 ${label}`;
+            elements.statusIndicator.textContent = `📊 ${label}`;
             elements.statusIndicator.classList.add('viewing-snapshot');
         } else {
             elements.statusIndicator.textContent = '● Live View';
@@ -1840,7 +1840,7 @@ const Snapshots = (function() {
         container.style.pointerEvents = 'none';
         
         if (elements.animPlayBtn) {
-            elements.animPlayBtn.textContent = '⏸';
+            elements.animPlayBtn.textContent = '||';
             elements.animPlayBtn.classList.add('playing');
         }
         
@@ -1877,7 +1877,7 @@ const Snapshots = (function() {
             animationInterval = null;
         }
         if (elements.animPlayBtn) {
-            elements.animPlayBtn.textContent = '▶';
+            elements.animPlayBtn.textContent = 'v';
             elements.animPlayBtn.classList.remove('playing');
         }
         

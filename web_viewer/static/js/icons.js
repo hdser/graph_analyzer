@@ -230,6 +230,22 @@ const Icons = {
             <rect x="9" y="3" width="3" height="10" fill="currentColor"/>
         </svg>`,
         
+        next: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3l7 5-7 5V3z" fill="currentColor"/>
+            <rect x="11" y="3" width="2" height="10" fill="currentColor"/>
+        </svg>`,
+        
+        maximize: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 6V2h4"/>
+            <path d="M10 2h4v4"/>
+            <path d="M14 10v4h-4"/>
+            <path d="M6 14H2v-4"/>
+            <path d="M2 2l5 5"/>
+            <path d="M14 2l-5 5"/>
+            <path d="M2 14l5-5"/>
+            <path d="M14 14l-5-5"/>
+        </svg>`,
+        
         zoomIn: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="7" cy="7" r="4.5"/>
             <path d="M10.5 10.5L14 14"/>
@@ -277,6 +293,37 @@ const Icons = {
         arrowRight: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 8h12"/>
             <path d="M9 3l5 5-5 5"/>
+        </svg>`,
+        
+        // Swap icons (vertical and horizontal)
+        swapVertical: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 3v10"/>
+            <path d="M2 5l2-2 2 2"/>
+            <path d="M12 3v10"/>
+            <path d="M10 11l2 2 2-2"/>
+        </svg>`,
+        
+        swapHorizontal: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 4h10"/>
+            <path d="M5 2l-2 2 2 2"/>
+            <path d="M3 12h10"/>
+            <path d="M11 10l2 2-2 2"/>
+        </svg>`,
+        
+        // Trend indicators
+        trendUp: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12l4-4 3 3 5-5"/>
+            <path d="M10 6h5v5"/>
+        </svg>`,
+        
+        trendDown: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 4l4 4 3-3 5 5"/>
+            <path d="M10 10h5v-5"/>
+        </svg>`,
+        
+        trendStable: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 8h12"/>
+            <path d="M10 5l3 3-3 3"/>
         </svg>`,
         
         // Math operators

@@ -423,7 +423,7 @@ const TemporalComposite = {
             if (!existing) {
                 const option = document.createElement('option');
                 option.value = metricName;
-                option.textContent = `⏱️ ${metricName}`;
+                option.textContent = `⏱ ${metricName}`;
                 option.dataset.temporal = 'true';
                 select.appendChild(option);
             }

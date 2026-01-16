@@ -79,7 +79,7 @@ const FlowAnalysis = (function() {
     }
     
     // ==========================================================================
-    // CYTOSCAPE ACCESS
+    // RENDERER ACCESS
     // ==========================================================================
     
     function getCytoscape() {
@@ -90,6 +90,32 @@ const FlowAnalysis = (function() {
             return getCy();
         }
         return null;
+    }
+    
+    /**
+     * Get the current renderer (either Cytoscape or Cosmos)
+     * @returns {Object|null} The renderer instance
+     */
+    function getRenderer() {
+        if (typeof State !== 'undefined' && State.renderer) {
+            return State.renderer;
+        }
+        if (typeof window.getRenderer === 'function') {
+            return window.getRenderer();
+        }
+        return null;
+    }
+    
+    /**
+     * Check if using CosmosGL renderer
+     * @returns {boolean}
+     */
+    function isCosmosRenderer() {
+        if (typeof State !== 'undefined') {
+            return State.rendererType === 'cosmos';
+        }
+        const renderer = getRenderer();
+        return renderer && typeof renderer.getType === 'function' && renderer.getType() === 'cosmos';
     }
     
     // ==========================================================================
@@ -225,6 +251,14 @@ const FlowAnalysis = (function() {
         const graphSelect = document.getElementById('graph-select');
         const graphName = graphSelect?.value || null;
         
+        // Log renderer state BEFORE computation
+        console.log('[FlowAnalysis] ===== PRE-COMPUTE STATE =====');
+        console.log('[FlowAnalysis] Current graph:', State?.currentGraph);
+        console.log('[FlowAnalysis] Selected graph for API:', graphName);
+        console.log('[FlowAnalysis] Renderer type:', State?.rendererType);
+        console.log('[FlowAnalysis] isCosmosRenderer():', isCosmosRenderer());
+        console.log('[FlowAnalysis] ===============================');
+        
         let url, body;
         
         switch (type) {
@@ -280,6 +314,12 @@ const FlowAnalysis = (function() {
             })
             .then(result => {
                 console.log('[FlowAnalysis] Result:', result);
+                
+                // Log renderer state AFTER computation
+                console.log('[FlowAnalysis] ===== POST-COMPUTE STATE =====');
+                console.log('[FlowAnalysis] Renderer type:', State?.rendererType);
+                console.log('[FlowAnalysis] isCosmosRenderer():', isCosmosRenderer());
+                console.log('[FlowAnalysis] ================================');
                 
                 state.lastResult = result;
                 state.lastResult.type = type;
@@ -390,8 +430,8 @@ const FlowAnalysis = (function() {
             const flowVal = edge.flow !== undefined ? `: ${edge.flow.toFixed(2)}` : '';
             
             return `
-                <div class="flow-edge-item" title="${edge.source} → ${edge.target}">
-                    <span class="edge-route">${srcShort} → ${tgtShort}</span>
+                <div class="flow-edge-item" title="${edge.source} -> ${edge.target}">
+                    <span class="edge-route">${srcShort} -> ${tgtShort}</span>
                     <span class="edge-flow">${flowVal}</span>
                 </div>
             `;
@@ -418,14 +458,32 @@ const FlowAnalysis = (function() {
     // ==========================================================================
     
     function highlightFlow() {
-        if (!state.lastResult) return;
+        if (!state.lastResult) {
+            console.log('[FlowAnalysis] highlightFlow called but no lastResult');
+            return;
+        }
+        
+        console.log('[FlowAnalysis] highlightFlow called');
+        console.log('[FlowAnalysis] State.rendererType:', typeof State !== 'undefined' ? State.rendererType : 'State undefined');
+        console.log('[FlowAnalysis] isCosmosRenderer():', isCosmosRenderer());
         
         clearHighlights();
         
+        const type = state.lastResult.type;
+        console.log('[FlowAnalysis] Analysis type:', type);
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            console.log('[FlowAnalysis] Using CosmosGL path for highlighting');
+            highlightFlowCosmos(type);
+            return;
+        }
+        
+        console.log('[FlowAnalysis] Using Cytoscape path for highlighting');
+        
+        // Cytoscape implementation
         const cy = getCytoscape();
         if (!cy) return;
-        
-        const type = state.lastResult.type;
         
         // Non-blocking: yield to event loop before heavy work
         setTimeout(() => {
@@ -472,6 +530,92 @@ const FlowAnalysis = (function() {
             // Show details in info panel
             showFlowDetails();
         }, 0);
+    }
+    
+    /**
+     * Highlight flow using CosmosGL renderer
+     */
+    function highlightFlowCosmos(type) {
+        const renderer = getRenderer();
+        if (!renderer) {
+            console.error('[FlowAnalysis] No renderer available for CosmosGL highlighting');
+            return;
+        }
+        
+        console.log('[FlowAnalysis] Highlighting flow (CosmosGL), type:', type);
+        console.log('[FlowAnalysis] Renderer type:', renderer.getType ? renderer.getType() : 'unknown');
+        console.log('[FlowAnalysis] Source:', state.sourceNode, 'Target:', state.targetNode);
+        
+        const edges = type === 'max_flow' ? state.lastResult.flow_edges : 
+                     type === 'min_cut' ? state.lastResult.cut_edges : [];
+        
+        console.log('[FlowAnalysis] Flow edges count:', edges?.length || 0);
+        
+        // Build node color map
+        const nodeColorMap = new Map();
+        
+        // Source node
+        if (state.sourceNode) {
+            nodeColorMap.set(state.sourceNode, { color: '#22c55e', type: 'source' });
+        }
+        
+        // Target node
+        if (state.targetNode) {
+            nodeColorMap.set(state.targetNode, { color: '#ef4444', type: 'target' });
+        }
+        
+        // Intermediate nodes from edges
+        if (edges && edges.length > 0) {
+            edges.forEach(edge => {
+                if (edge.source && !nodeColorMap.has(edge.source)) {
+                    nodeColorMap.set(edge.source, { color: '#00d4ff', type: 'intermediate' });
+                }
+                if (edge.target && !nodeColorMap.has(edge.target)) {
+                    nodeColorMap.set(edge.target, { color: '#00d4ff', type: 'intermediate' });
+                }
+            });
+        }
+        
+        console.log('[FlowAnalysis] Node color map size:', nodeColorMap.size);
+        
+        // Build edge pairs
+        const edgePairs = (edges || []).map(edge => ({
+            source: edge.source,
+            target: edge.target
+        }));
+        
+        // Determine edge color based on type
+        const edgeColor = type === 'max_flow' ? '#00d4ff' : '#ef4444';
+        
+        // Apply highlighting with error handling
+        try {
+            if (typeof renderer.highlightPathNodes === 'function') {
+                renderer.highlightPathNodes(nodeColorMap);
+                console.log('[FlowAnalysis] highlightPathNodes called successfully');
+            } else {
+                console.error('[FlowAnalysis] renderer.highlightPathNodes is not a function');
+            }
+            
+            if (edgePairs.length > 0 && typeof renderer.highlightPathEdges === 'function') {
+                renderer.highlightPathEdges(edgePairs, edgeColor, 1.0);
+                console.log('[FlowAnalysis] highlightPathEdges called successfully');
+            } else if (edgePairs.length > 0) {
+                console.error('[FlowAnalysis] renderer.highlightPathEdges is not a function');
+            }
+            
+            // Fit view to all involved nodes
+            if (typeof renderer.fitView === 'function') {
+                renderer.fitView(Array.from(nodeColorMap.keys()), 0.2);
+            }
+        } catch (error) {
+            console.error('[FlowAnalysis] Error during CosmosGL highlighting:', error);
+        }
+        
+        // Store for cleanup tracking
+        state.highlightedElements.set('_cosmosFlow', { nodes: Array.from(nodeColorMap.keys()), edges: edgePairs });
+        
+        // Show details in info panel
+        showFlowDetails();
     }
     
     function highlightEdgesChunked(cy, edges, type, startIndex) {
@@ -665,10 +809,10 @@ const FlowAnalysis = (function() {
             displayEdges.forEach((edge, i) => {
                 const flowVal = edge.flow !== undefined ? ` (${edge.flow.toFixed(2)})` : '';
                 html += `
-                    <div class="path-edge-info">↓ ${type === 'max_flow' ? 'flow' : 'cut'}${flowVal}</div>
+                    <div class="path-edge-info">| ${type === 'max_flow' ? 'flow' : 'cut'}${flowVal}</div>
                     <div class="path-node-item" onclick="FlowAnalysis.zoomToEdge('${edge.source}', '${edge.target}')" title="Click to zoom">
                         <span class="path-node-hop">${i + 1}</span>
-                        <span class="path-node-id">${edge.source.slice(0, 10)}...→ ${edge.target.slice(-10)}</span>
+                        <span class="path-node-id">${edge.source.slice(0, 10)}...-> ${edge.target.slice(-10)}</span>
                     </div>
                 `;
             });
@@ -679,7 +823,7 @@ const FlowAnalysis = (function() {
         }
         
         html += `
-                    <div class="path-edge-info">↓</div>
+                    <div class="path-edge-info">|</div>
                     <div class="path-node-item" onclick="FlowAnalysis.zoomToNode('${state.targetNode}')" title="Click to zoom">
                         <span class="path-node-hop target">T</span>
                         <span class="path-node-id">${state.targetNode}</span>
@@ -752,8 +896,20 @@ const FlowAnalysis = (function() {
     }
     
     function zoomToNode(nodeId) {
+        if (!nodeId) return;
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.zoomToNode === 'function') {
+                renderer.zoomToNode(nodeId, 2, 300);
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         const cy = getCytoscape();
-        if (!cy || !nodeId) return;
+        if (!cy) return;
         
         const node = cy.getElementById(nodeId);
         if (node.length) {
@@ -766,6 +922,16 @@ const FlowAnalysis = (function() {
     }
     
     function zoomToEdge(sourceId, targetId) {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.fitView === 'function') {
+                renderer.fitView([sourceId, targetId], 0.3);
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         const cy = getCytoscape();
         if (!cy) return;
         
@@ -781,6 +947,26 @@ const FlowAnalysis = (function() {
     }
     
     function fitToFlow() {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (!renderer) return;
+            
+            // Get all involved nodes
+            const involvedNodes = new Set([state.sourceNode, state.targetNode]);
+            const edges = state.lastResult?.flow_edges || state.lastResult?.cut_edges || [];
+            edges.forEach(edge => {
+                involvedNodes.add(edge.source);
+                involvedNodes.add(edge.target);
+            });
+            
+            if (involvedNodes.size > 0 && typeof renderer.fitView === 'function') {
+                renderer.fitView(Array.from(involvedNodes), 0.2);
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         const cy = getCytoscape();
         if (!cy || state.highlightedElements.size === 0) return;
         
@@ -809,12 +995,53 @@ const FlowAnalysis = (function() {
             return;
         }
         
-        const cy = getCytoscape();
-        if (!cy) return;
-        
         const [sourceSide, targetSide] = state.lastResult.partition;
         const sourceSet = new Set(sourceSide);
         const targetSet = new Set(targetSide);
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (!renderer) return;
+            
+            console.log('[FlowAnalysis] Showing partition (CosmosGL)');
+            
+            // Build node color map for all partitioned nodes
+            const nodeColorMap = new Map();
+            
+            // Source side nodes (green)
+            sourceSide.forEach(nodeId => {
+                // Mark actual source node differently
+                if (nodeId === state.sourceNode) {
+                    nodeColorMap.set(nodeId, { color: '#22c55e', type: 'source' });
+                } else {
+                    nodeColorMap.set(nodeId, { color: '#22c55e', type: 'intermediate' });
+                }
+            });
+            
+            // Target side nodes (red)
+            targetSide.forEach(nodeId => {
+                // Mark actual target node differently
+                if (nodeId === state.targetNode) {
+                    nodeColorMap.set(nodeId, { color: '#ef4444', type: 'target' });
+                } else {
+                    nodeColorMap.set(nodeId, { color: '#ef4444', type: 'intermediate' });
+                }
+            });
+            
+            // Apply highlighting
+            renderer.highlightPathNodes(nodeColorMap);
+            
+            // Store for cleanup tracking
+            state.highlightedElements.set('_cosmosPartition', { nodes: Array.from(nodeColorMap.keys()) });
+            
+            showToast(`Source side: ${sourceSide.length}, Target side: ${targetSide.length}`, 'info');
+            return;
+        }
+        
+        // Cytoscape implementation
+        const cy = getCytoscape();
+        if (!cy) return;
         
         // Non-blocking: yield to event loop
         setTimeout(() => {
@@ -845,9 +1072,6 @@ const FlowAnalysis = (function() {
     function isolateFlow() {
         if (!state.lastResult) return;
         
-        const cy = getCytoscape();
-        if (!cy) return;
-        
         // Collect all nodes involved
         const involvedNodes = new Set([state.sourceNode, state.targetNode]);
         
@@ -856,6 +1080,22 @@ const FlowAnalysis = (function() {
             involvedNodes.add(edge.source);
             involvedNodes.add(edge.target);
         });
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.showOnlyNodes === 'function') {
+                renderer.showOnlyNodes(Array.from(involvedNodes));
+                renderer.fitView(Array.from(involvedNodes), 0.1);
+                state.isIsolated = true;
+                showToast(`Isolated ${involvedNodes.size} nodes`, 'success');
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
+        const cy = getCytoscape();
+        if (!cy) return;
         
         // Non-blocking: yield to event loop
         setTimeout(() => {
@@ -890,6 +1130,19 @@ const FlowAnalysis = (function() {
     }
     
     function showAllNodes() {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.showAllNodes === 'function') {
+                renderer.showAllNodes();
+                renderer.fitView();
+                state.isIsolated = false;
+                showToast('Showing all nodes', 'info');
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         const cy = getCytoscape();
         if (!cy) return;
         
@@ -908,8 +1161,29 @@ const FlowAnalysis = (function() {
     }
     
     function clearHighlights() {
+        console.log('[FlowAnalysis] clearHighlights called');
+        console.log('[FlowAnalysis] isCosmosRenderer():', isCosmosRenderer());
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            console.log('[FlowAnalysis] Clearing CosmosGL highlights, renderer:', renderer ? 'exists' : 'null');
+            if (renderer && typeof renderer.clearPathHighlights === 'function') {
+                renderer.clearPathHighlights();
+                console.log('[FlowAnalysis] clearPathHighlights called');
+            }
+            state.highlightedElements.clear();
+            return;
+        }
+        
+        console.log('[FlowAnalysis] Clearing Cytoscape highlights');
+        
+        // Cytoscape cleanup
         const cy = getCytoscape();
-        if (!cy) return;
+        if (!cy) {
+            state.highlightedElements.clear();
+            return;
+        }
         
         cy.batch(() => {
             // Remove temporary flow edges
@@ -918,6 +1192,8 @@ const FlowAnalysis = (function() {
             // Reset styled elements
             state.highlightedElements.forEach((value, id) => {
                 if (value._isTemp) return; // Already removed above
+                if (id === '_cosmosFlow') return; // Cosmos marker
+                if (id === '_cosmosPartition') return; // Cosmos partition marker
                 
                 const element = cy.getElementById(id);
                 if (element.length) {

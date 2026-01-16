@@ -394,23 +394,19 @@
                         <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
                     <div class="panel-content">
-                        <!-- Source Node -->
-                        <div class="style-row">
-                            <label>Source Node</label>
-                            <input type="text" id="path-source-input" placeholder="Enter or click node" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
-                        </div>
-                        
-                        <!-- Target Node -->
-                        <div class="style-row">
-                            <label>Target Node</label>
-                            <input type="text" id="path-target-input" placeholder="Enter or click node" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
-                        </div>
-                        
-                        <!-- Swap Button -->
-                        <div class="style-row" style="justify-content: center;">
-                            <button id="swap-nodes-btn" class="secondary-btn" style="padding: 4px 12px; font-size: 11px;">
-                                â†‘â†“ Swap
+                        <!-- Source/Target Inputs - Side by Side like Flow -->
+                        <div class="path-endpoints">
+                            <div class="endpoint-row">
+                                <label>Source</label>
+                                <input type="text" id="path-source-input" placeholder="Enter or click node">
+                            </div>
+                            <button id="swap-nodes-btn" class="swap-btn" title="Swap">
+                                <span data-icon="swapVertical"></span>
                             </button>
+                            <div class="endpoint-row">
+                                <label>Target</label>
+                                <input type="text" id="path-target-input" placeholder="Enter or click node">
+                            </div>
                         </div>
                         
                         <!-- Algorithm Selection -->
@@ -561,7 +557,7 @@
                                 <label>Source</label>
                                 <input type="text" id="flow-source-input" placeholder="Click node or paste address...">
                             </div>
-                            <button id="swap-flow-nodes-btn" class="swap-btn" title="Swap">â‡…</button>
+                            <button id="swap-flow-nodes-btn" class="swap-btn" title="Swap"><span data-icon="swapVertical"></span></button>
                             <div class="endpoint-row">
                                 <label>Sink</label>
                                 <input type="text" id="flow-target-input" placeholder="Click node or paste address...">
@@ -595,7 +591,7 @@
                                 </div>
                             </div>
                             
-                            <div class="flow-actions">
+                            <div class="button-group">
                                 <button id="compute-flow-btn" class="primary-btn">Compute</button>
                                 <button id="clear-flow-btn" class="secondary-btn">Clear</button>
                             </div>
@@ -660,7 +656,7 @@
                                     <div class="option-row">
                                         <label>Algorithm</label>
                                         <select id="cf-algorithm-select">
-                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) âœ”</option>
+                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) Ã¢Å“â€œ</option>
                                             <option value="networkx:preflow_push">Preflow Push (NetworkX)</option>
                                             <option value="networkx:dinitz">Dinitz (NetworkX)</option>
                                             <option value="ortools:max_flow">Max Flow (OR-Tools)</option>
@@ -678,7 +674,7 @@
                                 </div>
                             </details>
                             
-                            <div class="flow-actions">
+                            <div class="button-group">
                                 <button id="cf-compute-btn" class="primary-btn">Compute Flow</button>
                                 <button id="cf-clear-btn" class="secondary-btn">Clear</button>
                             </div>
@@ -820,7 +816,22 @@
                         <div class="style-row">
                             <label>Gradient</label>
                             <select id="node-color-gradient">
+                                <option value="turbo">Turbo (High Contrast)</option>
+                                <option value="rainbow">Rainbow</option>
                                 <option value="spectral">Spectral</option>
+                                <option value="viridis">Viridis</option>
+                                <option value="plasma">Plasma</option>
+                                <option value="inferno">Inferno</option>
+                                <option value="magma">Magma</option>
+                                <option value="coolwarm">Cool-Warm</option>
+                                <option value="rdylgn">Red-Yellow-Green</option>
+                                <option value="rdbu">Red-Blue</option>
+                                <option value="prgn">Purple-Green</option>
+                                <option value="greens">Greens</option>
+                                <option value="blues">Blues</option>
+                                <option value="reds">Reds</option>
+                                <option value="purples">Purples</option>
+                                <option value="oranges">Oranges</option>
                             </select>
                         </div>
                         
@@ -840,7 +851,10 @@
                             <label>Color</label>
                             <input type="color" id="edge-color" value="#fcfafa">
                         </div>
-                        <button id="apply-style-btn" class="secondary-btn">Apply Style</button>
+                        <div class="button-row" style="display: flex; gap: 8px; margin-top: 10px;">
+                            <button id="apply-style-btn" class="secondary-btn" style="flex: 1;">Apply Style</button>
+                            <button id="clear-style-btn" class="secondary-btn" style="flex: 1;">Clear Style</button>
+                        </div>
                     </div>
                 </div>
 
@@ -851,34 +865,7 @@
                         <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
                     <div class="panel-content">
-                        <!-- Renderer Settings -->
-                        <h4>Renderer</h4>
-                        <div id="renderer-capability-info" class="capability-info" style="font-size: 11px; color: #888; margin-bottom: 10px;">
-                            Detecting capabilities...
-                        </div>
-                        <div class="style-row">
-                            <label>Engine</label>
-                            <div class="radio-group" style="display: flex; gap: 10px;">
-                                <label class="radio-label">
-                                    <input type="radio" name="renderer-preference" value="auto" checked>
-                                    <span>Auto</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="renderer-preference" value="cosmos">
-                                    <span>cosmos.gl</span>
-                                </label>
-                                <label class="radio-label">
-                                    <input type="radio" name="renderer-preference" value="cytoscape">
-                                    <span>Cytoscape</span>
-                                </label>
-                            </div>
-                        </div>
-                        <div id="webgl-warning" class="warning-box" style="display: none; margin-bottom: 12px;">
-                            <span data-icon="warning" data-icon-size="14"></span>
-                            <span id="webgl-warning-details">WebGL not available</span>
-                        </div>
-                        
-                        <h4 style="margin-top: 16px;">Saved Layouts</h4>
+                        <h4>Saved Layouts</h4>
                         <div class="style-row">
                             <label>Layout</label>
                             <div style="display:flex; gap:8px; flex:1; align-items:center;">
@@ -929,21 +916,66 @@
                         
                         <!-- cosmos.gl Simulation Controls (only shown when using cosmos.gl) -->
                         <div id="cosmos-simulation-controls" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333;">
-                            <h4>Simulation Control</h4>
-                            <p style="font-size: 11px; color: #888; margin-bottom: 10px;">
-                                cosmos.gl uses force-directed simulation. Pause to lock positions.
-                            </p>
-                            <div class="button-row">
-                                <button id="cosmos-pause-btn" class="secondary-btn">
-                                    <span data-icon="pause"></span> Pause
-                                </button>
-                                <button id="cosmos-start-btn" class="secondary-btn" style="display: none;">
-                                    <span data-icon="play"></span> Resume
-                                </button>
-                                <button id="cosmos-fit-btn" class="secondary-btn">
-                                    <span data-icon="zoomIn"></span> Fit View
-                                </button>
+                            <h4>Simulation Parameters</h4>
+                            
+                            <div class="style-row">
+                                <label title="Node repulsion force (0-2, default 1.0)">Repulsion</label>
+                                <input type="range" id="cosmos-repulsion" min="0" max="2" step="0.1" value="1.0" style="flex:1;">
+                                <span id="cosmos-repulsion-value" style="width:35px; text-align:right; font-size:11px;">1.0</span>
                             </div>
+                            <div class="style-row">
+                                <label title="Gravity toward center (0-1, default 0.25)">Gravity</label>
+                                <input type="range" id="cosmos-gravity" min="0" max="1" step="0.05" value="0.25" style="flex:1;">
+                                <span id="cosmos-gravity-value" style="width:35px; text-align:right; font-size:11px;">0.25</span>
+                            </div>
+                            <div class="style-row">
+                                <label title="Minimum link distance (1-20, default 10)">Link Distance</label>
+                                <input type="range" id="cosmos-link-distance" min="1" max="20" step="1" value="10" style="flex:1;">
+                                <span id="cosmos-link-distance-value" style="width:35px; text-align:right; font-size:11px;">10</span>
+                            </div>
+                            <div class="style-row">
+                                <label title="Link spring force (0-2, default 1.0)">Link Spring</label>
+                                <input type="range" id="cosmos-link-spring" min="0" max="2" step="0.1" value="1.0" style="flex:1;">
+                                <span id="cosmos-link-spring-value" style="width:35px; text-align:right; font-size:11px;">1.0</span>
+                            </div>
+                            <div class="style-row">
+                                <label title="Friction (0=stops quickly, 1=no friction)">Friction</label>
+                                <input type="range" id="cosmos-friction" min="0" max="1" step="0.05" value="0.85" style="flex:1;">
+                                <span id="cosmos-friction-value" style="width:35px; text-align:right; font-size:11px;">0.85</span>
+                            </div>
+                            <div class="style-row">
+                                <label title="Cooldown speed (100-10000, lower=slower)">Decay</label>
+                                <input type="range" id="cosmos-decay" min="100" max="10000" step="100" value="5000" style="flex:1;">
+                                <span id="cosmos-decay-value" style="width:45px; text-align:right; font-size:11px;">5000</span>
+                            </div>
+                            
+                            <!-- Apply/Reset Buttons -->
+                            <div style="display: flex; gap: 8px; margin-top: 15px;">
+                                <button id="cosmos-apply-params" class="primary-btn" style="flex: 2;">Apply</button>
+                                <button id="cosmos-reset-params" class="secondary-btn" style="flex: 1;">Reset</button>
+                            </div>
+                            
+                            <!-- Layout Snapshots -->
+                            <details style="margin-top: 15px;">
+                                <summary style="cursor: pointer; font-size: 12px; color: #aaa;">Layout Snapshots</summary>
+                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                    <button id="cosmos-snapshot-btn" class="secondary-btn" style="flex: 1; padding: 6px 8px; font-size: 11px;">
+                                        Save Layout
+                                    </button>
+                                    <button id="cosmos-restore-btn" class="secondary-btn" style="flex: 1; padding: 6px 8px; font-size: 11px;">
+                                        Restore
+                                    </button>
+                                </div>
+                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                    <button id="cosmos-export-pos-btn" class="secondary-btn" style="flex: 1; padding: 6px 8px; font-size: 11px;">
+                                        Export JSON
+                                    </button>
+                                    <button id="cosmos-import-pos-btn" class="secondary-btn" style="flex: 1; padding: 6px 8px; font-size: 11px;">
+                                        Import JSON
+                                    </button>
+                                </div>
+                                <input type="file" id="cosmos-import-file" accept=".json" style="display: none;">
+                            </details>
                         </div>
                         
                         <h4 style="margin-top:20px">Available Backends</h4>
@@ -1155,11 +1187,23 @@
                     <span id="edges-progress"></span>
                 </div>
                 <div class="toolbar-actions">
-                    <button id="fit-btn" data-icon="fit">Fit</button>
-                    <button id="center-btn" data-icon="center">Center</button>
+                    <button id="fit-btn" class="toolbar-btn" title="Fit view">
+                        <span data-icon="fit"></span>
+                    </button>
+                    <button id="center-btn" class="toolbar-btn" title="Center view">
+                        <span data-icon="center"></span>
+                    </button>
+                    <!-- Simulation control button (shown for cosmos.gl) -->
+                    <button id="toolbar-sim-btn" class="toolbar-btn toolbar-sim-btn paused" title="Resume simulation" style="display: none;">
+                        <span id="toolbar-sim-icon" data-icon="play"></span>
+                    </button>
                     <button id="load-edges-btn" title="Incrementally load edges for large graphs">Load edges</button>
                     <button id="data-explorer-btn" title="Explore all node data">Data Explorer</button>
-                    <div id="renderer-indicator" class="renderer-indicator" title="Current renderer"></div>
+                    <!-- Renderer switcher button -->
+                    <button id="renderer-switch-btn" class="renderer-switch-btn" title="Switch renderer">
+                        <span class="renderer-icon" data-icon="gpu"></span>
+                        <span class="renderer-label">cosmos.gl</span>
+                    </button>
                 </div>
             </div>
 
