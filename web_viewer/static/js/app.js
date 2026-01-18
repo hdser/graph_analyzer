@@ -138,8 +138,26 @@ function updateRendererCapabilityDisplay() {
  * Setup renderer preference radio controls
  */
 function setupRendererPreferenceControls() {
+    console.log('[App] setupRendererPreferenceControls called');
+    
+    // Listen for renderer changes to show/hide cosmos simulation controls - ALWAYS register this
+    document.addEventListener('rendererChanged', (e) => {
+        console.log('[App] rendererChanged event:', e.detail.type);
+        const isCosmos = e.detail.type === 'cosmos';
+        const controls = document.getElementById('cosmos-simulation-controls');
+        if (controls) {
+            controls.style.display = isCosmos ? 'block' : 'none';
+        }
+    });
+    
+    // Setup cosmos simulation parameter controls (sliders, presets, snapshots)
+    setupEnhancedSimulationControls();
+    
     const radios = document.querySelectorAll('input[name="renderer-preference"]');
-    if (radios.length === 0) return;
+    if (radios.length === 0) {
+        console.log('[App] No renderer preference radios found, skipping radio setup');
+        return;
+    }
     
     // Set initial value
     radios.forEach(radio => {
@@ -166,189 +184,298 @@ function setupRendererPreferenceControls() {
             radio.checked = (radio.value === e.detail.preference);
         });
     });
-    
-    // Listen for renderer changes to show/hide cosmos simulation controls
-    document.addEventListener('rendererChanged', (e) => {
-        const isCosmos = e.detail.type === 'cosmos';
-        const controls = document.getElementById('cosmos-simulation-controls');
-        if (controls) {
-            controls.style.display = isCosmos ? 'block' : 'none';
-        }
-        updateSimulationButtons(State.cosmosSimulationPaused);
-    });
-    
-    // Setup cosmos.gl simulation control buttons
-    setupSimulationControls();
-    
-    // Setup all enhanced cosmos simulation controls (presets, sliders, snapshots, etc.)
-    setupEnhancedSimulationControls();
-}
-
-/**
- * Setup cosmos.gl simulation control buttons and all enhanced controls
- */
-function setupSimulationControls() {
-    const pauseBtn = document.getElementById('cosmos-pause-btn');
-    const startBtn = document.getElementById('cosmos-start-btn');
-    const fitBtn = document.getElementById('cosmos-fit-btn');
-    const stepBtn = document.getElementById('cosmos-step-btn');
-    
-    // Start/Resume simulation
-    if (startBtn) {
-        startBtn.addEventListener('click', () => {
-            if (State.rendererType === 'cosmos' && State.renderer) {
-                State.renderer.startSimulation(0.5);
-                updateSimulationButtons(false);
-                Toast.show('Simulation started', 'info');
-            }
-        });
-    }
-    
-    // Pause simulation
-    if (pauseBtn) {
-        pauseBtn.addEventListener('click', () => {
-            GraphLoader.pauseSimulation();
-            updateSimulationButtons(true);
-            Toast.show('Simulation paused', 'info');
-        });
-    }
-    
-    // Step simulation (single frame)
-    if (stepBtn) {
-        stepBtn.addEventListener('click', () => {
-            if (State.rendererType === 'cosmos' && State.renderer) {
-                State.renderer.stepSimulation();
-            }
-        });
-    }
-    
-    // Fit view
-    if (fitBtn) {
-        fitBtn.addEventListener('click', () => {
-            const renderer = State.renderer;
-            if (renderer && renderer.fitView) {
-                renderer.fitView();
-            }
-        });
-    }
-}
-
-/**
- * Update simulation button visibility based on pause state
- */
-function updateSimulationButtons(isPaused) {
-    const pauseBtn = document.getElementById('cosmos-pause-btn');
-    const startBtn = document.getElementById('cosmos-start-btn');
-    
-    if (pauseBtn && startBtn) {
-        pauseBtn.style.display = isPaused ? 'none' : 'inline-flex';
-        startBtn.style.display = isPaused ? 'inline-flex' : 'none';
-    }
-    
-    State.cosmosSimulationPaused = isPaused;
 }
 
 /**
  * Setup cosmos simulation parameter controls
- * Sliders update display, Apply button applies and restarts simulation
+ * Sliders auto-apply on change, presets apply immediately
  */
 function setupEnhancedSimulationControls() {
-    // Slider value display updates
-    const sliders = [
-        { id: 'cosmos-repulsion', valueId: 'cosmos-repulsion-value' },
-        { id: 'cosmos-gravity', valueId: 'cosmos-gravity-value' },
-        { id: 'cosmos-link-distance', valueId: 'cosmos-link-distance-value' },
-        { id: 'cosmos-friction', valueId: 'cosmos-friction-value' },
-        { id: 'cosmos-link-spring', valueId: 'cosmos-link-spring-value' },
-        { id: 'cosmos-decay', valueId: 'cosmos-decay-value' }
+    console.log('[App] setupEnhancedSimulationControls called');
+    
+    // Slider configuration - maps slider ID to cosmos parameter name
+    const sliderConfig = [
+        { id: 'cosmos-repulsion', param: 'repulsion' },
+        { id: 'cosmos-gravity', param: 'gravity' },
+        { id: 'cosmos-center', param: 'center' },
+        { id: 'cosmos-cluster', param: 'cluster' },
+        { id: 'cosmos-link-distance', param: 'linkDistance' },
+        { id: 'cosmos-link-spring', param: 'linkSpring' },
+        { id: 'cosmos-friction', param: 'friction' },
+        { id: 'cosmos-decay', param: 'decay' }
     ];
     
-    sliders.forEach(({ id, valueId }) => {
+    // Setup sliders - update display AND auto-apply parameter on change
+    sliderConfig.forEach(({ id, param }) => {
         const slider = document.getElementById(id);
-        const display = document.getElementById(valueId);
-        if (slider && display) {
+        const display = document.getElementById(id + '-value');
+        
+        if (slider) {
             slider.addEventListener('input', () => {
-                display.textContent = slider.value;
+                // Update display value
+                if (display) {
+                    display.textContent = slider.value;
+                }
+                
+                // Auto-apply this single parameter to renderer
+                const renderer = State.renderer;
+                if (renderer && typeof renderer.setSimulationParams === 'function') {
+                    const value = parseFloat(slider.value);
+                    const params = { [param]: value };
+                    renderer.setSimulationParams(params, { restart: true, alpha: 0.3 });
+                }
             });
         }
     });
     
-    // Apply button - apply parameters and restart simulation
-    document.getElementById('cosmos-apply-params')?.addEventListener('click', () => {
-        applyCosmosSimulationParams();
-    });
+    // Preset selector - apply preset on change
+    const presetSelect = document.getElementById('cosmos-preset-select');
+    console.log('[App] Preset select element:', presetSelect);
+    if (presetSelect) {
+        presetSelect.addEventListener('change', (e) => {
+            const presetId = e.target.value;
+            console.log('[App] Preset selected:', presetId);
+            if (presetId) {
+                applyPreset(presetId);
+            }
+        });
+        console.log('[App] Preset change listener attached');
+    }
     
-    // Reset button - reset to defaults and apply
-    document.getElementById('cosmos-reset-params')?.addEventListener('click', () => {
-        resetCosmosSimulationParams();
-    });
+    // Reset button - reset sliders and apply defaults
+    const resetBtn = document.getElementById('cosmos-reset-params');
+    console.log('[App] Reset button element:', resetBtn);
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            console.log('[App] Reset params clicked');
+            resetCosmosSimulationParams();
+        });
+        console.log('[App] Reset button listener attached');
+    }
     
     // Layout snapshot controls
-    document.getElementById('cosmos-snapshot-btn')?.addEventListener('click', () => {
-        if (State.rendererType === 'cosmos' && State.renderer) {
-            const name = `snapshot_${Date.now()}`;
-            if (State.renderer.createSnapshot(name)) {
-                State._lastSnapshotName = name;
-                Toast.show('Layout saved', 'success');
+    const snapshotBtn = document.getElementById('cosmos-snapshot-btn');
+    console.log('[App] Snapshot button element:', snapshotBtn);
+    if (snapshotBtn) {
+        snapshotBtn.addEventListener('click', () => {
+            console.log('[App] Snapshot save clicked');
+            const renderer = State.renderer;
+            if (renderer && typeof renderer.createSnapshot === 'function') {
+                const name = `snapshot_${Date.now()}`;
+                if (renderer.createSnapshot(name)) {
+                    State._lastSnapshotName = name;
+                    Toast.show('Layout saved', 'success');
+                } else {
+                    Toast.show('Failed to save layout', 'error');
+                }
             } else {
-                Toast.show('Failed to save layout', 'error');
+                Toast.show('Renderer not available', 'error');
             }
-        }
-    });
-    
-    document.getElementById('cosmos-restore-btn')?.addEventListener('click', () => {
-        if (State.rendererType === 'cosmos' && State.renderer) {
-            const name = State._lastSnapshotName || 'default';
-            if (State.renderer.restoreSnapshot(name)) {
-                Toast.show('Layout restored', 'success');
+        });
+        console.log('[App] Snapshot button listener attached');
+    }
+
+    const restoreBtn = document.getElementById('cosmos-restore-btn');
+    if (restoreBtn) {
+        restoreBtn.addEventListener('click', () => {
+            console.log('[App] Snapshot restore clicked');
+            const renderer = State.renderer;
+            if (renderer && typeof renderer.restoreSnapshot === 'function') {
+                const name = State._lastSnapshotName || 'default';
+                if (renderer.restoreSnapshot(name)) {
+                    Toast.show('Layout restored', 'success');
+                } else {
+                    Toast.show('No saved layout to restore', 'warning');
+                }
             } else {
-                Toast.show('No saved layout to restore', 'warning');
+                Toast.show('Renderer not available', 'error');
             }
-        }
-    });
+        });
+    }
     
     // Position export
-    document.getElementById('cosmos-export-pos-btn')?.addEventListener('click', () => {
-        if (State.rendererType === 'cosmos' && State.renderer) {
-            const positions = State.renderer.exportPositions();
-            const blob = new Blob([JSON.stringify(positions, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `layout_${State.currentGraph || 'graph'}_${Date.now()}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            Toast.show('Layout exported', 'success');
-        }
-    });
+    const exportBtn = document.getElementById('cosmos-export-pos-btn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            console.log('[App] Export positions clicked');
+            const renderer = State.renderer;
+            if (renderer && typeof renderer.exportPositions === 'function') {
+                const positions = renderer.exportPositions();
+                const blob = new Blob([JSON.stringify(positions, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `layout_${State.currentGraph || 'graph'}_${Date.now()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                Toast.show('Layout exported', 'success');
+            } else {
+                Toast.show('Renderer not available', 'error');
+            }
+        });
+    }
     
     // Position import
-    document.getElementById('cosmos-import-pos-btn')?.addEventListener('click', () => {
-        document.getElementById('cosmos-import-file')?.click();
-    });
+    const importBtn = document.getElementById('cosmos-import-pos-btn');
+    if (importBtn) {
+        importBtn.addEventListener('click', () => {
+            document.getElementById('cosmos-import-file')?.click();
+        });
+    }
     
-    document.getElementById('cosmos-import-file')?.addEventListener('change', async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        
-        try {
-            const text = await file.text();
-            const positions = JSON.parse(text);
+    const importFile = document.getElementById('cosmos-import-file');
+    if (importFile) {
+        importFile.addEventListener('change', async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
             
-            if (State.rendererType === 'cosmos' && State.renderer) {
-                State.renderer.importPositions(positions, true);
-                Toast.show(`Imported layout for ${Object.keys(positions).length} nodes`, 'success');
+            try {
+                const text = await file.text();
+                const positions = JSON.parse(text);
+                
+                const renderer = State.renderer;
+                if (renderer && typeof renderer.importPositions === 'function') {
+                    renderer.importPositions(positions, true);
+                    Toast.show(`Imported layout for ${Object.keys(positions).length} nodes`, 'success');
+                }
+            } catch (err) {
+                console.error('Import error:', err);
+                Toast.show('Failed to import: Invalid file', 'error');
             }
-        } catch (err) {
-            console.error('Import error:', err);
-            Toast.show('Failed to import: Invalid file', 'error');
+            
+            e.target.value = '';
+        });
+    }
+    
+    // Setup simulation progress monitoring
+    setupSimulationProgressMonitor();
+    
+    console.log('[App] setupEnhancedSimulationControls complete');
+}
+
+/**
+ * Apply preset - NO separate function, directly defined here
+ */
+function applyPreset(presetId) {
+    const presets = {
+        default: { repulsion: 1.0, gravity: 0.25, center: 0, cluster: 0.1, linkDistance: 10, linkSpring: 1.0, friction: 0.85, decay: 5000 },
+        dense: { repulsion: 1.5, gravity: 0.1, center: 0, cluster: 0.2, linkDistance: 5, linkSpring: 1.2, friction: 0.9, decay: 3000 },
+        sparse: { repulsion: 0.5, gravity: 0.15, center: 0.1, cluster: 0.05, linkDistance: 30, linkSpring: 0.5, friction: 0.8, decay: 8000 },
+        clustered: { repulsion: 1.0, gravity: 0.15, center: 0.2, cluster: 0.8, linkDistance: 15, linkSpring: 0.8, friction: 0.85, decay: 5000 },
+        hierarchical: { repulsion: 0.8, gravity: 0.2, center: 0.1, cluster: 0.1, linkDistance: 50, linkSpring: 1.5, friction: 0.9, decay: 6000 },
+        fast: { repulsion: 1.0, gravity: 0.3, center: 0, cluster: 0.1, linkDistance: 10, linkSpring: 1.0, friction: 0.6, decay: 2000 },
+        quality: { repulsion: 1.0, gravity: 0.2, center: 0, cluster: 0.15, linkDistance: 15, linkSpring: 0.8, friction: 0.95, decay: 10000 }
+    };
+    
+    const preset = presets[presetId];
+    if (!preset) {
+        console.error('[App] Unknown preset:', presetId);
+        Toast.show('Unknown preset', 'error');
+        return;
+    }
+    
+    console.log('[App] Applying preset:', presetId, preset);
+    
+    // Update slider values in UI
+    const sliderMap = {
+        repulsion: 'cosmos-repulsion',
+        gravity: 'cosmos-gravity',
+        center: 'cosmos-center',
+        cluster: 'cosmos-cluster',
+        linkDistance: 'cosmos-link-distance',
+        linkSpring: 'cosmos-link-spring',
+        friction: 'cosmos-friction',
+        decay: 'cosmos-decay'
+    };
+    
+    for (const [param, sliderId] of Object.entries(sliderMap)) {
+        const value = preset[param];
+        if (value !== undefined) {
+            const slider = document.getElementById(sliderId);
+            const display = document.getElementById(sliderId + '-value');
+            if (slider) slider.value = value;
+            if (display) display.textContent = value;
         }
-        
-        e.target.value = '';
+    }
+    
+    // Apply to renderer
+    const renderer = State.renderer;
+    if (renderer && typeof renderer.setSimulationParams === 'function') {
+        renderer.setSimulationParams(preset, { restart: true, alpha: 0.5 });
+        Toast.show(`Applied: ${presetId}`, 'success');
+    } else {
+        console.error('[App] Cannot apply preset - renderer not available');
+        Toast.show('Renderer not ready', 'error');
+    }
+}
+
+/**
+ * Setup simulation progress monitoring UI
+ */
+function setupSimulationProgressMonitor() {
+    // Register callbacks when renderer is available
+    document.addEventListener('rendererChanged', (e) => {
+        if (e.detail.type === 'cosmos' && State.renderer) {
+            // Register simulation callbacks
+            State.renderer.onSimulationTick((data) => {
+                const alphaText = document.getElementById('cosmos-alpha-text');
+                if (alphaText) {
+                    alphaText.textContent = data.alpha?.toFixed(3) || '0.000';
+                }
+            });
+            
+            State.renderer.onSimulationStart(() => {
+                const statusText = document.getElementById('cosmos-status-text');
+                if (statusText) statusText.textContent = 'Running';
+                State.cosmosSimulationPaused = false;
+            });
+            
+            State.renderer.onSimulationEnd(() => {
+                const statusText = document.getElementById('cosmos-status-text');
+                if (statusText) statusText.textContent = 'Stopped';
+                State.cosmosSimulationPaused = true;
+            });
+            
+            State.renderer.onSimulationPause(() => {
+                const statusText = document.getElementById('cosmos-status-text');
+                if (statusText) statusText.textContent = 'Paused';
+                State.cosmosSimulationPaused = true;
+            });
+        }
+    });
+}
+
+/**
+ * Sync slider values with current renderer parameters
+ */
+function syncSlidersWithRenderer() {
+    if (State.rendererType !== 'cosmos' || !State.renderer) return;
+    
+    const params = State.renderer.getSimulationParams?.() || {};
+    
+    const simMapping = {
+        repulsion: 'cosmos-repulsion',
+        gravity: 'cosmos-gravity',
+        center: 'cosmos-center',
+        cluster: 'cosmos-cluster',
+        linkDistance: 'cosmos-link-distance',
+        linkSpring: 'cosmos-link-spring',
+        friction: 'cosmos-friction',
+        decay: 'cosmos-decay'
+    };
+    
+    // Sync simulation params
+    Object.entries(simMapping).forEach(([param, sliderId]) => {
+        if (params[param] !== undefined) {
+            const slider = document.getElementById(sliderId);
+            const display = document.getElementById(sliderId + '-value');
+            if (slider) slider.value = params[param];
+            if (display) display.textContent = params[param];
+        }
     });
 }
 
@@ -860,14 +987,18 @@ function setupEventListeners() {
     document.getElementById('copy-selected-btn')?.addEventListener('click', () => Export.copySelectedIds());
     document.getElementById('export-csv-btn')?.addEventListener('click', () => Export.exportSelectedAsCsv());
 
-    // Style controls (debounced)
+    // Style controls (debounced) - ONLY for Cytoscape, and ONLY for size/color metric changes
+    // Gradient changes should NOT auto-apply - user must click Apply Style
     const styleHandler = Utils.debounce(() => {
-        if (!State.performanceMode) CytoscapeManager.updateStyle();
+        if (!State.performanceMode && State.rendererType === 'cytoscape') {
+            CytoscapeManager.updateStyle();
+        }
     }, 150);
     
     document.getElementById('node-size-metric')?.addEventListener('change', styleHandler);
     document.getElementById('node-color-metric')?.addEventListener('change', styleHandler);
-    document.getElementById('node-color-gradient')?.addEventListener('change', styleHandler);
+    // REMOVED: gradient auto-apply - user must click Apply Style button
+    // document.getElementById('node-color-gradient')?.addEventListener('change', styleHandler);
     
     // Apply Style button - applies all style settings including edge styles
     document.getElementById('apply-style-btn')?.addEventListener('click', () => {
@@ -912,6 +1043,38 @@ function setupEventListeners() {
         }
     });
     
+    // Background color change listener
+    document.getElementById('background-color')?.addEventListener('change', (e) => {
+        const color = e.target.value;
+        const renderer = State.renderer;
+        const container = document.getElementById('cy');
+        
+        // Always update the container background for both renderers
+        if (container) {
+            container.style.backgroundColor = color;
+        }
+        
+        // Update cosmos.gl specific elements
+        if (State.rendererType === 'cosmos' && renderer) {
+            if (typeof renderer.setBackgroundColor === 'function') {
+                renderer.setBackgroundColor(color);
+            }
+            // Also try to update canvas directly
+            const canvas = container?.querySelector('canvas');
+            if (canvas) {
+                canvas.style.backgroundColor = color;
+            }
+        }
+        
+        // Also update main content area background
+        const mainContent = document.querySelector('.main-content');
+        if (mainContent) {
+            mainContent.style.backgroundColor = color;
+        }
+        
+        showToast('Background color updated', 'success');
+    });
+    
     // Clear Style button - resets to default styling
     document.getElementById('clear-style-btn')?.addEventListener('click', () => {
         const renderer = State.renderer;
@@ -930,28 +1093,40 @@ function setupEventListeners() {
         const edgeColor = document.getElementById('edge-color');
         const edgeWidthMin = document.getElementById('edge-width-min');
         const edgeWidthMax = document.getElementById('edge-width-max');
+        const backgroundColor = document.getElementById('background-color');
         
         if (sizeMetric) sizeMetric.value = '';
         if (colorMetric) colorMetric.value = '';
         if (sizeMin) sizeMin.value = '8';
         if (sizeMax) sizeMax.value = '25';
-        if (edgeOpacity) edgeOpacity.value = '20';
-        if (edgeOpacityValue) edgeOpacityValue.textContent = '20%';
-        if (edgeColor) edgeColor.value = '#fcfafa';
+        if (edgeOpacity) edgeOpacity.value = '50';
+        if (edgeOpacityValue) edgeOpacityValue.textContent = '50%';
+        if (edgeColor) edgeColor.value = '#ffffff';
         if (edgeWidthMin) edgeWidthMin.value = '2';
         if (edgeWidthMax) edgeWidthMax.value = '5';
+        if (backgroundColor) backgroundColor.value = '#1a1a1a';
+        
+        // Reset background color
+        const container = document.getElementById('cy');
+        const mainContent = document.querySelector('.main-content');
+        if (container) container.style.backgroundColor = '#1a1a1a';
+        if (mainContent) mainContent.style.backgroundColor = '#0a0a0a';
         
         // Reset renderer style
         if (State.rendererType === 'cytoscape') {
             CytoscapeManager.resetStyle();
         } else if (State.rendererType === 'cosmos') {
             renderer.resetStyle();
-            // Also reset edge style to defaults
+            // Also reset edge style to defaults (white)
             renderer.setEdgeStyle({
-                color: '#fcfafa',
-                opacity: 0.2,
+                color: '#ffffff',
+                opacity: 0.5,
                 width: 1
             });
+            // Reset background
+            if (typeof renderer.setBackgroundColor === 'function') {
+                renderer.setBackgroundColor('#1a1a1a');
+            }
         }
         
         showToast('Style reset to defaults', 'success');
@@ -1221,8 +1396,9 @@ function updateSimulationControls() {
     if (State.rendererType === 'cosmos') {
         if (simBtn) simBtn.style.display = 'flex';
         if (simControls) simControls.style.display = 'block';
-        // cosmos.gl pauses after layout stabilizes, so start button as paused
-        updateSimulationButton(false);
+        // Simulation runs continuously now - show button as running (pause icon)
+        updateSimulationButton(true);
+        State.cosmosSimulationPaused = false;
     } else {
         if (simBtn) simBtn.style.display = 'none';
         if (simControls) simControls.style.display = 'none';
@@ -1230,57 +1406,17 @@ function updateSimulationControls() {
 }
 
 /**
- * Apply cosmos simulation parameters from sliders
- */
-function applyCosmosSimulationParams() {
-    if (State.rendererType !== 'cosmos' || !State.renderer) {
-        Toast.show('Cosmos renderer not active', 'error');
-        return;
-    }
-    
-    // Read values from sliders (using cosmos.gl defaults if not found)
-    const repulsion = parseFloat(document.getElementById('cosmos-repulsion')?.value) || 1.0;
-    const gravity = parseFloat(document.getElementById('cosmos-gravity')?.value) || 0.25;
-    const linkDistance = parseFloat(document.getElementById('cosmos-link-distance')?.value) || 10;
-    const linkSpring = parseFloat(document.getElementById('cosmos-link-spring')?.value) || 1.0;
-    const friction = parseFloat(document.getElementById('cosmos-friction')?.value) || 0.85;
-    const decay = parseFloat(document.getElementById('cosmos-decay')?.value) || 5000;
-    
-    const params = {
-        repulsion,
-        gravity,
-        linkDistance,
-        linkSpring,
-        friction,
-        decay
-    };
-    
-    console.log('[App] Applying cosmos simulation params:', params);
-    
-    // Apply parameters to cosmos renderer
-    if (typeof State.renderer.setSimulationParams === 'function') {
-        const success = State.renderer.setSimulationParams(params);
-        
-        if (success) {
-            // Restart simulation so changes take effect
-            State.renderer.startSimulation(0.5);
-            Toast.show('Parameters applied', 'success');
-        } else {
-            Toast.show('Failed to apply parameters', 'error');
-        }
-    } else {
-        Toast.show('setSimulationParams not available', 'warning');
-    }
-}
-
-/**
  * Reset simulation parameters to cosmos.gl defaults
  */
 function resetCosmosSimulationParams() {
-    // cosmos.gl default values from documentation
+    console.log('[App] resetCosmosSimulationParams called');
+    
+    // cosmos.gl default values
     const defaults = {
         repulsion: 1.0,
         gravity: 0.25,
+        center: 0,
+        cluster: 0.1,
         linkDistance: 10,
         linkSpring: 1.0,
         friction: 0.85,
@@ -1288,24 +1424,33 @@ function resetCosmosSimulationParams() {
     };
     
     // Update sliders and displays
-    const setValue = (id, value) => {
+    const setSliderValue = (id, value) => {
         const slider = document.getElementById(id);
         const display = document.getElementById(id + '-value');
         if (slider) slider.value = value;
         if (display) display.textContent = value;
     };
     
-    setValue('cosmos-repulsion', defaults.repulsion);
-    setValue('cosmos-gravity', defaults.gravity);
-    setValue('cosmos-link-distance', defaults.linkDistance);
-    setValue('cosmos-link-spring', defaults.linkSpring);
-    setValue('cosmos-friction', defaults.friction);
-    setValue('cosmos-decay', defaults.decay);
+    setSliderValue('cosmos-repulsion', defaults.repulsion);
+    setSliderValue('cosmos-gravity', defaults.gravity);
+    setSliderValue('cosmos-center', defaults.center);
+    setSliderValue('cosmos-cluster', defaults.cluster);
+    setSliderValue('cosmos-link-distance', defaults.linkDistance);
+    setSliderValue('cosmos-link-spring', defaults.linkSpring);
+    setSliderValue('cosmos-friction', defaults.friction);
+    setSliderValue('cosmos-decay', defaults.decay);
+    
+    // Reset preset dropdown
+    const presetSelect = document.getElementById('cosmos-preset-select');
+    if (presetSelect) presetSelect.value = '';
     
     // Apply the defaults
-    if (State.rendererType === 'cosmos' && State.renderer) {
-        State.renderer.setSimulationParams(defaults);
-        State.renderer.startSimulation(0.5);
+    const renderer = State.renderer;
+    if (renderer && typeof renderer.setSimulationParams === 'function') {
+        renderer.setSimulationParams(defaults, { restart: true, alpha: 0.5 });
         Toast.show('Reset to defaults', 'success');
+    } else {
+        console.error('[App] Cannot reset - no renderer');
+        Toast.show('Renderer not available', 'error');
     }
 }

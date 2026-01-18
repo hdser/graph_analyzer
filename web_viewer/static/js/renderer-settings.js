@@ -4,7 +4,8 @@
  * Client-side renderer configuration loaded from backend.
  * All settings are configurable via environment variables on the server.
  * 
- * Includes cosmos.gl simulation parameter presets and extended configuration.
+ * Includes cosmos.gl simulation parameter presets, visual configuration,
+ * and extended configuration options with descriptions for UI display.
  */
 
 const RendererSettings = {
@@ -45,14 +46,17 @@ const RendererSettings = {
             selectionColor: '#FF0000',
             highlightColor: '#FFA500',
             defaultNodeColor: '#999999',
-            defaultEdgeColor: '#f0f0f0',
-            defaultEdgeOpacity: 0.3
+            defaultEdgeColor: '#ffffff',
+            defaultEdgeOpacity: 0.5
         }
     },
     
-    // Simulation presets for quick configuration
+    // Simulation presets for quick configuration with descriptions
     simulationPresets: {
         default: {
+            name: 'Default',
+            description: 'Balanced settings suitable for most graphs',
+            icon: 'default',
             repulsion: 1.0,
             gravity: 0.25,
             linkDistance: 10,
@@ -60,9 +64,13 @@ const RendererSettings = {
             friction: 0.85,
             decay: 5000,
             center: 0,
+            repulsionTheta: 1.15,
             cluster: 0.1
         },
         dense: {
+            name: 'Dense Networks',
+            description: 'For highly connected graphs - spreads nodes apart more',
+            icon: 'dense',
             repulsion: 1.5,
             gravity: 0.05,
             linkDistance: 5,
@@ -70,9 +78,13 @@ const RendererSettings = {
             friction: 0.9,
             decay: 3000,
             center: 0.1,
+            repulsionTheta: 1.0,
             cluster: 0.05
         },
         sparse: {
+            name: 'Sparse Networks',
+            description: 'For loosely connected graphs - brings nodes closer',
+            icon: 'sparse',
             repulsion: 0.3,
             gravity: 0.15,
             linkDistance: 30,
@@ -80,9 +92,13 @@ const RendererSettings = {
             friction: 0.8,
             decay: 6000,
             center: 0.2,
+            repulsionTheta: 1.3,
             cluster: 0.1
         },
         clustered: {
+            name: 'Clustered (Communities)',
+            description: 'Emphasizes community structure and group separation',
+            icon: 'clustered',
             repulsion: 0.8,
             gravity: 0.2,
             linkDistance: 15,
@@ -90,9 +106,13 @@ const RendererSettings = {
             friction: 0.85,
             decay: 4000,
             center: 0.3,
+            repulsionTheta: 1.0,
             cluster: 0.8
         },
         hierarchical: {
+            name: 'Hierarchical',
+            description: 'For tree-like structures with clear levels',
+            icon: 'hierarchical',
             repulsion: 0.4,
             gravity: 0.05,
             linkDistance: 50,
@@ -100,9 +120,13 @@ const RendererSettings = {
             friction: 0.7,
             decay: 7000,
             center: 0,
+            repulsionTheta: 1.5,
             cluster: 0
         },
         radial: {
+            name: 'Radial',
+            description: 'Pulls nodes toward center with concentric arrangement',
+            icon: 'radial',
             repulsion: 0.6,
             gravity: 0.3,
             linkDistance: 20,
@@ -110,9 +134,13 @@ const RendererSettings = {
             friction: 0.85,
             decay: 5000,
             center: 0.5,
+            repulsionTheta: 1.15,
             cluster: 0.2
         },
         fast: {
+            name: 'Fast Layout',
+            description: 'Quick convergence - lower quality but faster',
+            icon: 'fast',
             repulsion: 0.3,
             gravity: 0.2,
             linkDistance: 10,
@@ -120,17 +148,203 @@ const RendererSettings = {
             friction: 0.6,
             decay: 2000,
             center: 0.1,
+            repulsionTheta: 1.5,
             cluster: 0.1
         },
         quality: {
+            name: 'High Quality',
+            description: 'Slow convergence - better layout quality',
+            icon: 'quality',
             repulsion: 0.8,
             gravity: 0.1,
             linkDistance: 15,
             linkSpring: 0.3,
             friction: 0.95,
-            decay: 8000,
+            decay: 10000,
             center: 0,
+            repulsionTheta: 0.8,
             cluster: 0.1
+        },
+        organic: {
+            name: 'Organic',
+            description: 'Natural-looking layout with smooth curves',
+            icon: 'organic',
+            repulsion: 0.5,
+            gravity: 0.1,
+            linkDistance: 25,
+            linkSpring: 0.3,
+            friction: 0.9,
+            decay: 6000,
+            center: 0.05,
+            repulsionTheta: 1.0,
+            cluster: 0.3
+        },
+        compact: {
+            name: 'Compact',
+            description: 'Minimizes space usage - tight layout',
+            icon: 'compact',
+            repulsion: 0.2,
+            gravity: 0.4,
+            linkDistance: 5,
+            linkSpring: 0.8,
+            friction: 0.85,
+            decay: 4000,
+            center: 0.3,
+            repulsionTheta: 1.2,
+            cluster: 0.2
+        }
+    },
+    
+    // Parameter definitions with ranges and descriptions for UI
+    parameterDefinitions: {
+        // Core Force Parameters
+        repulsion: {
+            name: 'Repulsion',
+            description: 'How strongly nodes push each other apart',
+            category: 'forces',
+            min: 0,
+            max: 2,
+            step: 0.05,
+            default: 1.0,
+            unit: ''
+        },
+        gravity: {
+            name: 'Gravity',
+            description: 'Pull strength toward the center',
+            category: 'forces',
+            min: 0,
+            max: 1,
+            step: 0.05,
+            default: 0.25,
+            unit: ''
+        },
+        center: {
+            name: 'Center Force',
+            description: 'Additional centering force coefficient',
+            category: 'forces',
+            min: 0,
+            max: 1,
+            step: 0.05,
+            default: 0,
+            unit: ''
+        },
+        repulsionTheta: {
+            name: 'Repulsion Theta',
+            description: 'Barnes-Hut approximation (lower = more accurate, slower)',
+            category: 'forces',
+            min: 0.3,
+            max: 2,
+            step: 0.05,
+            default: 1.15,
+            unit: ''
+        },
+        cluster: {
+            name: 'Cluster Coefficient',
+            description: 'How strongly connected nodes cluster together',
+            category: 'forces',
+            min: 0,
+            max: 1,
+            step: 0.05,
+            default: 0.1,
+            unit: ''
+        },
+        
+        // Link Parameters
+        linkDistance: {
+            name: 'Link Distance',
+            description: 'Minimum distance between connected nodes',
+            category: 'links',
+            min: 1,
+            max: 100,
+            step: 1,
+            default: 10,
+            unit: 'px'
+        },
+        linkSpring: {
+            name: 'Link Spring',
+            description: 'Spring force pulling connected nodes together',
+            category: 'links',
+            min: 0,
+            max: 2,
+            step: 0.1,
+            default: 1.0,
+            unit: ''
+        },
+        
+        // Behavior Parameters
+        friction: {
+            name: 'Friction',
+            description: 'Movement damping (0 = stops quickly, 1 = no friction)',
+            category: 'behavior',
+            min: 0,
+            max: 1,
+            step: 0.05,
+            default: 0.85,
+            unit: ''
+        },
+        decay: {
+            name: 'Decay',
+            description: 'How quickly the simulation cools down (lower = slower)',
+            category: 'behavior',
+            min: 100,
+            max: 15000,
+            step: 100,
+            default: 5000,
+            unit: ''
+        },
+        repulsionFromMouse: {
+            name: 'Mouse Repulsion',
+            description: 'Repulsion force when right-clicking',
+            category: 'interaction',
+            min: 0,
+            max: 5,
+            step: 0.1,
+            default: 2.0,
+            unit: ''
+        }
+    },
+    
+    // Visual parameter definitions
+    visualParameterDefinitions: {
+        pointSizeScale: {
+            name: 'Node Size Scale',
+            description: 'Scale factor for all node sizes',
+            min: 0.1,
+            max: 3,
+            step: 0.1,
+            default: 1.0
+        },
+        linkWidthScale: {
+            name: 'Link Width Scale',
+            description: 'Scale factor for all link widths',
+            min: 0.1,
+            max: 3,
+            step: 0.1,
+            default: 1.0
+        },
+        linkOpacity: {
+            name: 'Link Opacity',
+            description: 'Overall opacity of all links',
+            min: 0,
+            max: 1,
+            step: 0.05,
+            default: 1.0
+        },
+        pointOpacity: {
+            name: 'Node Opacity',
+            description: 'Overall opacity of all nodes',
+            min: 0,
+            max: 1,
+            step: 0.05,
+            default: 1.0
+        },
+        curvedLinkWeight: {
+            name: 'Curve Weight',
+            description: 'How curved the links are',
+            min: 0,
+            max: 1,
+            step: 0.1,
+            default: 0.8
         }
     },
     
@@ -299,6 +513,84 @@ const RendererSettings = {
      */
     getPresetNames() {
         return Object.keys(this.simulationPresets);
+    },
+    
+    /**
+     * Get preset info for UI display
+     * @returns {Array} Array of {id, name, description, icon}
+     */
+    getPresetInfo() {
+        return Object.entries(this.simulationPresets).map(([id, preset]) => ({
+            id,
+            name: preset.name,
+            description: preset.description,
+            icon: preset.icon
+        }));
+    },
+    
+    /**
+     * Get parameter definition
+     * @param {string} name - Parameter name
+     * @returns {Object|null} Parameter definition
+     */
+    getParameterDefinition(name) {
+        return this.parameterDefinitions[name] || null;
+    },
+    
+    /**
+     * Get all parameter definitions
+     * @returns {Object}
+     */
+    getParameterDefinitions() {
+        return this.parameterDefinitions;
+    },
+    
+    /**
+     * Get parameters grouped by category
+     * @returns {Object} { category: [paramNames] }
+     */
+    getParametersByCategory() {
+        const categories = {};
+        
+        for (const [name, def] of Object.entries(this.parameterDefinitions)) {
+            const cat = def.category || 'other';
+            if (!categories[cat]) {
+                categories[cat] = [];
+            }
+            categories[cat].push(name);
+        }
+        
+        return categories;
+    },
+    
+    /**
+     * Get visual parameter definition
+     * @param {string} name - Parameter name
+     * @returns {Object|null}
+     */
+    getVisualParameterDefinition(name) {
+        return this.visualParameterDefinitions[name] || null;
+    },
+    
+    /**
+     * Get all visual parameter definitions
+     * @returns {Object}
+     */
+    getVisualParameterDefinitions() {
+        return this.visualParameterDefinitions;
+    },
+    
+    /**
+     * Validate a parameter value against its definition
+     * @param {string} name - Parameter name
+     * @param {number} value - Value to validate
+     * @returns {number} Clamped value within valid range
+     */
+    validateParameter(name, value) {
+        const def = this.parameterDefinitions[name] || this.visualParameterDefinitions[name];
+        if (!def) return value;
+        
+        return Math.max(def.min, Math.min(def.max, value));
     }
 };
 

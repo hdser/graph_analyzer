@@ -946,7 +946,7 @@ input[type="range"]::-moz-range-thumb:hover {
 .cy-container {
     flex: 1;
     width: 100%;
-    background: #0a0a0a;
+    background: #1a1a1a;
     position: relative;
     /* Force GPU acceleration */
     transform: translate3d(0, 0, 0);
@@ -3651,13 +3651,130 @@ input[type="range"]::-moz-range-thumb:hover {
 }
 
 /* =============================================================================
-   LAYOUT PANEL - Simulation parameters
+   LAYOUT PANEL - cosmos.gl Simulation Controls
    ============================================================================= */
 
+#cosmos-simulation-controls {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #333;
+}
+
+#cosmos-simulation-controls h4 {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    color: #b0b0b0;
+}
+
+/* Status bar */
+.cosmos-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+
+.cosmos-status-bar #cosmos-status-text {
+    color: #888;
+}
+
+.cosmos-alpha {
+    color: #666;
+    font-size: 11px;
+}
+
+.cosmos-alpha #cosmos-alpha-text {
+    color: #4A90E2;
+    font-family: monospace;
+}
+
+/* Control buttons */
+.cosmos-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 15px;
+}
+
+.cosmos-buttons button {
+    padding: 8px 4px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* Slider value displays */
+#cosmos-simulation-controls .slider-value {
+    min-width: 40px;
+    text-align: right;
+    font-size: 11px;
+    color: #8b9dc3;
+    font-family: monospace;
+    flex-shrink: 0;
+}
+
+#cosmos-simulation-controls .slider-value-wide {
+    min-width: 50px;
+}
+
+/* Style rows in cosmos controls */
 #cosmos-simulation-controls .style-row {
     margin-bottom: 10px;
 }
 
-#cosmos-simulation-controls input[type="range"] {
+#cosmos-simulation-controls .style-row label:first-child {
+    min-width: 70px;
+    font-size: 11px;
+}
+
+/* Action buttons row */
+.cosmos-action-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+
+.cosmos-action-row button:first-child {
+    flex: 2;
+}
+
+.cosmos-action-row button:last-child {
     flex: 1;
+}
+
+/* Snapshots section */
+.cosmos-snapshots {
+    margin-top: 10px;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+}
+
+.cosmos-snapshots summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: #aaa;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    border-radius: 4px;
+}
+
+.cosmos-snapshots[open] summary {
+    border-radius: 4px 4px 0 0;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.cosmos-snapshot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 10px;
+}
+
+.cosmos-snapshot-grid button {
+    padding: 6px 10px;
+    font-size: 11px;
 }

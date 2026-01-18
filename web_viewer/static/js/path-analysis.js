@@ -36,19 +36,19 @@ const PathAnalysis = (function() {
             return;
         }
         
-        // Source/Target inputs
+        // Source/Target inputs - normalize to lowercase for Ethereum addresses
         const sourceInput = document.getElementById('path-source-input');
         const targetInput = document.getElementById('path-target-input');
         
         if (sourceInput) {
             sourceInput.addEventListener('input', (e) => {
-                state.sourceNode = e.target.value.trim() || null;
+                state.sourceNode = e.target.value.trim().toLowerCase() || null;
             });
         }
         
         if (targetInput) {
             targetInput.addEventListener('input', (e) => {
-                state.targetNode = e.target.value.trim() || null;
+                state.targetNode = e.target.value.trim().toLowerCase() || null;
             });
         }
         
@@ -166,15 +166,17 @@ const PathAnalysis = (function() {
     }
     
     function setSource(nodeId) {
-        state.sourceNode = nodeId;
+        // Normalize to lowercase for Ethereum addresses
+        state.sourceNode = nodeId ? nodeId.toLowerCase() : null;
         const input = document.getElementById('path-source-input');
-        if (input) input.value = nodeId;
+        if (input) input.value = state.sourceNode || '';
     }
     
     function setTarget(nodeId) {
-        state.targetNode = nodeId;
+        // Normalize to lowercase for Ethereum addresses
+        state.targetNode = nodeId ? nodeId.toLowerCase() : null;
         const input = document.getElementById('path-target-input');
-        if (input) input.value = nodeId;
+        if (input) input.value = state.targetNode || '';
     }
     
     function swapNodes() {
@@ -223,8 +225,9 @@ const PathAnalysis = (function() {
         const sourceInput = document.getElementById('path-source-input');
         const targetInput = document.getElementById('path-target-input');
         
-        state.sourceNode = sourceInput?.value?.trim() || null;
-        state.targetNode = targetInput?.value?.trim() || null;
+        // Normalize to lowercase for Ethereum addresses
+        state.sourceNode = sourceInput?.value?.trim()?.toLowerCase() || null;
+        state.targetNode = targetInput?.value?.trim()?.toLowerCase() || null;
         
         if (!state.sourceNode || !state.targetNode) {
             showToast('Please enter both source and target nodes', 'error');
@@ -822,8 +825,6 @@ const PathAnalysis = (function() {
         console.log('[PathAnalysis] Highlighting path with', path.nodes.length, 'nodes (Cytoscape)');
         
         cy.batch(() => {
-            // DON'T dim - just make path nodes really stand out
-            
             // Highlight path nodes - make them BIG and colorful
             path.nodes.forEach((nodeId, i) => {
                 const node = cy.getElementById(nodeId);
@@ -1035,6 +1036,20 @@ const PathAnalysis = (function() {
         
         let html = `
             <div id="path-detail-panel">
+        `;
+        
+        // Add "Back to X Paths" button if viewing from multi-path context
+        if (state.selectedPaths.size > 1) {
+            html += `
+                <div class="path-nav-bar">
+                    <button class="back-to-paths-btn" onclick="PathAnalysis.showMultiplePathDetails()">
+                        ← Back to ${state.selectedPaths.size} Paths
+                    </button>
+                </div>
+            `;
+        }
+        
+        html += `
                 <div class="path-stats">
                     <div class="path-stat">
                         <div class="path-stat-label">Hops</div>
@@ -1187,8 +1202,9 @@ const PathAnalysis = (function() {
      * Isolate path - hide all nodes except those in the selected path(s)
      */
     function isolatePath() {
-        // Collect all nodes from selected paths
+        // Collect all nodes and edges from selected paths
         const pathNodeIds = new Set();
+        const pathEdges = [];
         
         if (state.selectedPaths.size > 0) {
             // Multiple paths selected
@@ -1196,6 +1212,10 @@ const PathAnalysis = (function() {
                 const path = state.lastResult?.paths[idx];
                 if (path?.nodes) {
                     path.nodes.forEach(n => pathNodeIds.add(n));
+                    // Collect edges
+                    for (let i = 0; i < path.nodes.length - 1; i++) {
+                        pathEdges.push({ source: path.nodes[i], target: path.nodes[i + 1] });
+                    }
                 }
             });
         } else if (state.selectedPathIndex >= 0) {
@@ -1203,6 +1223,10 @@ const PathAnalysis = (function() {
             const path = state.lastResult?.paths[state.selectedPathIndex];
             if (path?.nodes) {
                 path.nodes.forEach(n => pathNodeIds.add(n));
+                // Collect edges
+                for (let i = 0; i < path.nodes.length - 1; i++) {
+                    pathEdges.push({ source: path.nodes[i], target: path.nodes[i + 1] });
+                }
             }
         }
         
@@ -1215,7 +1239,8 @@ const PathAnalysis = (function() {
         if (isCosmosRenderer()) {
             const renderer = getRenderer();
             if (renderer && typeof renderer.showOnlyNodes === 'function') {
-                renderer.showOnlyNodes(Array.from(pathNodeIds));
+                // Pass both nodes AND path edges to show
+                renderer.showOnlyNodes(Array.from(pathNodeIds), pathEdges);
                 renderer.fitView(Array.from(pathNodeIds), 0.1);
                 state.isIsolated = true;
                 state.hiddenNodes = [];

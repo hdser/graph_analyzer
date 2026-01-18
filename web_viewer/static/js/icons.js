@@ -426,6 +426,41 @@ const Icons = {
             <path d="M2 7c0 1.1 2.7 2 6 2s6-.9 6-2"/>
         </svg>`,
         
+        // Cosmos simulation control icons
+        stepForward: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3l6 5-6 5V3z" fill="currentColor"/>
+            <rect x="11" y="3" width="2" height="10" fill="currentColor"/>
+        </svg>`,
+        
+        fitView: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 5V2h3"/>
+            <path d="M14 5V2h-3"/>
+            <path d="M2 11v3h3"/>
+            <path d="M14 11v3h-3"/>
+            <rect x="5" y="5" width="6" height="6" rx="1"/>
+        </svg>`,
+        
+        edges: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="3" r="2"/>
+            <circle cx="13" cy="3" r="2"/>
+            <circle cx="3" cy="13" r="2"/>
+            <circle cx="13" cy="13" r="2"/>
+            <path d="M5 3h6"/>
+            <path d="M3 5v6"/>
+            <path d="M13 5v6"/>
+            <path d="M5 13h6"/>
+            <path d="M5 5l6 6" stroke-dasharray="2 2"/>
+        </svg>`,
+        
+        restore: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 8a6 6 0 1 1 1.8 4.3"/>
+            <path d="M2 13V9h4"/>
+        </svg>`,
+        
+        stop: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="10" height="10" fill="currentColor"/>
+        </svg>`,
+        
         // App logo - network pattern inspired design
         appLogo: `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- Thick C shape as a filled path -->

@@ -656,7 +656,7 @@
                                     <div class="option-row">
                                         <label>Algorithm</label>
                                         <select id="cf-algorithm-select">
-                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) Ã¢Å“â€œ</option>
+                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“</option>
                                             <option value="networkx:preflow_push">Preflow Push (NetworkX)</option>
                                             <option value="networkx:dinitz">Dinitz (NetworkX)</option>
                                             <option value="ortools:max_flow">Max Flow (OR-Tools)</option>
@@ -844,16 +844,22 @@
                         </div>
                         <div class="style-row">
                             <label>Opacity</label>
-                            <input type="range" id="edge-opacity" min="0" max="100" value="20">
-                            <span id="edge-opacity-value" style="font-size:10px; width:30px">20%</span>
+                            <input type="range" id="edge-opacity" min="0" max="100" value="50">
+                            <span id="edge-opacity-value" style="font-size:10px; width:30px">50%</span>
                         </div>
                         <div class="style-row">
                             <label>Color</label>
-                            <input type="color" id="edge-color" value="#fcfafa">
+                            <input type="color" id="edge-color" value="#ffffff">
                         </div>
                         <div class="button-row" style="display: flex; gap: 8px; margin-top: 10px;">
                             <button id="apply-style-btn" class="secondary-btn" style="flex: 1;">Apply Style</button>
                             <button id="clear-style-btn" class="secondary-btn" style="flex: 1;">Clear Style</button>
+                        </div>
+                        
+                        <h4 style="margin-top:15px">Background</h4>
+                        <div class="style-row">
+                            <label>Color</label>
+                            <input type="color" id="background-color" value="#1a1a1a">
                         </div>
                     </div>
                 </div>
@@ -915,64 +921,85 @@
                         <button id="recompute-layout-btn" class="primary-btn">Recompute Layout</button>
                         
                         <!-- cosmos.gl Simulation Controls (only shown when using cosmos.gl) -->
-                        <div id="cosmos-simulation-controls" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #333;">
+                        <div id="cosmos-simulation-controls" style="display: none;">
                             <h4>Simulation Parameters</h4>
                             
-                            <div class="style-row">
-                                <label title="Node repulsion force (0-2, default 1.0)">Repulsion</label>
-                                <input type="range" id="cosmos-repulsion" min="0" max="2" step="0.1" value="1.0" style="flex:1;">
-                                <span id="cosmos-repulsion-value" style="width:35px; text-align:right; font-size:11px;">1.0</span>
-                            </div>
-                            <div class="style-row">
-                                <label title="Gravity toward center (0-1, default 0.25)">Gravity</label>
-                                <input type="range" id="cosmos-gravity" min="0" max="1" step="0.05" value="0.25" style="flex:1;">
-                                <span id="cosmos-gravity-value" style="width:35px; text-align:right; font-size:11px;">0.25</span>
-                            </div>
-                            <div class="style-row">
-                                <label title="Minimum link distance (1-20, default 10)">Link Distance</label>
-                                <input type="range" id="cosmos-link-distance" min="1" max="20" step="1" value="10" style="flex:1;">
-                                <span id="cosmos-link-distance-value" style="width:35px; text-align:right; font-size:11px;">10</span>
-                            </div>
-                            <div class="style-row">
-                                <label title="Link spring force (0-2, default 1.0)">Link Spring</label>
-                                <input type="range" id="cosmos-link-spring" min="0" max="2" step="0.1" value="1.0" style="flex:1;">
-                                <span id="cosmos-link-spring-value" style="width:35px; text-align:right; font-size:11px;">1.0</span>
-                            </div>
-                            <div class="style-row">
-                                <label title="Friction (0=stops quickly, 1=no friction)">Friction</label>
-                                <input type="range" id="cosmos-friction" min="0" max="1" step="0.05" value="0.85" style="flex:1;">
-                                <span id="cosmos-friction-value" style="width:35px; text-align:right; font-size:11px;">0.85</span>
-                            </div>
-                            <div class="style-row">
-                                <label title="Cooldown speed (100-10000, lower=slower)">Decay</label>
-                                <input type="range" id="cosmos-decay" min="100" max="10000" step="100" value="5000" style="flex:1;">
-                                <span id="cosmos-decay-value" style="width:45px; text-align:right; font-size:11px;">5000</span>
+                            <!-- Status Display -->
+                            <div class="cosmos-status-bar">
+                                <span id="cosmos-status-text">Stopped</span>
+                                <span class="cosmos-alpha">Alpha: <span id="cosmos-alpha-text">0.000</span></span>
                             </div>
                             
-                            <!-- Apply/Reset Buttons -->
-                            <div style="display: flex; gap: 8px; margin-top: 15px;">
-                                <button id="cosmos-apply-params" class="primary-btn" style="flex: 2;">Apply</button>
-                                <button id="cosmos-reset-params" class="secondary-btn" style="flex: 1;">Reset</button>
+                            <!-- Preset Selector -->
+                            <div class="style-row">
+                                <label>Preset</label>
+                                <select id="cosmos-preset-select">
+                                    <option value="">Select preset...</option>
+                                    <option value="default">Default</option>
+                                    <option value="dense">Dense Networks</option>
+                                    <option value="sparse">Sparse Networks</option>
+                                    <option value="clustered">Clustered</option>
+                                    <option value="hierarchical">Hierarchical</option>
+                                    <option value="fast">Fast Layout</option>
+                                    <option value="quality">High Quality</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Sliders - auto-apply on change -->
+                            <div class="style-row">
+                                <label>Repulsion</label>
+                                <input type="range" id="cosmos-repulsion" min="0" max="2" step="0.1" value="1.0">
+                                <span id="cosmos-repulsion-value" class="slider-value">1.0</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Gravity</label>
+                                <input type="range" id="cosmos-gravity" min="0" max="1" step="0.05" value="0.25">
+                                <span id="cosmos-gravity-value" class="slider-value">0.25</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Center</label>
+                                <input type="range" id="cosmos-center" min="0" max="1" step="0.05" value="0">
+                                <span id="cosmos-center-value" class="slider-value">0</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Cluster</label>
+                                <input type="range" id="cosmos-cluster" min="0" max="1" step="0.05" value="0.1">
+                                <span id="cosmos-cluster-value" class="slider-value">0.1</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Link Dist</label>
+                                <input type="range" id="cosmos-link-distance" min="1" max="100" step="1" value="10">
+                                <span id="cosmos-link-distance-value" class="slider-value">10</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Link Spring</label>
+                                <input type="range" id="cosmos-link-spring" min="0" max="2" step="0.1" value="1.0">
+                                <span id="cosmos-link-spring-value" class="slider-value">1.0</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Friction</label>
+                                <input type="range" id="cosmos-friction" min="0" max="1" step="0.05" value="0.85">
+                                <span id="cosmos-friction-value" class="slider-value">0.85</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Decay</label>
+                                <input type="range" id="cosmos-decay" min="100" max="15000" step="100" value="5000">
+                                <span id="cosmos-decay-value" class="slider-value slider-value-wide">5000</span>
+                            </div>
+                            
+                            <!-- Reset Button -->
+                            <div class="cosmos-action-row">
+                                <button id="cosmos-reset-params" class="secondary-btn" style="width: 100%;">Reset to Defaults</button>
                             </div>
                             
                             <!-- Layout Snapshots -->
-                            <details style="margin-top: 15px;">
-                                <summary style="cursor: pointer; font-size: 12px; color: #aaa;">Layout Snapshots</summary>
-                                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                                    <button id="cosmos-snapshot-btn" class="secondary-btn" style="flex: 1; padding: 6px 8px; font-size: 11px;">
-                                        Save Layout
-                                    </button>
-                                    <button id="cosmos-restore-btn" class="secondary-btn" style="flex: 1; padding: 6px 8px; font-size: 11px;">
-                                        Restore
-                                    </button>
-                                </div>
-                                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                                    <button id="cosmos-export-pos-btn" class="secondary-btn" style="flex: 1; padding: 6px 8px; font-size: 11px;">
-                                        Export JSON
-                                    </button>
-                                    <button id="cosmos-import-pos-btn" class="secondary-btn" style="flex: 1; padding: 6px 8px; font-size: 11px;">
-                                        Import JSON
-                                    </button>
+                            <details class="cosmos-snapshots">
+                                <summary>Layout Snapshots</summary>
+                                <div class="cosmos-snapshot-grid">
+                                    <button id="cosmos-snapshot-btn" class="secondary-btn">Save</button>
+                                    <button id="cosmos-restore-btn" class="secondary-btn">Restore</button>
+                                    <button id="cosmos-export-pos-btn" class="secondary-btn">Export</button>
+                                    <button id="cosmos-import-pos-btn" class="secondary-btn">Import</button>
                                 </div>
                                 <input type="file" id="cosmos-import-file" accept=".json" style="display: none;">
                             </details>

@@ -705,12 +705,16 @@ const Metrics = {
      */
     hideSelected() {
         const renderer = State.renderer;
+        console.log('[Metrics] hideSelected called, rendererType:', State.rendererType, 'renderer exists:', !!renderer);
+        
         if (!renderer) {
             if (typeof Toast !== 'undefined') Toast.error('Load a graph first');
             return;
         }
         
         const selectedIds = renderer.getSelectedNodes();
+        console.log('[Metrics] Selected nodes:', selectedIds?.length, selectedIds?.slice(0, 3));
+        
         if (selectedIds.length === 0) {
             if (typeof Toast !== 'undefined') Toast.error('No nodes selected');
             return;
@@ -748,6 +752,7 @@ const Metrics = {
                 Toast.success(`Hidden ${selectedIds.length} nodes (${visibleCount} visible)`);
             }
         } else if (State.rendererType === 'cosmos' && renderer.hideNodes) {
+            console.log('[Metrics] Using Cosmos hideNodes');
             // Cosmos: Use alpha channel visibility
             renderer.hideNodes(selectedIds);
             renderer.clearSelection();
@@ -763,6 +768,7 @@ const Metrics = {
                 Toast.success(`Hidden ${selectedIds.length} nodes (${visibleIds.length} visible)`);
             }
         } else {
+            console.log('[Metrics] Fallback: clearing selection, hideNodes exists:', typeof renderer.hideNodes);
             // Fallback: Just clear selection
             renderer.clearSelection();
             if (typeof Toast !== 'undefined') {

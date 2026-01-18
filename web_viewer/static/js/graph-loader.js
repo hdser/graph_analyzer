@@ -134,12 +134,12 @@ const GraphLoader = {
             if (renderer.getType() === 'cosmos') {
                 this.setupCosmosEventHandlers(renderer);
                 
-                // Pause simulation after initial layout settles
+                // Let simulation run continuously - user controls via toolbar button
+                // Just fit view after initial layout starts settling
                 setTimeout(() => {
-                    renderer.pauseSimulation();
                     renderer.fitView();
-                    console.log('[GraphLoader] cosmos.gl simulation paused, layout stabilized');
-                }, 2000);
+                    console.log('[GraphLoader] cosmos.gl initial fit complete, simulation continues');
+                }, 1500);
             }
             
             // Update renderer indicator in UI
@@ -230,7 +230,12 @@ const GraphLoader = {
     setupCosmosEventHandlers(renderer) {
         // Node click - show info panel
         renderer.on('nodeClick', (e) => {
-            if (e.id) {
+            console.log('[GraphLoader] cosmos nodeClick event:', e);
+            // cosmos-adapter uses nodeId and node, not id and data
+            const nodeId = e.nodeId || e.id;
+            const nodeData = e.node || e.data;
+            
+            if (nodeId) {
                 const selectedNodes = renderer.getSelectedNodes();
                 if (selectedNodes.length > 1) {
                     // Multi-selection
@@ -242,7 +247,7 @@ const GraphLoader = {
                 } else {
                     // Single node
                     if (typeof InfoPanel !== 'undefined' && InfoPanel.showNodeFromData) {
-                        InfoPanel.showNodeFromData(e.id, e.data);
+                        InfoPanel.showNodeFromData(nodeId, nodeData);
                     } else {
                         console.warn('[GraphLoader] InfoPanel.showNodeFromData not available');
                     }

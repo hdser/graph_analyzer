@@ -1919,16 +1919,25 @@ const CapacityFlow = (function() {
             console.log('[CapacityFlow] Isolating path in CosmosGL, nodes:', nodes);
             
             const pathNodeIds = [];
+            const pathEdges = [];
+            
             for (let i = 0; i < nodes.length; i++) {
                 const actualNodeId = findCosmosNodeId(renderer, nodes[i]);
                 if (actualNodeId && renderer.nodeIndices?.has(actualNodeId)) {
                     pathNodeIds.push(actualNodeId);
                 } else {
+                    // Still add the original ID - showOnlyNodes will handle mapping
+                    pathNodeIds.push(nodes[i]);
                     console.warn('[CapacityFlow] Node not found for isolation:', nodes[i]);
                 }
             }
             
-            console.log('[CapacityFlow] Found', pathNodeIds.length, 'nodes for isolation');
+            // Collect path edges
+            for (let i = 0; i < nodes.length - 1; i++) {
+                pathEdges.push({ source: nodes[i], target: nodes[i + 1] });
+            }
+            
+            console.log('[CapacityFlow] Found', pathNodeIds.length, 'nodes,', pathEdges.length, 'edges for isolation');
             
             if (pathNodeIds.length === 0) {
                 showToast('No nodes found for path', 'error');
@@ -1936,7 +1945,8 @@ const CapacityFlow = (function() {
             }
             
             if (typeof renderer.showOnlyNodes === 'function') {
-                renderer.showOnlyNodes(pathNodeIds);
+                // Pass both nodes AND path edges
+                renderer.showOnlyNodes(pathNodeIds, pathEdges);
             }
             
             if (typeof renderer.fitView === 'function') {
@@ -2022,6 +2032,7 @@ const CapacityFlow = (function() {
             console.log('[CapacityFlow] Isolating all paths in CosmosGL');
             
             const pathNodeIds = [];
+            const pathEdges = [];
             const paths = state.lastResult.paths;
             
             for (let p = 0; p < paths.length; p++) {
@@ -2030,11 +2041,18 @@ const CapacityFlow = (function() {
                     const actualNodeId = findCosmosNodeId(renderer, nodes[i]);
                     if (actualNodeId && renderer.nodeIndices?.has(actualNodeId) && pathNodeIds.indexOf(actualNodeId) === -1) {
                         pathNodeIds.push(actualNodeId);
+                    } else if (pathNodeIds.indexOf(nodes[i]) === -1) {
+                        // Still add original ID for mapping
+                        pathNodeIds.push(nodes[i]);
                     }
+                }
+                // Collect edges for this path
+                for (let i = 0; i < nodes.length - 1; i++) {
+                    pathEdges.push({ source: nodes[i], target: nodes[i + 1] });
                 }
             }
             
-            console.log('[CapacityFlow] Found', pathNodeIds.length, 'unique nodes for isolation');
+            console.log('[CapacityFlow] Found', pathNodeIds.length, 'unique nodes,', pathEdges.length, 'edges for isolation');
             
             if (pathNodeIds.length === 0) {
                 showToast('No matching nodes found', 'warning');
@@ -2042,7 +2060,8 @@ const CapacityFlow = (function() {
             }
             
             if (typeof renderer.showOnlyNodes === 'function') {
-                renderer.showOnlyNodes(pathNodeIds);
+                // Pass both nodes AND path edges
+                renderer.showOnlyNodes(pathNodeIds, pathEdges);
             }
             
             if (typeof renderer.fitView === 'function') {

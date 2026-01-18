@@ -37,19 +37,19 @@ const FlowAnalysis = (function() {
         // Analysis type selection
         document.getElementById('flow-analysis-type')?.addEventListener('change', onAnalysisTypeChange);
         
-        // Source input
+        // Source input - normalize to lowercase for Ethereum addresses
         const sourceInput = document.getElementById('flow-source-input');
         if (sourceInput) {
             sourceInput.addEventListener('input', (e) => {
-                state.sourceNode = e.target.value.trim() || null;
+                state.sourceNode = e.target.value.trim().toLowerCase() || null;
             });
         }
         
-        // Target input
+        // Target input - normalize to lowercase for Ethereum addresses
         const targetInput = document.getElementById('flow-target-input');
         if (targetInput) {
             targetInput.addEventListener('input', (e) => {
-                state.targetNode = e.target.value.trim() || null;
+                state.targetNode = e.target.value.trim().toLowerCase() || null;
             });
         }
         
@@ -214,15 +214,17 @@ const FlowAnalysis = (function() {
     }
     
     function setSource(nodeId) {
-        state.sourceNode = nodeId;
+        // Normalize to lowercase for Ethereum addresses
+        state.sourceNode = nodeId ? nodeId.toLowerCase() : null;
         const input = document.getElementById('flow-source-input');
-        if (input) input.value = nodeId;
+        if (input) input.value = state.sourceNode || '';
     }
     
     function setTarget(nodeId) {
-        state.targetNode = nodeId;
+        // Normalize to lowercase for Ethereum addresses
+        state.targetNode = nodeId ? nodeId.toLowerCase() : null;
         const input = document.getElementById('flow-target-input');
-        if (input) input.value = nodeId;
+        if (input) input.value = state.targetNode || '';
     }
     
     function swapNodes() {
@@ -236,9 +238,9 @@ const FlowAnalysis = (function() {
     // ==========================================================================
     
     function computeFlow() {
-        // Get values from inputs
-        state.sourceNode = document.getElementById('flow-source-input')?.value?.trim() || null;
-        state.targetNode = document.getElementById('flow-target-input')?.value?.trim() || null;
+        // Get values from inputs - normalize to lowercase for Ethereum addresses
+        state.sourceNode = document.getElementById('flow-source-input')?.value?.trim()?.toLowerCase() || null;
+        state.targetNode = document.getElementById('flow-target-input')?.value?.trim()?.toLowerCase() || null;
         
         if (!state.sourceNode || !state.targetNode) {
             showToast('Please specify both source and target nodes', 'error');
@@ -1076,16 +1078,20 @@ const FlowAnalysis = (function() {
         const involvedNodes = new Set([state.sourceNode, state.targetNode]);
         
         const edges = state.lastResult.flow_edges || state.lastResult.cut_edges || [];
+        const flowEdges = [];
+        
         edges.forEach(edge => {
             involvedNodes.add(edge.source);
             involvedNodes.add(edge.target);
+            flowEdges.push({ source: edge.source, target: edge.target });
         });
         
         // Check if using CosmosGL renderer
         if (isCosmosRenderer()) {
             const renderer = getRenderer();
             if (renderer && typeof renderer.showOnlyNodes === 'function') {
-                renderer.showOnlyNodes(Array.from(involvedNodes));
+                // Pass both nodes AND flow edges
+                renderer.showOnlyNodes(Array.from(involvedNodes), flowEdges);
                 renderer.fitView(Array.from(involvedNodes), 0.1);
                 state.isIsolated = true;
                 showToast(`Isolated ${involvedNodes.size} nodes`, 'success');
