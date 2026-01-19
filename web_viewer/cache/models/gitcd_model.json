@@ -1,0 +1,19 @@
+{
+  "input_dim": 64,
+  "hidden_dim": 128,
+  "embedding_dim": 128,
+  "num_gnn_layers": 1,
+  "gnn_aggregation": "mean",
+  "num_transformer_layers": 2,
+  "num_attention_heads": 8,
+  "attention_dropout": 0.1,
+  "ffn_dim_multiplier": 4,
+  "num_clusters": 20,
+  "clustering_temperature": 1.0,
+  "dropout": 0.5,
+  "node_types": [
+    "node"
+  ],
+  "edge_types": [],
+  "num_classes": null
+}

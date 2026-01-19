@@ -54,6 +54,16 @@ class CosmosAdapter extends GraphRendererInterface {
         this._storedEdgeData = [];           // Store edge data when hidden
         this._edgeLinkData = null;           // Cached link data array
         
+        // ========== Master edge data for bulletproof restoration ==========
+        this._masterLinkData = null;         // Master copy of link indices (never modified during isolation)
+        this._masterLinkColors = null;       // Master copy of link colors
+        this._masterLinkWidths = null;       // Master copy of link widths
+        this._masterEdgeCount = 0;           // Total edge count
+        this._isIsolationMode = false;       // Track if we're in isolation mode
+        this._isolatedNodes = null;          // Set of isolated node IDs
+        this._isolatedEdges = null;          // Array of isolated edges
+        this._hiddenNodes = new Set();       // Set of hidden node IDs
+        
         // ========== Color state ==========
         this._baseNodeColors = null;         // The current "base" node colors (before selection)
         
@@ -428,6 +438,11 @@ class CosmosAdapter extends GraphRendererInterface {
         
         // Store link data for edge visibility toggle
         this._edgeLinkData = linkData;
+        
+        // Store MASTER edge data for bulletproof restoration
+        // This is the complete edge state that should be restored when showAllNodes is called
+        this._masterLinkData = new Float32Array(linkData);
+        this._masterEdgeCount = edges.length;
         
         // Store edge data for isolation/visibility filtering
         this._storedEdgeData = edges.map(edge => ({
@@ -1654,22 +1669,22 @@ class CosmosAdapter extends GraphRendererInterface {
         
         const pathColor = RendererSettings.hexToRgba(color, opacity);
         
-        // Build a set of path edges (both directions) using actual node IDs from graph
+        // Build a set of path edges - DIRECTED ONLY (source->target direction)
+        // For directed graphs, we only highlight the exact edge direction in the path
         const pathEdgeSet = new Set();
         edgePairs.forEach(pair => {
             const source = this.findNodeId(pair.source) || pair.source;
             const target = this.findNodeId(pair.target) || pair.target;
+            
+            // Only add the DIRECTED edge (source->target), NOT the reverse
             pathEdgeSet.add(`${source}-${target}`);
-            pathEdgeSet.add(`${target}-${source}`);
-            // Also add lowercase versions
+            // Also add lowercase version for case-insensitive matching
             pathEdgeSet.add(`${source.toLowerCase()}-${target.toLowerCase()}`);
-            pathEdgeSet.add(`${target.toLowerCase()}-${source.toLowerCase()}`);
             
             this._pathEdgeColors.set(`${source}-${target}`, pathColor);
-            this._pathEdgeColors.set(`${target}-${source}`, pathColor);
         });
         
-        console.log('[CosmosAdapter] Path edge set size:', pathEdgeSet.size);
+        console.log('[CosmosAdapter] Path edge set size (directed):', pathEdgeSet.size);
         
         // Now iterate through ALL edges in edgeDataMap and color them
         const edgeCount = this.edgeDataMap.size;
@@ -1693,14 +1708,12 @@ class CosmosAdapter extends GraphRendererInterface {
         this.edgeDataMap.forEach((edge, edgeId) => {
             const offset = edgeIndex * 4;
             
-            // Check all possible key formats
+            // Check DIRECTED key formats only (source->target direction)
+            // Do NOT check reverse direction - this is a directed graph
             const key1 = `${edge.source}-${edge.target}`;
-            const key2 = `${edge.target}-${edge.source}`;
-            const key3 = `${edge.source.toLowerCase()}-${edge.target.toLowerCase()}`;
-            const key4 = `${edge.target.toLowerCase()}-${edge.source.toLowerCase()}`;
+            const key2 = `${edge.source.toLowerCase()}-${edge.target.toLowerCase()}`;
             
-            const isPathEdge = pathEdgeSet.has(key1) || pathEdgeSet.has(key2) || 
-                               pathEdgeSet.has(key3) || pathEdgeSet.has(key4);
+            const isPathEdge = pathEdgeSet.has(key1) || pathEdgeSet.has(key2);
             
             if (isPathEdge) {
                 colors[offset] = pathColor[0];
@@ -1720,7 +1733,7 @@ class CosmosAdapter extends GraphRendererInterface {
             edgeIndex++;
         });
         
-        console.log('[CosmosAdapter] Colored', pathEdgeCount, 'path edges out of', edgeCount, 'total');
+        console.log('[CosmosAdapter] Colored', pathEdgeCount, 'path edges out of', edgeCount, 'total (directed match)');
         
         if (typeof this.graph.setLinkColors === 'function') {
             this.graph.setLinkColors(colors);
@@ -1736,31 +1749,31 @@ class CosmosAdapter extends GraphRendererInterface {
      * Clear all path highlights and restore normal appearance
      */
     clearPathHighlights() {
-        console.log('[CosmosAdapter] Clearing path highlights');
+        console.log('[CosmosAdapter] ========== clearPathHighlights called ==========');
+        console.log('[CosmosAdapter] State:', {
+            isIsolationMode: this._isIsolationMode,
+            isPathHighlightActive: this._isPathHighlightActive,
+            storedEdgeCount: this._storedEdgeData?.length
+        });
         
         // Clear path color maps
         this._pathNodeColors.clear();
         this._pathEdgeColors.clear();
         this._isPathHighlightActive = false;
         
-        // Check if we were in isolation mode
-        if (this._isIsolationMode) {
-            this._isIsolationMode = false;
-            this._isolatedNodes = null;
-            this._isolatedEdges = null;
-            // Restore all edges when exiting isolation mode
-            this.restoreAllEdges();
-        } else {
-            // Not in isolation mode - just restore edge colors
-            // Use edgeDataMap.size since those are the currently active edges
-            const edgeCount = this.edgeDataMap.size;
-            if (edgeCount > 0) {
-                this._applyEdgeColorsForCount(edgeCount);
-            }
-        }
+        // Clear isolation state
+        const wasIsolated = this._isIsolationMode;
+        this._isIsolationMode = false;
+        this._isolatedNodes = null;
+        this._isolatedEdges = null;
         
         // Clear hidden nodes
         this._hiddenNodes.clear();
+        
+        // ALWAYS restore all edges - this ensures consistency
+        // Whether we were in isolation mode or just highlighting, restore everything
+        console.log('[CosmosAdapter] Restoring all edges (wasIsolated:', wasIsolated, ')');
+        this.restoreAllEdges();
         
         // Reset point sizes to default
         const cosmosConfig = RendererSettings.getCosmosConfig();
@@ -1770,13 +1783,22 @@ class CosmosAdapter extends GraphRendererInterface {
         
         // Reset node colors (will apply metric if active, otherwise default)
         if (this._currentColorMetric && this._currentColorScale) {
-            this.applyNodeColors(this._currentColorMetric, this._currentColorScale);
+            this.colorNodesByMetric(this._currentColorMetric, 
+                this._getMetricValues(this._currentColorMetric), 
+                this._currentColorScale);
         } else {
             this.applyDefaultColors();
         }
         
         this.graph.render();
-        console.log('[CosmosAdapter] Path highlights cleared, styles restored');
+        
+        // Schedule extra render to ensure everything is visible
+        requestAnimationFrame(() => {
+            console.log('[CosmosAdapter] clearPathHighlights RAF render');
+            this.graph.render();
+        });
+        
+        console.log('[CosmosAdapter] ========== clearPathHighlights complete ==========');
     }
     
     /**
@@ -2314,75 +2336,249 @@ class CosmosAdapter extends GraphRendererInterface {
     }
     
     /**
-     * Show all nodes (reset visibility)
+     * Show all nodes (reset visibility) - BULLETPROOF VERSION
+     * Ensures complete state reset including edge restoration
      */
     showAllNodes() {
-        // Clear isolation mode
+        console.log('[CosmosAdapter] ========== showAllNodes called ==========');
+        
+        // Log current state for debugging
+        console.log('[CosmosAdapter] Current state before reset:', {
+            isIsolationMode: this._isIsolationMode,
+            isPathHighlightActive: this._isPathHighlightActive,
+            storedEdgeCount: this._storedEdgeData?.length,
+            masterEdgeCount: this._masterEdgeCount,
+            hiddenNodeCount: this._hiddenNodes?.size
+        });
+        
+        // Step 1: Clear ALL isolation and path state FIRST
         this._isIsolationMode = false;
         this._isolatedNodes = null;
         this._isolatedEdges = null;
         
-        // Clear path highlighting state
+        // Step 2: Clear path highlighting state
         this._isPathHighlightActive = false;
         this._pathNodeColors.clear();
         this._pathEdgeColors.clear();
         
-        // Clear hidden nodes
+        // Step 3: Clear hidden nodes
         this._hiddenNodes.clear();
         
-        // Restore normal node visibility (with metric coloring if active)
-        this.updateNodeVisibility();
-        
-        // Restore all edges (this now handles coloring internally)
+        // Step 4: CRITICAL - Restore all edges (this is the main fix)
+        console.log('[CosmosAdapter] Restoring all edges...');
         this.restoreAllEdges();
         
+        // Step 5: Restore node colors
+        console.log('[CosmosAdapter] Restoring node colors...');
+        if (this._currentColorMetric && this._currentColorScale) {
+            // Re-apply metric coloring if it was active
+            const values = this._getMetricValues(this._currentColorMetric);
+            this.colorNodesByMetric(this._currentColorMetric, values, this._currentColorScale);
+        } else {
+            this.applyDefaultColors();
+        }
+        
+        // Step 6: Render now
         this.graph.render();
-        console.log('[CosmosAdapter] All nodes visible, isolation cleared');
+        
+        // Step 7: Schedule another render to ensure everything is visible
+        requestAnimationFrame(() => {
+            console.log('[CosmosAdapter] showAllNodes RAF render');
+            this.graph.render();
+        });
+        
+        console.log('[CosmosAdapter] ========== showAllNodes complete ==========');
     }
     
     /**
-     * Restore all edges to the graph
+     * Helper to get metric values for re-applying coloring
+     * @private
+     */
+    _getMetricValues(metricName) {
+        const values = {};
+        this.nodeIds.forEach(id => {
+            const nodeData = this.nodeDataMap.get(id);
+            if (nodeData && nodeData[metricName] !== undefined) {
+                values[id] = nodeData[metricName];
+            }
+        });
+        return values;
+    }
+    
+    /**
+     * Restore all edges to the graph - BULLETPROOF VERSION v5
+     * Uses _storedEdgeData or falls back to edgeDataMap
      */
     restoreAllEdges() {
-        if (!this._storedEdgeData || this._storedEdgeData.length === 0) {
-            console.log('[CosmosAdapter] No stored edges to restore');
-            return;
-        }
+        console.log('[CosmosAdapter] ========== restoreAllEdges called (v5) ==========');
         
-        if (typeof this.graph.setLinks === 'function') {
-            try {
-                // Create Float32Array for cosmos.gl
-                const linkData = new Float32Array(this._storedEdgeData.length * 2);
-                let validCount = 0;
-                
-                this._storedEdgeData.forEach((edge, i) => {
-                    const sourceIndex = this.nodeIndices.get(edge.source);
-                    const targetIndex = this.nodeIndices.get(edge.target);
-                    
-                    if (sourceIndex !== undefined && targetIndex !== undefined) {
-                        linkData[validCount * 2] = sourceIndex;
-                        linkData[validCount * 2 + 1] = targetIndex;
-                        validCount++;
-                    }
+        // Determine edge source - prefer _storedEdgeData, fall back to edgeDataMap
+        let edges = this._storedEdgeData;
+        let edgeSource = '_storedEdgeData';
+        
+        if (!edges || edges.length === 0) {
+            console.log('[CosmosAdapter] _storedEdgeData is empty, falling back to edgeDataMap');
+            // Build edges array from edgeDataMap
+            edges = [];
+            this.edgeDataMap.forEach((edgeData, edgeId) => {
+                edges.push({
+                    source: edgeData.source,
+                    target: edgeData.target,
+                    id: edgeId,
+                    data: edgeData
                 });
-                
-                const finalLinkData = linkData.slice(0, validCount * 2);
-                this.graph.setLinks(finalLinkData);
-                this._visibleEdgeData = this._storedEdgeData;
-                
-                // Store the current link count for color operations
-                this._currentLinkCount = validCount;
-                
-                // Apply default edge colors using the actual link count
-                this._applyEdgeColorsForCount(validCount);
-                
-                console.log('[CosmosAdapter] Restored', validCount, 'edges');
-            } catch (err) {
-                console.warn('[CosmosAdapter] Error restoring edges:', err);
+            });
+            edgeSource = 'edgeDataMap';
+            
+            // Also repopulate _storedEdgeData for future use
+            if (edges.length > 0) {
+                this._storedEdgeData = edges;
+                console.log('[CosmosAdapter] Repopulated _storedEdgeData from edgeDataMap');
             }
         }
         
-        this.graph.render();
+        if (!edges || edges.length === 0) {
+            console.error('[CosmosAdapter] restoreAllEdges: No edge data available from any source!');
+            console.error('[CosmosAdapter] edgeDataMap size:', this.edgeDataMap?.size);
+            return;
+        }
+        
+        console.log('[CosmosAdapter] Rebuilding', edges.length, 'edges from', edgeSource);
+        console.log('[CosmosAdapter] First 3 edges:', edges.slice(0, 3).map(e => `${e.source}->${e.target}`));
+        
+        try {
+            const linkData = new Float32Array(edges.length * 2);
+            let validCount = 0;
+            let invalidCount = 0;
+            
+            edges.forEach(edge => {
+                const sourceIndex = this.nodeIndices.get(edge.source);
+                const targetIndex = this.nodeIndices.get(edge.target);
+                
+                if (sourceIndex !== undefined && targetIndex !== undefined) {
+                    linkData[validCount * 2] = sourceIndex;
+                    linkData[validCount * 2 + 1] = targetIndex;
+                    validCount++;
+                } else {
+                    invalidCount++;
+                }
+            });
+            
+            console.log('[CosmosAdapter] Valid edges:', validCount, 'Invalid edges:', invalidCount);
+            
+            if (validCount === 0) {
+                console.error('[CosmosAdapter] restoreAllEdges: No valid edges found after rebuild!');
+                console.error('[CosmosAdapter] nodeIndices size:', this.nodeIndices.size);
+                return;
+            }
+            
+            const finalLinkData = linkData.slice(0, validCount * 2);
+            
+            console.log('[CosmosAdapter] Setting', validCount, 'links to graph...');
+            
+            // Update our tracking data FIRST
+            this._masterLinkData = new Float32Array(finalLinkData);
+            this._masterEdgeCount = validCount;
+            this._edgeLinkData = new Float32Array(finalLinkData);
+            this._currentLinkCount = validCount;
+            
+            // Set links AND colors together, then render
+            this.graph.setLinks(finalLinkData);
+            
+            // Apply edge colors immediately after setLinks
+            console.log('[CosmosAdapter] Applying edge colors for', validCount, 'edges...');
+            this._applyEdgeColorsForCount(validCount);
+            
+            // Single render call at the end
+            this.graph.render();
+            
+            console.log('[CosmosAdapter] ========== restoreAllEdges complete:', validCount, 'edges ==========');
+            
+            // Schedule a verification render to ensure everything is applied
+            requestAnimationFrame(() => {
+                console.log('[CosmosAdapter] Post-restore RAF - triggering extra render');
+                this.graph.render();
+            });
+            
+        } catch (err) {
+            console.error('[CosmosAdapter] restoreAllEdges failed:', err);
+            console.error('[CosmosAdapter] Stack:', err.stack);
+        }
+    }
+    
+    /**
+     * Emergency rebuild edges from stored edge data
+     * Used when master data is corrupted or missing
+     */
+    _emergencyRebuildEdges() {
+        console.log('[CosmosAdapter] Emergency edge rebuild initiated');
+        
+        if (!this._storedEdgeData || this._storedEdgeData.length === 0) {
+            console.error('[CosmosAdapter] Emergency rebuild failed - no stored edges');
+            return;
+        }
+        
+        try {
+            const edges = this._storedEdgeData;
+            const linkData = new Float32Array(edges.length * 2);
+            let validCount = 0;
+            
+            edges.forEach(edge => {
+                const sourceIndex = this.nodeIndices.get(edge.source);
+                const targetIndex = this.nodeIndices.get(edge.target);
+                
+                if (sourceIndex !== undefined && targetIndex !== undefined) {
+                    linkData[validCount * 2] = sourceIndex;
+                    linkData[validCount * 2 + 1] = targetIndex;
+                    validCount++;
+                }
+            });
+            
+            if (validCount === 0) {
+                console.error('[CosmosAdapter] Emergency rebuild: No valid edges found');
+                return;
+            }
+            
+            const finalLinkData = linkData.slice(0, validCount * 2);
+            
+            // Set the links
+            this.graph.setLinks(finalLinkData);
+            
+            // Rebuild master data
+            this._masterLinkData = new Float32Array(finalLinkData);
+            this._masterEdgeCount = validCount;
+            this._edgeLinkData = new Float32Array(finalLinkData);
+            
+            // Apply default colors
+            this._applyEdgeColorsForCount(validCount);
+            
+            this.graph.render();
+            
+            console.log('[CosmosAdapter] Emergency rebuild complete:', validCount, 'edges');
+            
+        } catch (err) {
+            console.error('[CosmosAdapter] Emergency rebuild failed:', err);
+        }
+    }
+    
+    /**
+     * Validate that edges were properly restored
+     */
+    _validateEdgeRestoration() {
+        try {
+            // Try to get current link count from cosmos
+            const expectedCount = this._masterEdgeCount;
+            const currentLinks = this._edgeLinkData?.length / 2 || 0;
+            
+            if (currentLinks !== expectedCount) {
+                console.warn('[CosmosAdapter] Edge validation failed!');
+                console.warn(`  Expected: ${expectedCount}, Got: ${currentLinks}`);
+            } else {
+                console.log('[CosmosAdapter] Edge validation passed:', currentLinks, 'edges');
+            }
+        } catch (err) {
+            console.warn('[CosmosAdapter] Could not validate edge restoration:', err);
+        }
     }
     
     /**
@@ -3223,6 +3419,11 @@ class CosmosAdapter extends GraphRendererInterface {
                 if (typeof this.graph.setLinkColors === 'function') {
                     this.graph.setLinkColors(colors);
                     console.log('[CosmosAdapter] setLinkColors called');
+                    
+                    // Store as master colors if this is initial setup (not in isolation mode)
+                    if (!this._isIsolationMode && !this._isPathHighlightActive) {
+                        this._masterLinkColors = new Float32Array(colors);
+                    }
                 } else {
                     console.warn('[CosmosAdapter] setLinkColors not available, using setConfig');
                     this.graph.setConfig({ linkColor: rgba });
@@ -3237,6 +3438,11 @@ class CosmosAdapter extends GraphRendererInterface {
                         widths.fill(width);
                         this.graph.setLinkWidths(widths);
                         console.log('[CosmosAdapter] setLinkWidths called with width:', width);
+                        
+                        // Store as master widths if this is initial setup (not in isolation mode)
+                        if (!this._isIsolationMode && !this._isPathHighlightActive) {
+                            this._masterLinkWidths = new Float32Array(widths);
+                        }
                     } else {
                         console.warn('[CosmosAdapter] setLinkWidths not available, using setConfig');
                         this.graph.setConfig({ linkWidth: width });

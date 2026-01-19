@@ -113,6 +113,9 @@ async def get_config():
         # Layout backends info
         "layout_backends": network_service.layout_service.get_available_backends(),
         "layout_backend_priority": settings.LAYOUT_BACKEND_PRIORITY,
+        
+        # Renderer configuration
+        "renderer_config": settings.get_renderer_config(),
     }
     
     if HAS_ANOMALY and network_service.anomaly_engine:
@@ -120,6 +123,12 @@ async def get_config():
         config["composite_operations"] = CompositeMetricEngine.get_available_operations()
     
     return config
+
+
+@router.get("/renderer-config")
+async def get_renderer_config():
+    """Get renderer configuration for frontend initialization."""
+    return settings.get_renderer_config()
 
 
 @router.post("/load")

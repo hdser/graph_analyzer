@@ -36,6 +36,13 @@ const API = {
     },
 
     /**
+     * Get renderer configuration for frontend
+     */
+    getRendererConfig() {
+        return this.fetch('/api/renderer-config');
+    },
+
+    /**
      * Get current application state
      */
     getState() {

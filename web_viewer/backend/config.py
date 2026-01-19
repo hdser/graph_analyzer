@@ -109,9 +109,6 @@ class Settings:
     DB_PORT: str = os.getenv("DB_PORT", "5432")
     DB_NAME: str = os.getenv("DB_NAME", "circles")
     
-    # Layout service (Node.js)
-    LAYOUT_SERVICE_URL: str = os.getenv("LAYOUT_SERVICE_URL", "http://localhost:3000/layout")
-    
     # Metrics settings
     DEFAULT_METRICS_MODE: str = os.getenv("DEFAULT_METRICS_MODE", "essential")
     N_JOBS: int = int(os.getenv("N_JOBS", "-1"))
@@ -121,12 +118,13 @@ class Settings:
     # ==========================================================================
     
     # Priority order for layout backends (comma-separated)
-    # Available: cached, cytoscape_desktop, igraph, fa2, layout_service, local_spring, circular
+    # Available: cached, cytoscape_desktop, igraph, fa2, local_spring, circular
+    # Note: layout_service (Node.js) has been deprecated and removed
     LAYOUT_BACKEND_PRIORITY: List[str] = [
         p.strip() for p in os.getenv(
             "LAYOUT_BACKEND_PRIORITY",
-            "cached,cytoscape_desktop,igraph,fa2,layout_service,local_spring,circular"
-        ).split(",") if p.strip()
+            "cached,cytoscape_desktop,igraph,fa2,local_spring,circular"
+        ).split(",") if p.strip() and p.strip() != "layout_service"
     ]
     
     # igraph settings
@@ -177,64 +175,70 @@ class Settings:
     #
     # UI_HIDDEN_PANELS: Comma-separated list of panels to hide in production mode
     #   Available panels: load, reload, snapshots, metrics, paths, subgraph,
-    #                     flow, filter, style, layout, embeddings
-    #   Default hides: load, reload (data source and auto-reload)
+    #                     flow, embeddings, settings, data-explorer
     #
-    # AUTO_LOAD_ON_STARTUP: Auto-load data when server starts (requires DEFAULT_SQL_FILES)
-    #   - true (default when PRODUCTION_MODE is true)
-    #   - false: Manual load required
-    # ==========================================================================
-    
-    # Master toggle for production vs admin mode
     PRODUCTION_MODE: bool = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
     
-    # Panels to hide in production mode
-    # Default: hide data loading and auto-reload panels (admin functions)
     UI_HIDDEN_PANELS: List[str] = [
         p.strip() for p in os.getenv(
             "UI_HIDDEN_PANELS",
-            "load,reload"  # Default hides load and reload panels
+            "load,reload"
         ).split(",") if p.strip()
     ]
     
-    # Available panel names (for validation/documentation)
     AVAILABLE_PANELS: List[str] = [
-        "load", "reload", "snapshots", "metrics", "paths",
+        "load", "reload", "snapshots", "metrics", "paths", 
         "subgraph", "flow", "filter", "style", "layout", "embeddings"
     ]
     
-    # Auto-load on startup - defaults to True when in production mode
+    # Auto-load configuration (used when PRODUCTION_MODE=true)
+    # Defaults to True when in production mode
     AUTO_LOAD_ON_STARTUP: bool = (
         os.getenv("AUTO_LOAD_ON_STARTUP", "true" if PRODUCTION_MODE else "false").lower() == "true"
     )
     
+    # Default SQL files to auto-load (comma-separated list)
     DEFAULT_SQL_FILES: List[str] = [
-        f.strip() for f in os.getenv("DEFAULT_SQL_FILES", "").split(",") if f.strip()
+        f.strip() for f in os.getenv(
+            "DEFAULT_SQL_FILES",
+            ""
+        ).split(",") if f.strip()
     ]
+    
+    # Default node properties files to auto-load (comma-separated list)
     DEFAULT_PROPERTIES_FILES: List[str] = [
-        f.strip() for f in os.getenv("DEFAULT_PROPERTIES_FILES", "").split(",") if f.strip()
+        f.strip() for f in os.getenv(
+            "DEFAULT_PROPERTIES_FILES",
+            ""
+        ).split(",") if f.strip()
     ]
     
     # ==========================================================================
-    # EXTERNAL API PROPERTIES
+    # EXTERNAL API PROPERTIES CONFIGURATION
     # ==========================================================================
     
+    # Base URL for external API (v1/v2 endpoints)
     EXTERNAL_API_BASE_URL: str = os.getenv(
         "EXTERNAL_API_BASE_URL",
         "https://squid-app-3gxnl.ondigitalocean.app"
     )
     
+    # HTTP request settings
     EXTERNAL_API_TIMEOUT: int = int(os.getenv("EXTERNAL_API_TIMEOUT", "30"))
     EXTERNAL_API_RETRIES: int = int(os.getenv("EXTERNAL_API_RETRIES", "3"))
-    EXTERNAL_API_CACHE_TTL: int = int(os.getenv("EXTERNAL_API_CACHE_TTL", "3600"))
+    EXTERNAL_API_CACHE_TTL: int = int(os.getenv("EXTERNAL_API_CACHE_TTL", "3600"))  # 1 hour default
     
+    # Enabled external API providers (comma-separated)
+    # Available: blacklist
     EXTERNAL_API_PROVIDERS: List[str] = [
-        p.strip() for p in os.getenv("EXTERNAL_API_PROVIDERS", "blacklist").split(",") if p.strip()
+        p.strip() for p in os.getenv(
+            "EXTERNAL_API_PROVIDERS",
+            ""
+        ).split(",") if p.strip()
     ]
     
-    EXTERNAL_API_BLACKLIST_ENABLED: bool = os.getenv(
-        "EXTERNAL_API_BLACKLIST_ENABLED", "true"
-    ).lower() == "true"
+    # Blacklist-specific settings
+    EXTERNAL_API_BLACKLIST_ENABLED: bool = "blacklist" in os.getenv("EXTERNAL_API_PROVIDERS", "")
     
     EXTERNAL_API_BLACKLIST_ENDPOINT: str = os.getenv(
         "EXTERNAL_API_BLACKLIST_ENDPOINT",
@@ -255,7 +259,7 @@ class Settings:
         "0xdc287474114cc0551a81ddc2eb51783fbf34802f"
     )
     
-    # Backend priority for max flow computation
+    # Priority order for capacity flow backends
     # Available: ortools, networkx
     CAPACITY_FLOW_BACKEND_PRIORITY: List[str] = [
         p.strip() for p in os.getenv(
@@ -384,7 +388,7 @@ HAS_ANOMALY = HAS_SKLEARN
 def print_startup_banner():
     """Print startup information banner."""
     print("\n" + "=" * 60)
-    print("  Graph Analyzer Web Viewer v2.3.0")
+    print("  Graph Analyzer Web Viewer v2.4.0")
     print("=" * 60)
     print(f"  Database: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     print(f"  SQL Dir:  {settings.SQL_DIR}")

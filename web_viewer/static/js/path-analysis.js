@@ -1043,7 +1043,7 @@ const PathAnalysis = (function() {
             html += `
                 <div class="path-nav-bar">
                     <button class="back-to-paths-btn" onclick="PathAnalysis.showMultiplePathDetails()">
-                        ← Back to ${state.selectedPaths.size} Paths
+                        â† Back to ${state.selectedPaths.size} Paths
                     </button>
                 </div>
             `;
@@ -1348,13 +1348,16 @@ const PathAnalysis = (function() {
         state.lastResult = null;
         state.selectedPathIndex = -1;
         state.selectedPaths.clear();
-        clearHighlights();
-        hidePathDetails();
         
-        // If isolated, show all first
+        // If isolated, show all FIRST (restores edges)
+        // This must happen BEFORE clearHighlights to ensure edges are present
         if (state.isIsolated) {
             showAllNodes();
         }
+        
+        // Now clear the path highlighting (colors/styles)
+        clearHighlights();
+        hidePathDetails();
         
         const resultsSection = document.getElementById('path-results');
         if (resultsSection) resultsSection.style.display = 'none';
