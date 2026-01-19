@@ -697,57 +697,70 @@ async function startPollingFallback() {
 }
 
 /**
- * Display graph after background load completes
+ * Display graph after background load completes.
+ * Called when PRODUCTION_MODE auto-load finishes.
+ * 
+ * Note: This function does NOT fetch graph data via API.getGraph() because
+ * GraphLoader.displayGraph() handles all data fetching internally via
+ * API.getGraphElements(). This is the correct flow for production mode.
  */
 async function displayLoadedGraph(status) {
-    console.log('[STARTUP] displayLoadedGraph called with status:', JSON.stringify(status, null, 2));
+    console.log('[STARTUP] displayLoadedGraph called with status:', status);
     
     // The backend returns 'loaded_graphs' - check both for compatibility
     const graphs = status.loaded_graphs || status.graphs || [];
     
-    console.log('[STARTUP] Extracted graphs array:', graphs);
-    console.log('[STARTUP] graphs.length:', graphs.length);
-    
     if (!graphs || graphs.length === 0) {
-        console.error('[STARTUP] No graphs in status! Full status object:', status);
+        console.error('[STARTUP] No graphs in status:', status);
         updateStatus('No graphs loaded - check server logs', 'error');
         DOMCache.loading.style.display = 'none';
         return;
     }
     
-    // Fetch each graph's data from the API
-    console.log(`[STARTUP] Fetching ${graphs.length} graphs from API...`);
-    for (const graphId of graphs) {
+    // Update State with startup info
+    State.currentState = {
+        loaded_graphs: graphs,
+        node_count: status.node_count || 0,
+        edge_count: status.edge_count || 0
+    };
+    
+    // Initialize graph data cache entries
+    graphs.forEach(g => {
+        State.graphData[g] = { loaded: false };
+    });
+    
+    // Setup graph selector
+    const graphSelector = document.getElementById('graph-selector');
+    const graphSelect = document.getElementById('graph-select');
+    
+    if (graphSelect) {
+        graphSelect.innerHTML = '<option value="">Select graph...</option>' +
+            graphs.map(id => `<option value="${id}">${id}</option>`).join('');
+    }
+    
+    // Show selector if we have graphs
+    if (graphSelector && graphs.length > 0) {
+        graphSelector.style.display = 'block';
+    }
+    
+    // Auto-select and display first graph
+    if (graphs.length > 0) {
+        const firstGraph = graphs[0];
+        console.log(`[STARTUP] Displaying first graph: ${firstGraph}`);
+        
+        if (graphSelect) {
+            graphSelect.value = firstGraph;
+        }
+        
+        // GraphLoader.displayGraph() handles all data fetching internally
+        // via API.getGraphElements() - no need to call API.getGraph()
         try {
-            console.log(`[STARTUP] Fetching graph: ${graphId}`);
-            const graphData = await API.getGraph(graphId);
-            State.graphs[graphId] = graphData;
-            console.log(`[STARTUP] Loaded ${graphId}: ${graphData.nodes?.length || 0} nodes, ${graphData.edges?.length || 0} edges`);
+            await GraphLoader.displayGraph(firstGraph);
         } catch (err) {
-            console.error(`[STARTUP] Error loading ${graphId}:`, err);
+            console.error(`[STARTUP] Error displaying ${firstGraph}:`, err);
+            updateStatus(`Error displaying graph: ${err.message}`, 'error');
         }
     }
-    
-    // Setup graph selector if multiple graphs
-    if (graphs.length > 1) {
-        const selector = document.getElementById('graph-selector');
-        const select = document.getElementById('graph-select');
-        
-        if (select) {
-            select.innerHTML = graphs.map(id => 
-                `<option value="${id}">${id}</option>`
-            ).join('');
-        }
-        
-        if (selector) {
-            selector.style.display = 'block';
-        }
-    }
-    
-    // Display first graph
-    const firstGraph = graphs[0];
-    console.log(`[STARTUP] Displaying first graph: ${firstGraph}`);
-    GraphLoader.displayGraph(firstGraph);
     
     // Enable metrics button
     const metricsBtn = document.getElementById('compute-metrics-btn');
@@ -946,10 +959,17 @@ function setupEventListeners() {
             
             if (isCurrentlyRunning) {
                 State.renderer.pauseSimulation();
+                State.cosmosSimulationPaused = true;
                 updateSimulationButton(false); // paused
             } else {
                 State.renderer.startSimulation();
+                State.cosmosSimulationPaused = false;
                 updateSimulationButton(true); // running
+            }
+            
+            // Update renderer indicator to reflect layout mode change
+            if (typeof GraphLoader !== 'undefined' && GraphLoader.updateRendererIndicator) {
+                GraphLoader.updateRendererIndicator();
             }
         }
     });
@@ -1396,9 +1416,24 @@ function updateSimulationControls() {
     if (State.rendererType === 'cosmos') {
         if (simBtn) simBtn.style.display = 'flex';
         if (simControls) simControls.style.display = 'block';
-        // Simulation runs continuously now - show button as running (pause icon)
-        updateSimulationButton(true);
-        State.cosmosSimulationPaused = false;
+        
+        // Check config for default simulation state
+        const simulationOnLoad = RendererSettings.getValue('cosmos.simulationOnLoad', false);
+        
+        if (simulationOnLoad) {
+            // Simulation runs automatically
+            updateSimulationButton(true);
+            State.cosmosSimulationPaused = false;
+        } else {
+            // Simulation paused by default (static mode)
+            updateSimulationButton(false);
+            State.cosmosSimulationPaused = true;
+        }
+        
+        // Update renderer indicator to show layout mode
+        if (typeof GraphLoader !== 'undefined' && GraphLoader.updateRendererIndicator) {
+            GraphLoader.updateRendererIndicator();
+        }
     } else {
         if (simBtn) simBtn.style.display = 'none';
         if (simControls) simControls.style.display = 'none';

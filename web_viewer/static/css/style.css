@@ -3144,6 +3144,58 @@ input[type="range"]::-moz-range-thumb:hover {
     stroke: #b0b0d0;
 }
 
+/* Layout mode indicator (for cosmos.gl) */
+.layout-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    margin-left: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.layout-mode-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+}
+
+.layout-mode-icon svg {
+    width: 12px;
+    height: 12px;
+}
+
+.layout-mode-label {
+    line-height: 1;
+}
+
+/* Static mode - paused simulation, stable layout */
+.layout-mode-badge.layout-static {
+    background: rgba(82, 196, 26, 0.15);
+    color: #52c41a;
+    border: 1px solid rgba(82, 196, 26, 0.3);
+}
+
+.layout-mode-badge.layout-static .layout-mode-icon svg {
+    stroke: #52c41a;
+}
+
+/* Live mode - running simulation, dynamic layout */
+.layout-mode-badge.layout-live {
+    background: rgba(250, 173, 20, 0.15);
+    color: #faad14;
+    border: 1px solid rgba(250, 173, 20, 0.3);
+}
+
+.layout-mode-badge.layout-live .layout-mode-icon svg {
+    stroke: #faad14;
+}
+
 .renderer-info {
     color: #808080;
     font-size: 10px;

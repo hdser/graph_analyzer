@@ -116,6 +116,10 @@ class CosmosAdapter extends GraphRendererInterface {
         this._updateDebounceTimer = null;
         this._updateDebounceDelay = 50; // ms
         
+        // ========== Simulation on load behavior ==========
+        // If false, simulation is paused on load to preserve pre-computed positions
+        this._simulationOnLoad = RendererSettings.getValue('cosmos.simulationOnLoad', false);
+        
         this.initialize();
     }
     
@@ -470,6 +474,78 @@ class CosmosAdapter extends GraphRendererInterface {
         
         // Fit view after data is set
         setTimeout(() => this.graph.fitView(), 100);
+        
+        // Check if simulation should be paused based on config
+        // This is checked AFTER initial render to ensure graph is displayed
+        if (!this._simulationOnLoad) {
+            // Pause simulation to preserve pre-computed positions
+            setTimeout(() => {
+                this.pauseSimulation();
+                console.log('[CosmosAdapter] Simulation paused on load (simulationOnLoad=false)');
+            }, 200);
+        }
+    }
+    
+    /**
+     * Set data with pre-computed positions, optionally keeping simulation paused
+     * This method ensures pre-computed layout positions are preserved by pausing
+     * the simulation immediately after setting the data.
+     * 
+     * @param {Array} nodes - Node array with x, y positions
+     * @param {Array} edges - Edge array
+     * @param {Object} options - Options
+     * @param {boolean} options.pauseSimulation - If true, pause simulation after setting data (default: true)
+     * @param {boolean} options.fitView - If true, fit view after setting data (default: true)
+     */
+    setDataWithPositions(nodes, edges, options = {}) {
+        const { pauseSimulation = true, fitView = true } = options;
+        
+        // Check if nodes have meaningful pre-computed positions
+        const hasPositions = nodes.some(n => 
+            n.x !== undefined && n.y !== undefined && 
+            (Math.abs(n.x) > 0.1 || Math.abs(n.y) > 0.1)
+        );
+        
+        if (!hasPositions) {
+            console.log('[CosmosAdapter] setDataWithPositions: No pre-computed positions, using regular setData');
+            this.setData(nodes, edges);
+            return;
+        }
+        
+        console.log('[CosmosAdapter] setDataWithPositions: Using pre-computed positions for', nodes.length, 'nodes');
+        
+        // Temporarily override simulationOnLoad to ensure simulation is paused
+        const originalSimOnLoad = this._simulationOnLoad;
+        if (pauseSimulation) {
+            this._simulationOnLoad = false;
+        }
+        
+        // Set the data normally - this will apply positions and pause if needed
+        this.setData(nodes, edges);
+        
+        // Restore original setting
+        this._simulationOnLoad = originalSimOnLoad;
+        
+        // Additional pause to ensure simulation is stopped
+        if (pauseSimulation) {
+            // Pause immediately after data is set
+            this.graph.pause();
+            
+            // Apply positions directly to ensure they're preserved
+            if (this.positions && this.positions.length > 0) {
+                this.graph.setPointPositions(this.positions, true); // dontRescale = true
+            }
+            
+            // Render with positions preserved
+            this.graph.render();
+            
+            console.log('[CosmosAdapter] Simulation paused - pre-computed positions preserved');
+        }
+        
+        // Fit view if requested
+        if (fitView) {
+            setTimeout(() => this.graph.fitView(), 150);
+        }
     }
     
     updatePositions(positions) {

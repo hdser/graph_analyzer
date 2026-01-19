@@ -125,8 +125,31 @@ const GraphLoader = {
             // Update state
             State.setRenderer(renderer);
             
-            // Set data (no edges initially)
-            renderer.setData(nodes, []);
+            // Check if nodes have pre-computed positions
+            const hasPositions = nodes.some(n => 
+                n.x !== undefined && n.y !== undefined && 
+                (Math.abs(n.x) > 0.1 || Math.abs(n.y) > 0.1)
+            );
+            
+            // Set data - use static mode if positions exist and cosmos renderer
+            if (renderer.getType() === 'cosmos' && hasPositions) {
+                // Check if simulation should be paused (from config)
+                const simulationOnLoad = RendererSettings.getValue('cosmos.simulationOnLoad', false);
+                
+                if (!simulationOnLoad && typeof renderer.setDataWithPositions === 'function') {
+                    console.log('[GraphLoader] Using pre-computed positions, simulation will be paused');
+                    renderer.setDataWithPositions(nodes, [], { pauseSimulation: true, fitView: true });
+                    State.cosmosSimulationPaused = true;
+                } else {
+                    renderer.setData(nodes, []);
+                    State.cosmosSimulationPaused = false;
+                }
+            } else {
+                renderer.setData(nodes, []);
+                if (renderer.getType() === 'cosmos') {
+                    State.cosmosSimulationPaused = false;
+                }
+            }
             
             // Setup event handlers based on renderer type
             // Cytoscape events are handled by cytoscape-manager.js
@@ -134,12 +157,25 @@ const GraphLoader = {
             if (renderer.getType() === 'cosmos') {
                 this.setupCosmosEventHandlers(renderer);
                 
-                // Let simulation run continuously - user controls via toolbar button
-                // Just fit view after initial layout starts settling
-                setTimeout(() => {
-                    renderer.fitView();
-                    console.log('[GraphLoader] cosmos.gl initial fit complete, simulation continues');
-                }, 1500);
+                // Handle simulation state based on configuration
+                if (State.cosmosSimulationPaused) {
+                    // Simulation is paused (pre-computed positions mode)
+                    // Just fit view to show the layout
+                    setTimeout(() => {
+                        renderer.fitView();
+                        console.log('[GraphLoader] cosmos.gl fit complete, simulation paused (static mode)');
+                    }, 300);
+                } else {
+                    // Simulation runs continuously - user controls via toolbar button
+                    // Fit view after initial layout starts settling
+                    setTimeout(() => {
+                        renderer.fitView();
+                        console.log('[GraphLoader] cosmos.gl initial fit complete, simulation running');
+                    }, 1500);
+                }
+                
+                // Update simulation button to reflect state
+                this.updateSimulationButtonState();
             }
             
             // Update renderer indicator in UI
@@ -198,12 +234,28 @@ const GraphLoader = {
         const icon = type === 'cosmos' ? Icons.get('rocket') : Icons.get('canvas');
         const label = type === 'cosmos' ? 'cosmos.gl' : 'Cytoscape.js';
         
+        // Build layout mode indicator for cosmos
+        let layoutModeHtml = '';
+        if (type === 'cosmos') {
+            const isStatic = State.cosmosSimulationPaused;
+            const layoutMode = isStatic ? 'Static' : 'Live';
+            const layoutIcon = isStatic ? Icons.get('lock') : Icons.get('refresh');
+            const layoutClass = isStatic ? 'layout-static' : 'layout-live';
+            
+            layoutModeHtml = `
+                <span class="layout-mode-badge ${layoutClass}" title="Layout mode: ${layoutMode}">
+                    <span class="layout-mode-icon">${layoutIcon}</span>
+                    <span class="layout-mode-label">${layoutMode}</span>
+                </span>
+            `;
+        }
+        
         indicator.innerHTML = `
             <span class="renderer-badge renderer-${type}" title="${caps.reason}">
                 <span class="renderer-icon">${icon}</span>
                 <span class="renderer-label">${label}</span>
             </span>
-            
+            ${layoutModeHtml}
         `;
         
         // Show WebGL warning if cosmos not available
@@ -326,6 +378,9 @@ const GraphLoader = {
             State.cosmosSimulationPaused = true;
             console.log('[GraphLoader] cosmos.gl simulation paused');
         }
+        
+        // Update renderer indicator to reflect layout mode change
+        this.updateRendererIndicator();
         
         return State.cosmosSimulationPaused;
     },
@@ -518,5 +573,36 @@ const GraphLoader = {
             // Just update the indicator
             this.updateRendererIndicator();
         }
+    },
+    
+    /**
+     * Update the simulation button state in the toolbar
+     * Called after graph load to reflect initial simulation state
+     */
+    updateSimulationButtonState() {
+        const btn = document.getElementById('toolbar-sim-btn');
+        const icon = document.getElementById('toolbar-sim-icon');
+        if (!btn) return;
+        
+        const isRunning = !State.cosmosSimulationPaused;
+        
+        if (isRunning) {
+            btn.classList.remove('paused');
+            btn.classList.add('running');
+            btn.title = 'Pause simulation';
+            if (icon) icon.setAttribute('data-icon', 'pause');
+        } else {
+            btn.classList.remove('running');
+            btn.classList.add('paused');
+            btn.title = 'Resume simulation';
+            if (icon) icon.setAttribute('data-icon', 'play');
+        }
+        
+        // Re-inject icons if needed
+        if (typeof Icons !== 'undefined' && Icons.inject) {
+            Icons.inject();
+        }
+        
+        console.log('[GraphLoader] Simulation button state updated:', isRunning ? 'running' : 'paused');
     }
 };

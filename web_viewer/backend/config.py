@@ -61,6 +61,11 @@ class Settings:
     COSMOS_SIMULATION_LINK_DISTANCE: float = float(os.getenv("COSMOS_SIMULATION_LINK_DISTANCE", "10"))
     COSMOS_SIMULATION_LINK_SPRING: float = float(os.getenv("COSMOS_SIMULATION_LINK_SPRING", "0.3"))
     
+    # cosmos.gl layout behavior
+    # If True, cosmos.gl simulation starts automatically on graph load
+    # If False, simulation is paused and pre-computed positions are displayed statically
+    COSMOS_SIMULATION_ON_LOAD: bool = os.getenv("COSMOS_SIMULATION_ON_LOAD", "false").lower() == "true"
+    
     # Node size range for metric-based sizing
     RENDERER_NODE_SIZE_MIN: float = float(os.getenv("RENDERER_NODE_SIZE_MIN", "5"))
     RENDERER_NODE_SIZE_MAX: float = float(os.getenv("RENDERER_NODE_SIZE_MAX", "30"))
@@ -301,6 +306,7 @@ class Settings:
                 "backgroundColor": self.COSMOS_BACKGROUND_COLOR,
                 "curvedLinks": self.COSMOS_CURVED_LINKS,
                 "enableDrag": self.COSMOS_ENABLE_DRAG,
+                "simulationOnLoad": self.COSMOS_SIMULATION_ON_LOAD,
                 "simulation": {
                     "friction": self.COSMOS_SIMULATION_FRICTION,
                     "gravity": self.COSMOS_SIMULATION_GRAVITY,

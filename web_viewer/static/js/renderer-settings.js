@@ -24,6 +24,7 @@ const RendererSettings = {
             curvedLinks: true,
             enableDrag: true,
             enableRightClickRepulsion: false,
+            simulationOnLoad: false,  // Default to static mode for stable displays
             simulation: {
                 // Core parameters - cosmos.gl defaults from documentation
                 friction: 0.85,
@@ -398,6 +399,25 @@ const RendererSettings = {
      */
     get() {
         return this.config || this.defaults;
+    },
+    
+    /**
+     * Get a nested setting value using dot notation
+     * @param {string} path - Dot-notation path like 'cosmos.simulationOnLoad'
+     * @param {*} defaultValue - Default if not found
+     * @returns {*} The value at the path or defaultValue
+     */
+    getValue(path, defaultValue = null) {
+        const parts = path.split('.');
+        let value = this.get();
+        for (const part of parts) {
+            if (value && typeof value === 'object' && part in value) {
+                value = value[part];
+            } else {
+                return defaultValue;
+            }
+        }
+        return value;
     },
     
     /**

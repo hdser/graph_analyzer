@@ -17,6 +17,9 @@ const State = {
     // User's renderer preference ('auto', 'cosmos', 'cytoscape')
     rendererPreference: 'auto',
     
+    // cosmos.gl simulation paused state
+    cosmosSimulationPaused: false,
+    
     // WebGL capability information
     rendererCapabilities: null,
     
