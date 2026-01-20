@@ -37,7 +37,7 @@ body {
    ============================================================================= */
 
 .sidebar {
-    width: 70px;
+    width: 60px;
     background: #0f0f0f;
     display: flex;
     flex-direction: column;
@@ -59,7 +59,7 @@ body {
     border-bottom: 1px solid #1a1a1a;
     background: linear-gradient(180deg, #0f0f0f 0%, #0a0a0a 100%);
     flex-shrink: 0;
-    height: 70px;
+    height: 50px;
 }
 
 .app-logo {
@@ -96,8 +96,8 @@ body {
 }
 
 .nav-buttons .nav-btn {
-    width: 54px;
-    height: 58px;
+    width: 44px;
+    height: 48px;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
@@ -145,7 +145,7 @@ body {
 }
 
 .nav-btn-label {
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -153,7 +153,7 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 50px;
+    max-width: 40px;
     text-align: center;
 }
 
@@ -946,7 +946,7 @@ input[type="range"]::-moz-range-thumb:hover {
 .cy-container {
     flex: 1;
     width: 100%;
-    background: #0a0a0a;
+    background: #1a1a1a;
     position: relative;
     /* Force GPU acceleration */
     transform: translate3d(0, 0, 0);
@@ -1637,6 +1637,10 @@ input[type="range"]::-moz-range-thumb:hover {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+.icon-spin {
+    animation: spin 1s linear infinite;
 }
 
 .loading-text {
@@ -3078,4 +3082,755 @@ input[type="range"]::-moz-range-thumb:hover {
 .secondary-btn[style*="d33a47"]:disabled {
     border-color: #4a4a4a !important;
     color: #606060 !important;
+}
+
+/* =============================================================================
+   RENDERER CONTROLS
+   ============================================================================= */
+
+/* Renderer indicator in toolbar */
+.renderer-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    padding: 4px 10px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    border: 1px solid #2a2a2a;
+    margin-left: 8px;
+}
+
+.renderer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.renderer-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+}
+
+.renderer-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.renderer-label {
+    line-height: 1;
+}
+
+.renderer-badge.renderer-cosmos {
+    background: linear-gradient(135deg, #1a3a5c 0%, #2a4a6a 100%);
+    color: #6ad3ff;
+    border: 1px solid #3a6a9a;
+}
+
+.renderer-badge.renderer-cosmos .renderer-icon svg {
+    stroke: #6ad3ff;
+}
+
+.renderer-badge.renderer-cytoscape {
+    background: linear-gradient(135deg, #2a2a3a 0%, #3a3a4a 100%);
+    color: #b0b0d0;
+    border: 1px solid #4a4a6a;
+}
+
+.renderer-badge.renderer-cytoscape .renderer-icon svg {
+    stroke: #b0b0d0;
+}
+
+/* Layout mode indicator (for cosmos.gl) */
+.layout-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    margin-left: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.layout-mode-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+}
+
+.layout-mode-icon svg {
+    width: 12px;
+    height: 12px;
+}
+
+.layout-mode-label {
+    line-height: 1;
+}
+
+/* Static mode - paused simulation, stable layout */
+.layout-mode-badge.layout-static {
+    background: rgba(82, 196, 26, 0.15);
+    color: #52c41a;
+    border: 1px solid rgba(82, 196, 26, 0.3);
+}
+
+.layout-mode-badge.layout-static .layout-mode-icon svg {
+    stroke: #52c41a;
+}
+
+/* Live mode - running simulation, dynamic layout */
+.layout-mode-badge.layout-live {
+    background: rgba(250, 173, 20, 0.15);
+    color: #faad14;
+    border: 1px solid rgba(250, 173, 20, 0.3);
+}
+
+.layout-mode-badge.layout-live .layout-mode-icon svg {
+    stroke: #faad14;
+}
+
+.renderer-info {
+    color: #808080;
+    font-size: 10px;
+}
+
+/* Capability info display */
+.capability-info {
+    padding: 8px;
+    background: #0f0f0f;
+    border-radius: 4px;
+    border: 1px solid #1a1a1a;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.capability-tier {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+}
+
+.capability-full {
+    background: rgba(100, 200, 100, 0.15);
+    color: #7dde7d;
+}
+
+.capability-mobile {
+    background: rgba(200, 200, 100, 0.15);
+    color: #dede7d;
+}
+
+.capability-constrained,
+.capability-limited {
+    background: rgba(200, 150, 50, 0.15);
+    color: #dec87d;
+}
+
+.capability-software,
+.capability-incompatible,
+.capability-none {
+    background: rgba(200, 100, 100, 0.15);
+    color: #de7d7d;
+}
+
+.gpu-info {
+    color: #606060;
+    font-size: 10px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Warning box for WebGL issues */
+.warning-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(200, 150, 50, 0.1);
+    border: 1px solid rgba(200, 150, 50, 0.3);
+    border-radius: 4px;
+    font-size: 11px;
+    color: #dec87d;
+}
+
+.warning-box [data-icon] {
+    flex-shrink: 0;
+}
+
+/* Radio group for renderer preference */
+.radio-group {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #b0b0b0;
+    transition: color 0.2s;
+}
+
+.radio-label:hover {
+    color: #e0e0e0;
+}
+
+.radio-label input[type="radio"] {
+    cursor: pointer;
+    accent-color: #4a90d9;
+}
+
+.radio-label input[type="radio"]:checked + span {
+    color: #e0e0e0;
+    font-weight: 500;
+}
+/* =============================================================================
+   TOOLBAR BUTTONS - Enhanced styling
+   ============================================================================= */
+
+.toolbar-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #b0b0b0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.toolbar-btn:hover {
+    background: #333;
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
+.toolbar-btn:active {
+    transform: scale(0.95);
+}
+
+.toolbar-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Simulation control button in toolbar */
+.toolbar-sim-btn {
+    min-width: 36px;
+}
+
+.toolbar-sim-btn.paused {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+.toolbar-sim-btn.paused:hover {
+    background: #22c55e;
+    color: #000;
+}
+
+.toolbar-sim-btn.running {
+    background: rgba(250, 186, 57, 0.15);
+    border-color: #faba39;
+    color: #faba39;
+}
+
+.toolbar-sim-btn.running:hover {
+    background: #faba39;
+    color: #000;
+}
+
+/* =============================================================================
+   RENDERER SWITCH BUTTON - Toolbar
+   ============================================================================= */
+
+.renderer-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: linear-gradient(135deg, #1a3a5c 0%, #2a4a6a 100%);
+    border: 1px solid #3a6a9a;
+    border-radius: 6px;
+    color: #6ad3ff;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.renderer-switch-btn:hover {
+    background: linear-gradient(135deg, #2a4a6c 0%, #3a5a7a 100%);
+    border-color: #5a8aba;
+    box-shadow: 0 2px 8px rgba(106, 211, 255, 0.2);
+}
+
+.renderer-switch-btn .renderer-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.renderer-switch-btn .renderer-icon svg {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+}
+
+.renderer-switch-btn.cytoscape-active {
+    background: linear-gradient(135deg, #2a2a3a 0%, #3a3a4a 100%);
+    border-color: #4a4a6a;
+    color: #b0b0d0;
+}
+
+.renderer-switch-btn.cytoscape-active:hover {
+    background: linear-gradient(135deg, #3a3a4a 0%, #4a4a5a 100%);
+    border-color: #5a5a7a;
+}
+
+/* =============================================================================
+   RENDERER MODAL
+   ============================================================================= */
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: #1a1a1a;
+    border: 1px solid #3a3a3a;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.modal-close {
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    color: #888;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+    background: #2a2a2a;
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+/* Renderer options in modal */
+.renderer-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.renderer-option {
+    display: block;
+    cursor: pointer;
+}
+
+.renderer-option input[type="radio"] {
+    display: none;
+}
+
+.renderer-option-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #252525;
+    border: 2px solid #333;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.renderer-option:hover .renderer-option-content {
+    background: #2a2a2a;
+    border-color: #444;
+}
+
+.renderer-option input[type="radio"]:checked + .renderer-option-content {
+    background: rgba(74, 144, 226, 0.1);
+    border-color: #4A90E2;
+}
+
+.renderer-option-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #333;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.renderer-option-icon svg {
+    width: 20px;
+    height: 20px;
+    stroke: #888;
+}
+
+.renderer-option input[type="radio"]:checked + .renderer-option-content .renderer-option-icon svg {
+    stroke: #4A90E2;
+}
+
+.renderer-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.renderer-option-text strong {
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+.renderer-option-text span {
+    color: #888;
+    font-size: 12px;
+}
+
+/* =============================================================================
+   FLOW BUILD SECTION - Aligned buttons
+   ============================================================================= */
+
+#panel-flow .cf-build-section .cf-build-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+#panel-flow .cf-build-btn,
+#panel-flow .cf-view-btn {
+    flex: 1;
+    min-width: 80px;
+    height: 36px;
+    margin: 0 !important;
+    padding: 8px 12px !important;
+}
+
+/* Fix for flow action buttons (Compute Flow / Clear) */
+#panel-flow .flow-actions.cf-actions {
+    display: flex !important;
+    gap: 8px !important;
+    margin: 12px 0 !important;
+}
+
+#panel-flow .flow-actions.cf-actions .primary-btn,
+#panel-flow .flow-actions.cf-actions .secondary-btn {
+    flex: 1 1 0 !important;
+    width: auto !important;
+    margin: 0 !important;
+    height: 42px !important;
+    padding: 8px 12px !important;
+}
+
+/* Button group for flow panel (matching path panel) */
+#panel-flow .button-group {
+    display: flex !important;
+    gap: 8px !important;
+    margin: 12px 0 0 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+}
+
+#panel-flow .button-group button,
+#panel-flow .button-group .primary-btn,
+#panel-flow .button-group .secondary-btn {
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 42px !important;
+    margin: 0 !important;
+    padding: 8px 12px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    box-sizing: border-box !important;
+    transform: none !important;
+}
+
+#panel-flow .button-group .primary-btn {
+    background: #4A90E2 !important;
+    border: none !important;
+    color: #fff !important;
+}
+
+#panel-flow .button-group .primary-btn:hover:not(:disabled) {
+    background: #357ABD !important;
+}
+
+#panel-flow .button-group .primary-btn:disabled {
+    background: #3a5a7a !important;
+    color: #aaa !important;
+    cursor: wait !important;
+}
+
+#panel-flow .button-group .secondary-btn {
+    background: #2a2a2a !important;
+    border: 1px solid #444 !important;
+    color: #ccc !important;
+}
+
+#panel-flow .button-group .secondary-btn:hover {
+    background: #333 !important;
+    border-color: #555 !important;
+    color: #fff !important;
+}
+
+/* =============================================================================
+   PATH ENDPOINTS - Consistent with Flow panel
+   ============================================================================= */
+
+.path-endpoints {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.path-endpoints .endpoint-row {
+    flex: 1;
+}
+
+.path-endpoints .endpoint-row label {
+    display: block;
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.path-endpoints .endpoint-row input {
+    width: 100%;
+    background: #0f0f0f;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 10px 12px;
+    font-size: 12px;
+    font-family: monospace;
+}
+
+.path-endpoints .endpoint-row input:focus {
+    border-color: #4A90E2;
+    outline: none;
+}
+
+.path-endpoints .swap-btn {
+    width: 32px;
+    height: 32px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    color: #888;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 16px;
+    transition: all 0.2s ease;
+}
+
+.path-endpoints .swap-btn:hover {
+    background: #333;
+    border-color: #555;
+    color: #fff;
+}
+
+/* =============================================================================
+   LAYOUT PANEL - cosmos.gl Simulation Controls
+   ============================================================================= */
+
+#cosmos-simulation-controls {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #333;
+}
+
+#cosmos-simulation-controls h4 {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    color: #b0b0b0;
+}
+
+/* Status bar */
+.cosmos-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+
+.cosmos-status-bar #cosmos-status-text {
+    color: #888;
+}
+
+.cosmos-alpha {
+    color: #666;
+    font-size: 11px;
+}
+
+.cosmos-alpha #cosmos-alpha-text {
+    color: #4A90E2;
+    font-family: monospace;
+}
+
+/* Control buttons */
+.cosmos-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 15px;
+}
+
+.cosmos-buttons button {
+    padding: 8px 4px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* Slider value displays */
+#cosmos-simulation-controls .slider-value {
+    min-width: 40px;
+    text-align: right;
+    font-size: 11px;
+    color: #8b9dc3;
+    font-family: monospace;
+    flex-shrink: 0;
+}
+
+#cosmos-simulation-controls .slider-value-wide {
+    min-width: 50px;
+}
+
+/* Style rows in cosmos controls */
+#cosmos-simulation-controls .style-row {
+    margin-bottom: 10px;
+}
+
+#cosmos-simulation-controls .style-row label:first-child {
+    min-width: 70px;
+    font-size: 11px;
+}
+
+/* Action buttons row */
+.cosmos-action-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+
+.cosmos-action-row button:first-child {
+    flex: 2;
+}
+
+.cosmos-action-row button:last-child {
+    flex: 1;
+}
+
+/* Snapshots section */
+.cosmos-snapshots {
+    margin-top: 10px;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+}
+
+.cosmos-snapshots summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: #aaa;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    border-radius: 4px;
+}
+
+.cosmos-snapshots[open] summary {
+    border-radius: 4px 4px 0 0;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.cosmos-snapshot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 10px;
+}
+
+.cosmos-snapshot-grid button {
+    padding: 6px 10px;
+    font-size: 11px;
 }

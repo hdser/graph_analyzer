@@ -713,13 +713,13 @@
                         const changeEl = document.getElementById('loss-change');
                         if (change < -0.0001) {
                             changeEl.className = 'metric-change positive';
-                            changeEl.textContent = `↓ ${Math.abs(change).toFixed(4)}`;
+                            changeEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:2px;"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v12"/><path d="M3 9l5 5 5-5"/></svg> ${Math.abs(change).toFixed(4)}</span>`;
                         } else if (change > 0.0001) {
                             changeEl.className = 'metric-change negative';
-                            changeEl.textContent = `↑ ${change.toFixed(4)}`;
+                            changeEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:2px;"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 14V2"/><path d="M3 7l5-5 5 5"/></svg> ${change.toFixed(4)}</span>`;
                         } else {
                             changeEl.className = 'metric-change neutral';
-                            changeEl.textContent = '→ stable';
+                            changeEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:2px;"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 8h12"/><path d="M10 5l3 3-3 3"/></svg> stable</span>';
                         }
                     }
                     lastLoss = totalLoss;

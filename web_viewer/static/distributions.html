@@ -79,7 +79,7 @@
         }
 
         .snapshot-indicator .snapshot-badge::before {
-            content: "📸";
+            content: "📊";
             font-size: 12px;
         }
 
@@ -1393,7 +1393,7 @@
                 <div class="config-row">
                     <label>Operation</label>
                     <select id="dist-composite-operation">
-                        <option value="multiply">Multiply (M1 Ã— M2)</option>
+                        <option value="multiply">Multiply (M1 x M2)</option>
                         <option value="add">Add (M1 + M2)</option>
                         <option value="subtract">Subtract (M1 - M2)</option>
                         <option value="divide">Divide (M1 / M2)</option>
@@ -1581,7 +1581,7 @@
                             <option value="stability">Stability (Consistency)</option>
                             <option value="volatility">Volatility (Variation)</option>
                             <option value="momentum">Momentum (Trend Strength)</option>
-                            <option value="trend_strength">Trend Strength (R² of fit)</option>
+                            <option value="trend_strength">Trend Strength (R^2 of fit)</option>
                             <option value="age">Age (Blocks since first seen)</option>
                             <option value="tenure_ratio">Tenure Ratio (Presence %)</option>
                             <option value="z_score_temporal">Z-Score (vs historical self)</option>
@@ -1661,7 +1661,7 @@
                             <span class="scatter-stat-value" id="scatter-correlation">-</span>
                         </div>
                         <div class="scatter-stat">
-                            <span class="scatter-stat-label">RÂ²:</span>
+                            <span class="scatter-stat-label">R^2:</span>
                             <span class="scatter-stat-value" id="scatter-r2">-</span>
                         </div>
                     </div>
@@ -1878,7 +1878,7 @@
                             <h3>Analyze Metrics Over Time</h3>
                             <p id="timeseries-empty-message">Select an analysis mode and configure options in the sidebar, then click "Run Analysis".</p>
                             <p id="timeseries-snapshot-hint" style="margin-top: 10px; font-size: 12px; color: #606060; display: none;">
-                                💡 Load a historical snapshot first to enable timeseries analysis.
+                                ⚠️ Load a historical snapshot first to enable timeseries analysis.
                             </p>
                             <div style="margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto;">
                                 <p style="font-size: 12px; color: #808080; margin-bottom: 10px;"><strong>Available Analysis Modes:</strong></p>
@@ -1925,7 +1925,7 @@
                                     <span id="trend-slope">-</span>
                                 </div>
                                 <div class="trend-row">
-                                    <span>R² Score</span>
+                                    <span>R^2 Score</span>
                                     <span id="trend-r2">-</span>
                                 </div>
                                 <div class="trend-row">

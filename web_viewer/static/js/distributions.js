@@ -102,7 +102,8 @@ const DistributionsComm = {
      * Open distributions popup window
      */
     open() {
-        if (!State.cy) {
+        const renderer = State.renderer;
+        if (!renderer) {
             updateStatus('Please load a graph first', 'error');
             return;
         }
@@ -143,30 +144,49 @@ const DistributionsComm = {
      * Now snapshot-aware: sends snapshot info if viewing a snapshot
      */
     sendData() {
-        if (!State.distributionsWindow || State.distributionsWindow.closed || !State.cy) return;
+        const renderer = State.renderer;
+        if (!State.distributionsWindow || State.distributionsWindow.closed || !renderer) return;
         
         // Check if we're viewing a snapshot
         const snapshotId = this.getCurrentSnapshotId();
         const snapshotInfo = this.getCurrentSnapshotInfo();
         
-        // Collect node data from current Cytoscape view (works for both live and snapshot)
+        // Collect node data from current renderer (works for both live and snapshot)
         const nodes = [];
-        State.cy.nodes().forEach(node => {
-            const data = node.data();
-            const cleanData = { id: data.id };
-            
-            // Include only numeric metrics
-            Object.keys(data).forEach(key => {
-                if (typeof data[key] === 'number' && !isNaN(data[key])) {
-                    cleanData[key] = data[key];
+        
+        // Use renderer abstraction to get node data
+        if (State.rendererType === 'cytoscape' && State.cy) {
+            State.cy.nodes().forEach(node => {
+                const data = node.data();
+                const cleanData = { id: data.id };
+                
+                // Include only numeric metrics
+                Object.keys(data).forEach(key => {
+                    if (typeof data[key] === 'number' && !isNaN(data[key])) {
+                        cleanData[key] = data[key];
+                    }
+                });
+                
+                nodes.push(cleanData);
+            });
+        } else {
+            // Use renderer's nodeDataMap for cosmos or other renderers
+            renderer.getAllNodeIds().forEach(id => {
+                const data = renderer.getNodeData(id);
+                if (data) {
+                    const cleanData = { id: id };
+                    Object.keys(data).forEach(key => {
+                        if (typeof data[key] === 'number' && !isNaN(data[key])) {
+                            cleanData[key] = data[key];
+                        }
+                    });
+                    nodes.push(cleanData);
                 }
             });
-            
-            nodes.push(cleanData);
-        });
+        }
         
         // Get selected node IDs
-        const selectedIds = State.cy.nodes(':selected').map(n => n.id());
+        const selectedIds = renderer.getSelectedNodes();
         
         // Build message payload
         const payload = {
@@ -218,9 +238,10 @@ const DistributionsComm = {
      * Send selection update to distributions window
      */
     sendSelectionUpdate() {
-        if (!State.distributionsWindow || State.distributionsWindow.closed || !State.cy) return;
+        const renderer = State.renderer;
+        if (!State.distributionsWindow || State.distributionsWindow.closed || !renderer) return;
         
-        const selectedIds = State.cy.nodes(':selected').map(n => n.id());
+        const selectedIds = renderer.getSelectedNodes();
         
         State.distributionsWindow.postMessage({
             type: 'SELECTION_UPDATE',

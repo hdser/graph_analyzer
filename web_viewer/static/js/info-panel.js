@@ -249,6 +249,257 @@ const InfoPanel = {
         DOMCache.edgeMetrics.innerHTML = metricsHtml;
     },
 
+    // =========================================================================
+    // RENDERER-AGNOSTIC METHODS
+    // These methods work with raw data instead of Cytoscape objects,
+    // enabling compatibility with both Cytoscape.js and cosmos.gl renderers
+    // =========================================================================
+    
+    /**
+     * Show node information from raw data object
+     * @param {string} id - Node ID
+     * @param {Object} data - Node data object
+     */
+    showNodeFromData(id, data) {
+        data = data || {};
+        data.id = id;
+        State.currentNodeData = data;
+        State.currentEdgeData = null;
+        
+        DOMCache.nodeInfo.style.display = 'flex';
+        DOMCache.edgeInfo.style.display = 'none';
+        DOMCache.multiInfo.style.display = 'none';
+        DOMCache.infoPanel.style.display = 'flex';
+        
+        DOMCache.nodeId.textContent = id || 'N/A';
+        
+        // Check if we have parallel token arrays
+        const hasTokenArrays = Array.isArray(data.tokens) && Array.isArray(data.tokens_balance);
+        
+        // Store tokens data for modal
+        if (hasTokenArrays) {
+            this.currentTokensData = {
+                tokens: data.tokens,
+                balances: data.tokens_balance
+            };
+        } else {
+            this.currentTokensData = null;
+        }
+        
+        // Build metrics HTML
+        const entries = Object.entries(data)
+            .filter(([k]) => !['id', 'label', 'isNew', 'x', 'y'].includes(k))
+            .sort(([a], [b]) => a.localeCompare(b));
+        
+        let metricsHtml = '';
+        
+        for (const [k, v] of entries) {
+            const label = k.replace(/_/g, ' ');
+            let displayValue;
+            let extraClass = '';
+            let tooltip = '';
+            let onclick = '';
+            
+            // Skip tokens_balance if we're showing combined view
+            if (k === 'tokens_balance' && hasTokenArrays) {
+                continue;
+            }
+            
+            if (v === null || v === undefined) {
+                displayValue = '-';
+            } else if (k === 'tokens' && hasTokenArrays) {
+                // Combined tokens + balances view - clickable
+                const formatted = this.formatTokensWithBalances(data.tokens, data.tokens_balance);
+                displayValue = formatted.summary;
+                tooltip = 'Click to view all tokens';
+                extraClass = 'complex-value clickable';
+                onclick = 'onclick="InfoPanel.showTokensModal()"';
+            } else if (Array.isArray(v)) {
+                // Generic array
+                const formatted = this.formatArray(v, k);
+                displayValue = formatted.summary;
+                tooltip = formatted.tooltip;
+                extraClass = 'complex-value';
+            } else if (typeof v === 'object') {
+                displayValue = JSON.stringify(v);
+                extraClass = 'complex-value';
+            } else {
+                displayValue = Utils.formatNumber(v);
+            }
+            
+            const tooltipAttr = tooltip ? `title="${this.escapeHtml(tooltip)}"` : '';
+            
+            metricsHtml += `<div class="metric-row">
+                <span class="metric-label">${label}</span>
+                <span class="metric-value ${extraClass}" ${tooltipAttr} ${onclick}>${displayValue}</span>
+            </div>`;
+        }
+        
+        DOMCache.allMetrics.innerHTML = metricsHtml || '<div class="no-metrics">No metrics computed</div>';
+        
+        // Set as origin if not navigating
+        if (!this.originNodes) {
+            this.originNodes = [id];
+            this.currentHop = 0;
+        }
+        
+        // Get neighbor counts from renderer if available
+        const renderer = State.getRenderer();
+        if (renderer) {
+            const incoming = renderer.getIncomingNeighbors(id) || [];
+            const outgoing = renderer.getOutgoingNeighbors(id) || [];
+            DOMCache.inCount.textContent = incoming.length;
+            DOMCache.outCount.textContent = outgoing.length;
+            
+            this.buildNeighborListFromIds(DOMCache.neighborInList, incoming);
+            this.buildNeighborListFromIds(DOMCache.neighborOutList, outgoing);
+        } else {
+            DOMCache.inCount.textContent = '0';
+            DOMCache.outCount.textContent = '0';
+            DOMCache.neighborInList.innerHTML = '<div class="no-neighbors">Load edges to see neighbors</div>';
+            DOMCache.neighborOutList.innerHTML = '<div class="no-neighbors">Load edges to see neighbors</div>';
+        }
+        
+        this.updateNavState();
+        this.switchTab('metrics');
+    },
+    
+    /**
+     * Show edge information from raw data
+     * @param {string} id - Edge ID
+     * @param {Object} data - Edge data object
+     * @param {string} source - Source node ID
+     * @param {string} target - Target node ID
+     */
+    showEdgeFromData(id, data, source, target) {
+        data = data || {};
+        State.currentEdgeData = data;
+        State.currentNodeData = null;
+        
+        DOMCache.nodeInfo.style.display = 'none';
+        DOMCache.edgeInfo.style.display = 'block';
+        DOMCache.multiInfo.style.display = 'none';
+        DOMCache.infoPanel.style.display = 'flex';
+        
+        const metricsHtml = `
+            <div class="metric-row">
+                <span class="metric-label">Source</span>
+                <span class="metric-value">${source || data.source || '-'}</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Target</span>
+                <span class="metric-value">${target || data.target || '-'}</span>
+            </div>
+        ` + Object.entries(data)
+            .filter(([k]) => !['id', 'source', 'target'].includes(k))
+            .map(([k, v]) => `<div class="metric-row">
+                <span class="metric-label">${k.replace(/_/g, ' ')}</span>
+                <span class="metric-value">${Utils.formatNumber(v)}</span>
+            </div>`)
+            .join('');
+        
+        DOMCache.edgeMetrics.innerHTML = metricsHtml;
+    },
+    
+    /**
+     * Show multi-selection from node IDs array
+     * Works with both Cytoscape and cosmos.gl renderers
+     * @param {string[]} nodeIds - Array of selected node IDs
+     */
+    showMultiSelectFromIds(nodeIds) {
+        if (!nodeIds || nodeIds.length === 0) {
+            return;
+        }
+        
+        DOMCache.nodeInfo.style.display = 'none';
+        DOMCache.edgeInfo.style.display = 'none';
+        DOMCache.multiInfo.style.display = 'flex';
+        DOMCache.infoPanel.style.display = 'flex';
+        
+        document.getElementById('multi-node-count').textContent = nodeIds.length.toLocaleString();
+        document.getElementById('multi-edge-count').textContent = '0';  // Edge count not easily available
+        
+        // Set as origin if not navigating
+        if (!this.originNodes && nodeIds.length > 0) {
+            this.originNodes = [...nodeIds];
+            this.currentHop = 0;
+        }
+        
+        this.updateNavState();
+        
+        // Build selected nodes list
+        const nodesList = document.getElementById('selected-nodes-list');
+        if (nodesList) {
+            const maxShow = 50;
+            nodesList.innerHTML = nodeIds.slice(0, maxShow)
+                .map(id => `<div class="selected-node-item" data-id="${id}">${id}</div>`)
+                .join('');
+            if (nodeIds.length > maxShow) {
+                nodesList.innerHTML += `<div class="neighbor-more">+${nodeIds.length - maxShow} more</div>`;
+            }
+        }
+        
+        // Get node data from renderer and aggregate metrics
+        const renderer = State.getRenderer();
+        if (!renderer) {
+            const metricsList = document.getElementById('multi-metrics-list');
+            if (metricsList) metricsList.innerHTML = '<div class="no-metrics">No renderer available</div>';
+            return;
+        }
+        
+        const stats = {};
+        nodeIds.forEach(id => {
+            const nodeData = renderer.getNodeData(id);
+            if (nodeData) {
+                Object.entries(nodeData).forEach(([k, v]) => {
+                    if (!['id', 'label', 'isNew', 'x', 'y'].includes(k) && typeof v === 'number' && !isNaN(v)) {
+                        if (!stats[k]) stats[k] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+                        stats[k].sum += v;
+                        stats[k].count++;
+                        stats[k].min = Math.min(stats[k].min, v);
+                        stats[k].max = Math.max(stats[k].max, v);
+                    }
+                });
+            }
+        });
+        
+        const html = Object.keys(stats).sort().map(k => {
+            const s = stats[k];
+            return `<div class="multi-metric-group">
+                <div class="multi-metric-name">${k.replace(/_/g, ' ')}</div>
+                <div class="multi-metric-stats">
+                    <span>Avg: ${Utils.formatNumber(s.sum / s.count)}</span>
+                    <span>Min: ${Utils.formatNumber(s.min)}</span>
+                    <span>Max: ${Utils.formatNumber(s.max)}</span>
+                </div>
+            </div>`;
+        }).join('');
+        
+        const metricsList = document.getElementById('multi-metrics-list');
+        if (metricsList) {
+            metricsList.innerHTML = html || '<div class="no-metrics">No numeric metrics</div>';
+        }
+    },
+    
+    /**
+     * Build neighbor list HTML from IDs
+     * @param {HTMLElement} container - Container element
+     * @param {string[]} neighborIds - Array of neighbor node IDs
+     */
+    buildNeighborListFromIds(container, neighborIds) {
+        const maxDisplay = 20;
+        if (neighborIds && neighborIds.length > 0) {
+            container.innerHTML = neighborIds.slice(0, maxDisplay)
+                .map(id => `<div class="neighbor-item" data-id="${id}">${id}</div>`)
+                .join('');
+            if (neighborIds.length > maxDisplay) {
+                container.innerHTML += `<div class="neighbor-more">+${neighborIds.length - maxDisplay} more</div>`;
+            }
+        } else {
+            container.innerHTML = '<div class="no-neighbors">Load edges to see neighbors</div>';
+        }
+    },
+
     /**
      * Show multi-select information
      */
@@ -331,7 +582,7 @@ const InfoPanel = {
         const backBtns = document.querySelectorAll('.nav-back-btn');
         backBtns.forEach(btn => {
             btn.disabled = this.history.length === 0;
-            btn.textContent = this.history.length > 0 ? `← Back (${this.history.length})` : '← Back';
+            btn.textContent = this.history.length > 0 ? `<- Back (${this.history.length})` : '<- Back';
         });
         
         // Update ALL origin info boxes (both in node-info and multi-info)
@@ -353,13 +604,23 @@ const InfoPanel = {
 
     /**
      * Push current selection to history
+     * Supports both Cytoscape.js and cosmos.gl
      */
     pushHistory() {
-        if (!State.cy) return;
-        const selected = State.cy.nodes(':selected');
-        if (selected.length > 0) {
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        let selectedIds = [];
+        if (isCosmos) {
+            selectedIds = State.renderer.getSelectedNodes() || [];
+        } else if (isCytoscape) {
+            const selected = State.cy.nodes(':selected');
+            selectedIds = selected.map(n => n.id());
+        }
+        
+        if (selectedIds.length > 0) {
             this.history.push({
-                ids: selected.map(n => n.id()),
+                ids: selectedIds,
                 hop: this.currentHop
             });
             if (this.history.length > 20) this.history.shift();
@@ -368,20 +629,30 @@ const InfoPanel = {
 
     /**
      * Go back to previous selection
+     * Supports both Cytoscape.js and cosmos.gl
      */
     goBack() {
-        if (!State.cy || this.history.length === 0) return;
+        if (this.history.length === 0) return;
+        
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        if (!isCosmos && !isCytoscape) return;
         
         const prev = this.history.pop();
         this.currentHop = prev.hop;
         
-        State.cy.batch(() => {
-            State.cy.nodes().unselect();
-            prev.ids.forEach(id => {
-                const node = State.cy.getElementById(id);
-                if (node.length) node.select();
+        if (isCosmos) {
+            State.renderer.selectNodes(prev.ids, false); // Replace selection
+        } else {
+            State.cy.batch(() => {
+                State.cy.nodes().unselect();
+                prev.ids.forEach(id => {
+                    const node = State.cy.getElementById(id);
+                    if (node.length) node.select();
+                });
             });
-        });
+        }
         
         updateStatus(`Back (${prev.ids.length} nodes)`, 'info');
         this.updateNavState();
@@ -389,20 +660,30 @@ const InfoPanel = {
 
     /**
      * Reset to origin
+     * Supports both Cytoscape.js and cosmos.gl
      */
     resetToOrigin() {
-        if (!State.cy || !this.originNodes) return;
+        if (!this.originNodes) return;
+        
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        if (!isCosmos && !isCytoscape) return;
         
         this.pushHistory();
         this.currentHop = 0;
         
-        State.cy.batch(() => {
-            State.cy.nodes().unselect();
-            this.originNodes.forEach(id => {
-                const node = State.cy.getElementById(id);
-                if (node.length) node.select();
+        if (isCosmos) {
+            State.renderer.selectNodes(this.originNodes, false); // Replace selection
+        } else {
+            State.cy.batch(() => {
+                State.cy.nodes().unselect();
+                this.originNodes.forEach(id => {
+                    const node = State.cy.getElementById(id);
+                    if (node.length) node.select();
+                });
             });
-        });
+        }
         
         updateStatus(`Reset to origin (${this.originNodes.length} nodes)`, 'info');
         this.updateNavState();
@@ -411,32 +692,68 @@ const InfoPanel = {
     /**
      * Navigate to neighbors - EXPANDS selection cumulatively
      * Each click adds more neighbors to the current selection
+     * Supports both Cytoscape.js and cosmos.gl renderers
      */
     async goToNeighbors(direction) {
-        if (!State.cy) return;
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
         
-        const selected = State.cy.nodes(':selected');
-        if (selected.length === 0) {
+        if (!isCosmos && !isCytoscape) {
+            updateStatus('No renderer available', 'error');
+            return;
+        }
+        
+        // Get currently selected nodes
+        let selectedIds = [];
+        if (isCosmos) {
+            selectedIds = State.renderer.getSelectedNodes() || [];
+        } else {
+            const selected = State.cy.nodes(':selected');
+            selectedIds = selected.map(n => n.id());
+        }
+        
+        if (selectedIds.length === 0) {
             updateStatus('Select node(s) first', 'info');
             return;
         }
         
-        const currentCount = selected.length;
+        const currentCount = selectedIds.length;
         
-        // Try to get neighbors from loaded edges first
-        let neighbors;
-        if (direction === 'in') {
-            neighbors = selected.incomers('node');
-        } else {
-            neighbors = selected.outgoers('node');
+        // Get neighbors - try from renderer first, then backend
+        let allNeighborIds = [];
+        
+        if (isCosmos) {
+            // cosmos.gl - use renderer's edge maps
+            const neighborSet = new Set();
+            for (const nodeId of selectedIds) {
+                let neighbors;
+                if (direction === 'in') {
+                    neighbors = State.renderer.getIncomingNeighbors(nodeId) || [];
+                } else {
+                    neighbors = State.renderer.getOutgoingNeighbors(nodeId) || [];
+                }
+                neighbors.forEach(id => neighborSet.add(id));
+            }
+            allNeighborIds = [...neighborSet];
+        } else if (isCytoscape) {
+            // Cytoscape - use graph traversal
+            const selected = State.cy.nodes(':selected');
+            let neighbors;
+            if (direction === 'in') {
+                neighbors = selected.incomers('node');
+            } else {
+                neighbors = selected.outgoers('node');
+            }
+            allNeighborIds = neighbors.map(n => n.id());
         }
         
         // If we have neighbors from loaded edges, use them
-        if (neighbors.length > 0) {
+        if (allNeighborIds.length > 0) {
             // Filter to only new neighbors (not already selected)
-            const newNeighbors = neighbors.filter(n => !n.selected());
+            const selectedSet = new Set(selectedIds);
+            const newNeighborIds = allNeighborIds.filter(id => !selectedSet.has(id));
             
-            if (newNeighbors.length === 0) {
+            if (newNeighborIds.length === 0) {
                 updateStatus(`No new ${direction === 'in' ? 'incoming' : 'outgoing'} neighbors to add`, 'info');
                 return;
             }
@@ -445,12 +762,21 @@ const InfoPanel = {
             this.currentHop += (direction === 'out' ? 1 : -1);
             
             // ADD to selection (don't unselect existing)
-            State.cy.batch(() => {
-                newNeighbors.select();
-            });
+            if (isCosmos) {
+                State.renderer.selectNodes(newNeighborIds, true); // additive=true
+                const newTotal = State.renderer.getSelectedNodes().length;
+                updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
+            } else {
+                State.cy.batch(() => {
+                    newNeighborIds.forEach(id => {
+                        const node = State.cy.getElementById(id);
+                        if (node.length) node.select();
+                    });
+                });
+                const newTotal = State.cy.nodes(':selected').length;
+                updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
+            }
             
-            const newTotal = State.cy.nodes(':selected').length;
-            updateStatus(`+${newNeighbors.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
             this.updateNavState();
             return;
         }
@@ -464,11 +790,10 @@ const InfoPanel = {
         updateStatus(`Querying ${direction} neighbors...`, 'info');
         
         try {
-            const nodeIds = selected.map(n => n.id());
             const response = await fetch(`/api/network/graphs/${State.currentGraph}/neighbors`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ node_ids: nodeIds, direction: direction })
+                body: JSON.stringify({ node_ids: selectedIds, direction: direction })
             });
             
             if (!response.ok) {
@@ -479,7 +804,7 @@ const InfoPanel = {
             const neighborIds = direction === 'in' ? data.incoming : data.outgoing;
             
             // Filter to only new neighbors (not already selected)
-            const currentSelectedIds = new Set(nodeIds);
+            const currentSelectedIds = new Set(selectedIds);
             const newNeighborIds = neighborIds.filter(id => !currentSelectedIds.has(id));
             
             if (newNeighborIds.length === 0) {
@@ -491,15 +816,21 @@ const InfoPanel = {
             this.currentHop += (direction === 'out' ? 1 : -1);
             
             // ADD to selection (don't unselect existing)
-            State.cy.batch(() => {
-                newNeighborIds.forEach(id => {
-                    const node = State.cy.getElementById(id);
-                    if (node.length) node.select();
+            if (isCosmos) {
+                State.renderer.selectNodes(newNeighborIds, true); // additive=true
+                const newTotal = State.renderer.getSelectedNodes().length;
+                updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
+            } else {
+                State.cy.batch(() => {
+                    newNeighborIds.forEach(id => {
+                        const node = State.cy.getElementById(id);
+                        if (node.length) node.select();
+                    });
                 });
-            });
+                const newTotal = State.cy.nodes(':selected').length;
+                updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
+            }
             
-            const newTotal = State.cy.nodes(':selected').length;
-            updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
             this.updateNavState();
             
         } catch (err) {
@@ -520,33 +851,53 @@ const InfoPanel = {
 
     /**
      * Set current selection as new origin
+     * Supports both Cytoscape.js and cosmos.gl
      */
     setAsOrigin() {
-        if (!State.cy) return;
-        const selected = State.cy.nodes(':selected');
-        if (selected.length > 0) {
-            this.originNodes = selected.map(n => n.id());
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        let selectedIds = [];
+        if (isCosmos) {
+            selectedIds = State.renderer.getSelectedNodes() || [];
+        } else if (isCytoscape) {
+            const selected = State.cy.nodes(':selected');
+            selectedIds = selected.map(n => n.id());
+        }
+        
+        if (selectedIds.length > 0) {
+            this.originNodes = selectedIds;
             this.history = [];
             this.currentHop = 0;
-            updateStatus(`Set ${selected.length} node(s) as origin`, 'success');
+            updateStatus(`Set ${selectedIds.length} node(s) as origin`, 'success');
             this.updateNavState();
         }
     },
 
     /**
      * Copy all selected node IDs
+     * Supports both Cytoscape.js and cosmos.gl
      */
     async copySelectedIds() {
-        if (!State.cy) return;
-        const selected = State.cy.nodes(':selected');
-        if (selected.length === 0) {
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        let selectedIds = [];
+        if (isCosmos) {
+            selectedIds = State.renderer.getSelectedNodes() || [];
+        } else if (isCytoscape) {
+            const selected = State.cy.nodes(':selected');
+            selectedIds = selected.map(n => n.id());
+        }
+        
+        if (selectedIds.length === 0) {
             updateStatus('No nodes selected', 'error');
             return;
         }
         
-        const ids = selected.map(n => n.id()).join('\n');
+        const ids = selectedIds.join('\n');
         const success = await Utils.copyToClipboard(ids);
-        updateStatus(success ? `Copied ${selected.length} node IDs` : 'Copy failed', success ? 'success' : 'error');
+        updateStatus(success ? `Copied ${selectedIds.length} node IDs` : 'Copy failed', success ? 'success' : 'error');
     },
 
     /**
@@ -691,3 +1042,6 @@ const InfoPanel = {
         });
     }
 };
+
+// Make available globally (required for cosmos.gl event handlers)
+window.InfoPanel = InfoPanel;

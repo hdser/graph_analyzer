@@ -155,12 +155,12 @@
         }
 
         th.sorted-asc::after {
-            content: " ▲";
+            content: " ^";
             color: #4A90E2;
         }
 
         th.sorted-desc::after {
-            content: " ▼";
+            content: " <";
             color: #4A90E2;
         }
 
@@ -497,9 +497,9 @@
     </div>
 
     <div class="pagination">
-        <button id="prev-btn" disabled>← Previous</button>
+        <button id="prev-btn" disabled><span data-icon="arrowLeft"></span> Previous</button>
         <span class="page-info" id="page-info">Page 1 of 1</span>
-        <button id="next-btn">Next →</button>
+        <button id="next-btn">Next <span data-icon="arrowRight"></span></button>
     </div>
 
     <div class="toast" id="toast"></div>
@@ -509,7 +509,7 @@
         <div class="tokens-modal">
             <div class="tokens-modal-header">
                 <h3>Tokens (<span id="modal-token-count">0</span>)</h3>
-                <button class="tokens-modal-close" onclick="DataExplorer.closeTokensModal()">×</button>
+                <button class="tokens-modal-close" onclick="DataExplorer.closeTokensModal()"><span data-icon="close"></span></button>
             </div>
             <div class="tokens-modal-body">
                 <div class="tokens-list" id="tokens-list"></div>
@@ -949,7 +949,7 @@
                     // Numeric array - show count and sum
                     if (typeof value[0] === 'number') {
                         const total = value.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
-                        return `[${value.length}] Σ${this.formatCompact(total)}`;
+                        return `[${value.length}] Sum${this.formatCompact(total)}`;
                     }
                     
                     // Generic array

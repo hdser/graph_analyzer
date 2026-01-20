@@ -394,23 +394,19 @@
                         <button class="panel-close" data-icon="close" title="Close panel"></button>
                     </div>
                     <div class="panel-content">
-                        <!-- Source Node -->
-                        <div class="style-row">
-                            <label>Source Node</label>
-                            <input type="text" id="path-source-input" placeholder="Enter or click node" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
-                        </div>
-                        
-                        <!-- Target Node -->
-                        <div class="style-row">
-                            <label>Target Node</label>
-                            <input type="text" id="path-target-input" placeholder="Enter or click node" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:6px;color:#e0e0e0;padding:10px 14px;font-size:13px;">
-                        </div>
-                        
-                        <!-- Swap Button -->
-                        <div class="style-row" style="justify-content: center;">
-                            <button id="swap-nodes-btn" class="secondary-btn" style="padding: 4px 12px; font-size: 11px;">
-                                ↑↓ Swap
+                        <!-- Source/Target Inputs - Side by Side like Flow -->
+                        <div class="path-endpoints">
+                            <div class="endpoint-row">
+                                <label>Source</label>
+                                <input type="text" id="path-source-input" placeholder="Enter or click node">
+                            </div>
+                            <button id="swap-nodes-btn" class="swap-btn" title="Swap">
+                                <span data-icon="swapVertical"></span>
                             </button>
+                            <div class="endpoint-row">
+                                <label>Target</label>
+                                <input type="text" id="path-target-input" placeholder="Enter or click node">
+                            </div>
                         </div>
                         
                         <!-- Algorithm Selection -->
@@ -561,7 +557,7 @@
                                 <label>Source</label>
                                 <input type="text" id="flow-source-input" placeholder="Click node or paste address...">
                             </div>
-                            <button id="swap-flow-nodes-btn" class="swap-btn" title="Swap">⇅</button>
+                            <button id="swap-flow-nodes-btn" class="swap-btn" title="Swap"><span data-icon="swapVertical"></span></button>
                             <div class="endpoint-row">
                                 <label>Sink</label>
                                 <input type="text" id="flow-target-input" placeholder="Click node or paste address...">
@@ -595,7 +591,7 @@
                                 </div>
                             </div>
                             
-                            <div class="flow-actions">
+                            <div class="button-group">
                                 <button id="compute-flow-btn" class="primary-btn">Compute</button>
                                 <button id="clear-flow-btn" class="secondary-btn">Clear</button>
                             </div>
@@ -660,7 +656,7 @@
                                     <div class="option-row">
                                         <label>Algorithm</label>
                                         <select id="cf-algorithm-select">
-                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ✔</option>
+                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ</option>
                                             <option value="networkx:preflow_push">Preflow Push (NetworkX)</option>
                                             <option value="networkx:dinitz">Dinitz (NetworkX)</option>
                                             <option value="ortools:max_flow">Max Flow (OR-Tools)</option>
@@ -678,7 +674,7 @@
                                 </div>
                             </details>
                             
-                            <div class="flow-actions">
+                            <div class="button-group">
                                 <button id="cf-compute-btn" class="primary-btn">Compute Flow</button>
                                 <button id="cf-clear-btn" class="secondary-btn">Clear</button>
                             </div>
@@ -820,7 +816,22 @@
                         <div class="style-row">
                             <label>Gradient</label>
                             <select id="node-color-gradient">
+                                <option value="turbo">Turbo (High Contrast)</option>
+                                <option value="rainbow">Rainbow</option>
                                 <option value="spectral">Spectral</option>
+                                <option value="viridis">Viridis</option>
+                                <option value="plasma">Plasma</option>
+                                <option value="inferno">Inferno</option>
+                                <option value="magma">Magma</option>
+                                <option value="coolwarm">Cool-Warm</option>
+                                <option value="rdylgn">Red-Yellow-Green</option>
+                                <option value="rdbu">Red-Blue</option>
+                                <option value="prgn">Purple-Green</option>
+                                <option value="greens">Greens</option>
+                                <option value="blues">Blues</option>
+                                <option value="reds">Reds</option>
+                                <option value="purples">Purples</option>
+                                <option value="oranges">Oranges</option>
                             </select>
                         </div>
                         
@@ -833,14 +844,23 @@
                         </div>
                         <div class="style-row">
                             <label>Opacity</label>
-                            <input type="range" id="edge-opacity" min="0" max="100" value="20">
-                            <span id="edge-opacity-value" style="font-size:10px; width:30px">20%</span>
+                            <input type="range" id="edge-opacity" min="0" max="100" value="50">
+                            <span id="edge-opacity-value" style="font-size:10px; width:30px">50%</span>
                         </div>
                         <div class="style-row">
                             <label>Color</label>
-                            <input type="color" id="edge-color" value="#fcfafa">
+                            <input type="color" id="edge-color" value="#ffffff">
                         </div>
-                        <button id="apply-style-btn" class="secondary-btn">Apply Style</button>
+                        <div class="button-row" style="display: flex; gap: 8px; margin-top: 10px;">
+                            <button id="apply-style-btn" class="secondary-btn" style="flex: 1;">Apply Style</button>
+                            <button id="clear-style-btn" class="secondary-btn" style="flex: 1;">Clear Style</button>
+                        </div>
+                        
+                        <h4 style="margin-top:15px">Background</h4>
+                        <div class="style-row">
+                            <label>Color</label>
+                            <input type="color" id="background-color" value="#1a1a1a">
+                        </div>
                     </div>
                 </div>
 
@@ -899,6 +919,99 @@
                             </label>
                         </div>
                         <button id="recompute-layout-btn" class="primary-btn">Recompute Layout</button>
+                        
+                        <!-- cosmos.gl Simulation Controls (only shown when using cosmos.gl) -->
+                        <div id="cosmos-simulation-controls" style="display: none;">
+                            <h4>Simulation Parameters</h4>
+                            
+                            <!-- Status Display -->
+                            <div class="cosmos-status-bar">
+                                <span id="cosmos-status-text">Stopped</span>
+                                <span class="cosmos-alpha">Alpha: <span id="cosmos-alpha-text">0.000</span></span>
+                            </div>
+                            
+                            <!-- Preset Selector -->
+                            <div class="style-row">
+                                <label>Preset</label>
+                                <select id="cosmos-preset-select">
+                                    <option value="">Select preset...</option>
+                                    <option value="default">Default</option>
+                                    <option value="dense">Dense Networks</option>
+                                    <option value="sparse">Sparse Networks</option>
+                                    <option value="clustered">Clustered</option>
+                                    <option value="hierarchical">Hierarchical</option>
+                                    <option value="fast">Fast Layout</option>
+                                    <option value="quality">High Quality</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Sliders - auto-apply on change -->
+                            <div class="style-row">
+                                <label>Repulsion</label>
+                                <input type="range" id="cosmos-repulsion" min="0" max="2" step="0.1" value="1.0">
+                                <span id="cosmos-repulsion-value" class="slider-value">1.0</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Gravity</label>
+                                <input type="range" id="cosmos-gravity" min="0" max="1" step="0.05" value="0.25">
+                                <span id="cosmos-gravity-value" class="slider-value">0.25</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Center</label>
+                                <input type="range" id="cosmos-center" min="0" max="1" step="0.05" value="0">
+                                <span id="cosmos-center-value" class="slider-value">0</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Cluster</label>
+                                <input type="range" id="cosmos-cluster" min="0" max="1" step="0.05" value="0.1">
+                                <span id="cosmos-cluster-value" class="slider-value">0.1</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Link Dist</label>
+                                <input type="range" id="cosmos-link-distance" min="1" max="100" step="1" value="10">
+                                <span id="cosmos-link-distance-value" class="slider-value">10</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Link Spring</label>
+                                <input type="range" id="cosmos-link-spring" min="0" max="2" step="0.1" value="1.0">
+                                <span id="cosmos-link-spring-value" class="slider-value">1.0</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Friction</label>
+                                <input type="range" id="cosmos-friction" min="0" max="1" step="0.05" value="0.85">
+                                <span id="cosmos-friction-value" class="slider-value">0.85</span>
+                            </div>
+                            <div class="style-row">
+                                <label>Decay</label>
+                                <input type="range" id="cosmos-decay" min="100" max="15000" step="100" value="5000">
+                                <span id="cosmos-decay-value" class="slider-value slider-value-wide">5000</span>
+                            </div>
+                            
+                            <!-- Reset Button -->
+                            <div class="cosmos-action-row">
+                                <button id="cosmos-reset-params" class="secondary-btn" style="width: 100%;">Reset to Defaults</button>
+                            </div>
+                            
+                            <!-- Layout Snapshots -->
+                            <details class="cosmos-snapshots">
+                                <summary>Layout Snapshots</summary>
+                                <div class="cosmos-snapshot-grid">
+                                    <button id="cosmos-snapshot-btn" class="secondary-btn" title="Save to browser memory">Save</button>
+                                    <button id="cosmos-restore-btn" class="secondary-btn" title="Restore from browser memory">Restore</button>
+                                    <button id="cosmos-export-pos-btn" class="secondary-btn" title="Download as JSON file">Export</button>
+                                    <button id="cosmos-import-pos-btn" class="secondary-btn" title="Load from JSON file">Import</button>
+                                </div>
+                                <div class="cosmos-snapshot-grid" style="margin-top: 8px;">
+                                    <button id="cosmos-save-server-btn" class="primary-btn" title="Save to server (persists across refreshes)" style="grid-column: span 2;">
+                                        <span data-icon="save"></span> Save to Server
+                                    </button>
+                                    <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; grid-column: span 2;">
+                                        <input type="checkbox" id="cosmos-save-as-base"> Set as default layout
+                                    </label>
+                                </div>
+                                <input type="file" id="cosmos-import-file" accept=".json" style="display: none;">
+                            </details>
+                        </div>
                         
                         <h4 style="margin-top:20px">Available Backends</h4>
                         <div id="layout-backends-info" class="backends-info"></div>
@@ -1109,10 +1222,23 @@
                     <span id="edges-progress"></span>
                 </div>
                 <div class="toolbar-actions">
-                    <button id="fit-btn" data-icon="fit">Fit</button>
-                    <button id="center-btn" data-icon="center">Center</button>
+                    <button id="fit-btn" class="toolbar-btn" title="Fit view">
+                        <span data-icon="fit"></span>
+                    </button>
+                    <button id="center-btn" class="toolbar-btn" title="Center view">
+                        <span data-icon="center"></span>
+                    </button>
+                    <!-- Simulation control button (shown for cosmos.gl) -->
+                    <button id="toolbar-sim-btn" class="toolbar-btn toolbar-sim-btn paused" title="Resume simulation" style="display: none;">
+                        <span id="toolbar-sim-icon" data-icon="play"></span>
+                    </button>
                     <button id="load-edges-btn" title="Incrementally load edges for large graphs">Load edges</button>
                     <button id="data-explorer-btn" title="Explore all node data">Data Explorer</button>
+                    <!-- Renderer switcher button -->
+                    <button id="renderer-switch-btn" class="renderer-switch-btn" title="Switch renderer">
+                        <span class="renderer-icon" data-icon="gpu"></span>
+                        <span class="renderer-label">cosmos.gl</span>
+                    </button>
                 </div>
             </div>
 
@@ -1252,11 +1378,28 @@
     </div>
 
     <!-- Load JS modules in dependency order -->
+    
+    <!-- cosmos.gl GPU Graph Renderer - locally bundled from @cosmos.gl/graph -->
+    <!-- This exposes window.cosmosgl with { Graph, PointShape, getRgbaColor, clamp } -->
+    <script src="/static/lib/cosmos-gl-browser.min.js"></script>
+    
+    <!-- Core modules -->
     <script src="/static/js/icons.js"></script>
     <script src="/static/js/utils.js"></script>
     <script src="/static/js/state.js"></script>
     <script src="/static/js/toast.js"></script>
     <script src="/static/js/api.js"></script>
+    
+    <!-- Renderer abstraction layer (load before graph modules) -->
+    <script src="/static/js/color-gradients.js"></script>
+    <script src="/static/js/renderer-settings.js"></script>
+    <script src="/static/js/webgl-detector.js"></script>
+    <script src="/static/js/renderer-interface.js"></script>
+    <script src="/static/js/cytoscape-adapter.js"></script>
+    <script src="/static/js/cosmos-adapter.js"></script>
+    <script src="/static/js/renderer-factory.js"></script>
+    
+    <!-- Graph visualization and analysis modules -->
     <script src="/static/js/cytoscape-manager.js"></script>
     <script src="/static/js/info-panel.js"></script>
     <script src="/static/js/graph-loader.js"></script>

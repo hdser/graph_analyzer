@@ -6,9 +6,12 @@ Handles graph layout computation with multiple backends:
 2. Cytoscape Desktop (py4cytoscape)
 3. igraph (python-igraph)
 4. ForceAtlas2 (fa2)
-5. External layout service (Node.js)
-6. Local spring layout (NumPy)
-7. Circular layout (fallback)
+5. Local spring layout (NumPy)
+6. Circular layout (fallback)
+
+Note: The external Node.js layout service has been deprecated and removed.
+The Python backends (igraph, FA2) are more capable and faster, and cosmos.gl
+has its own built-in GPU-accelerated simulation for real-time layouts.
 """
 
 import time
@@ -16,7 +19,6 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
 import networkx as nx
-import requests
 
 from ..config import settings, HAS_CYTOSCAPE_DESKTOP
 
@@ -195,9 +197,10 @@ class LayoutService:
     2. Cytoscape Desktop (if available and graph is small enough)
     3. igraph (if available)
     4. ForceAtlas2 (if available)
-    5. External layout service
-    6. Local spring layout
-    7. Circular layout (fallback)
+    5. Local spring layout
+    6. Circular layout (fallback)
+    
+    Note: The external Node.js layout service has been deprecated.
     """
     
     def __init__(self):
@@ -242,15 +245,6 @@ class LayoutService:
         })
         
         backends.extend(get_backend_info())
-        
-        backends.append({
-            "id": "layout_service",
-            "name": "External Layout Service",
-            "available": True,
-            "description": "Node.js Cytoscape.js headless",
-            "algorithms": ["cose"],
-            "requires": "Node.js server"
-        })
         
         backends.append({
             "id": "local_spring",
@@ -409,14 +403,6 @@ class LayoutService:
                 except Exception as e:
                     print(f"[LAYOUT] ForceAtlas2 failed: {e}")
         
-        elif backend == "layout_service":
-            try:
-                positions = self.compute_layout_via_service(G)
-                if positions:
-                    return positions
-            except Exception as e:
-                print(f"[LAYOUT] External service failed: {e}")
-        
         elif backend == "local_spring":
             if n_nodes <= settings.MAX_NODES_FOR_LOCAL_SPRING:
                 print(f"[LAYOUT] Using local spring for {n_nodes} nodes")
@@ -527,54 +513,6 @@ class LayoutService:
                     p4c.delete_network(net_suid)
             except Exception:
                 pass
-            return None
-    
-    def compute_layout_via_service(
-        self, 
-        G: nx.Graph
-    ) -> Optional[Dict[str, Dict[str, float]]]:
-        """Compute layout via external Node.js service."""
-        try:
-            elements = []
-            
-            for node in G.nodes():
-                elements.append({
-                    'group': 'nodes',
-                    'data': {'id': str(node)}
-                })
-            
-            for u, v in G.edges():
-                elements.append({
-                    'group': 'edges',
-                    'data': {
-                        'id': f"{u}-{v}",
-                        'source': str(u),
-                        'target': str(v)
-                    }
-                })
-            
-            response = requests.post(
-                settings.LAYOUT_SERVICE_URL,
-                json={'elements': elements},
-                timeout=300
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                positions = {}
-                for node_pos in data.get('positions', []):
-                    positions[node_pos['id']] = {
-                        'x': node_pos['x'],
-                        'y': node_pos['y']
-                    }
-                print(f"[LAYOUT] Service complete: {len(positions)} positions")
-                return positions
-            else:
-                print(f"[LAYOUT] Service error: {response.status_code}")
-                return None
-                
-        except requests.exceptions.RequestException as e:
-            print(f"[LAYOUT] Service unavailable: {e}")
             return None
     
     def compute_circular_layout(

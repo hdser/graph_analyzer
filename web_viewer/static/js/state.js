@@ -4,7 +4,27 @@
  */
 
 const State = {
-    // Cytoscape instance
+    // =========================================================================
+    // RENDERER STATE
+    // =========================================================================
+    
+    // Current renderer instance (GraphRendererInterface implementation)
+    renderer: null,
+    
+    // Current renderer type ('cosmos' or 'cytoscape')
+    rendererType: null,
+    
+    // User's renderer preference ('auto', 'cosmos', 'cytoscape')
+    rendererPreference: 'auto',
+    
+    // cosmos.gl simulation paused state
+    cosmosSimulationPaused: false,
+    
+    // WebGL capability information
+    rendererCapabilities: null,
+    
+    // Legacy: Cytoscape instance (for backward compatibility)
+    // Use getRenderer() or getCy() instead
     cy: null,
     
     // Current graph identifier
@@ -62,6 +82,91 @@ const State = {
         isLoading: false,           // Loading a snapshot?
         error: null,                // Last error message
         batchProgress: null         // Batch creation progress
+    },
+    
+    // ==========================================================================
+    // RENDERER METHODS
+    // ==========================================================================
+    
+    /**
+     * Set the current renderer
+     * @param {GraphRendererInterface} renderer
+     */
+    setRenderer(renderer) {
+        this.renderer = renderer;
+        this.rendererType = renderer?.getType() || null;
+        
+        // Maintain backward compatibility with cy reference
+        if (renderer && renderer.getType() === 'cytoscape') {
+            this.cy = renderer.getCy();
+        } else {
+            this.cy = null;
+        }
+        
+        // Dispatch event for other modules
+        document.dispatchEvent(new CustomEvent('rendererChanged', {
+            detail: { 
+                renderer, 
+                type: this.rendererType 
+            }
+        }));
+    },
+    
+    /**
+     * Get the current renderer
+     * @returns {GraphRendererInterface|null}
+     */
+    getRenderer() {
+        return this.renderer;
+    },
+    
+    /**
+     * Get renderer type
+     * @returns {string|null} 'cosmos' or 'cytoscape'
+     */
+    getRendererType() {
+        return this.rendererType;
+    },
+    
+    /**
+     * Check if using cosmos.gl renderer
+     * @returns {boolean}
+     */
+    isCosmosRenderer() {
+        return this.rendererType === 'cosmos';
+    },
+    
+    /**
+     * Check if using Cytoscape.js renderer
+     * @returns {boolean}
+     */
+    isCytoscapeRenderer() {
+        return this.rendererType === 'cytoscape';
+    },
+    
+    /**
+     * Set renderer preference
+     * @param {string} preference - 'auto', 'cosmos', 'cytoscape'
+     */
+    setRendererPreference(preference) {
+        if (['auto', 'cosmos', 'cytoscape'].includes(preference)) {
+            this.rendererPreference = preference;
+            localStorage.setItem('rendererPreference', preference);
+            
+            document.dispatchEvent(new CustomEvent('rendererPreferenceChanged', {
+                detail: { preference }
+            }));
+        }
+    },
+    
+    /**
+     * Load renderer preference from localStorage
+     */
+    loadRendererPreference() {
+        const saved = localStorage.getItem('rendererPreference');
+        if (saved && ['auto', 'cosmos', 'cytoscape'].includes(saved)) {
+            this.rendererPreference = saved;
+        }
     },
     
     // ==========================================================================
@@ -182,6 +287,10 @@ function cacheDOMElements() {
         edgesProgress: document.getElementById('edges-progress'),
         loadEdgesBtn: document.getElementById('load-edges-btn'),
         
+        // Renderer controls
+        rendererIndicator: document.getElementById('renderer-indicator'),
+        rendererPreferenceRadios: document.querySelectorAll('input[name="renderer-preference"]'),
+        
         // Auto-reload controls
         autoReloadToggle: document.getElementById('auto-reload-toggle'),
         reloadInterval: document.getElementById('reload-interval'),
@@ -219,17 +328,31 @@ function cacheDOMElements() {
 }
 
 /**
- * Get Cytoscape instance
+ * Get Cytoscape instance (backward compatibility)
+ * @returns {Object|null} Cytoscape instance or null if using cosmos
  */
 function getCy() {
+    // If using Cytoscape adapter, return the cy instance
+    if (State.renderer && State.rendererType === 'cytoscape') {
+        return State.renderer.getCy();
+    }
     return State.cy;
 }
 
 /**
- * Set Cytoscape instance
+ * Set Cytoscape instance (backward compatibility)
+ * @deprecated Use State.setRenderer() instead
  */
 function setCy(cy) {
     State.cy = cy;
+}
+
+/**
+ * Get the current renderer
+ * @returns {GraphRendererInterface|null}
+ */
+function getRenderer() {
+    return State.renderer;
 }
 
 /**

@@ -24,11 +24,27 @@ const Icons = {
             <path d="M5 2v3h5"/>
         </svg>`,
         
+        loading: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon-spin">
+            <path d="M8 2v2"/>
+            <path d="M8 12v2"/>
+            <path d="M2 8h2"/>
+            <path d="M12 8h2"/>
+            <path d="M3.76 3.76l1.41 1.41"/>
+            <path d="M10.83 10.83l1.41 1.41"/>
+            <path d="M3.76 12.24l1.41-1.41"/>
+            <path d="M10.83 5.17l1.41-1.41"/>
+        </svg>`,
+        
         refresh: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 8a6 6 0 0 1 10.3-4.2"/>
             <path d="M14 8a6 6 0 0 1-10.3 4.2"/>
             <path d="M12 2v3h-3"/>
             <path d="M4 14v-3h3"/>
+        </svg>`,
+        
+        lock: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="7" width="10" height="7" rx="1"/>
+            <path d="M5 7V5a3 3 0 0 1 6 0v2"/>
         </svg>`,
         
         search: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -139,6 +155,42 @@ const Icons = {
             <path d="M4 7h8"/>
             <path d="M6 11h4"/>
         </svg>`,
+        
+        // Renderer indicators
+        gpu: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="4" width="14" height="9" rx="1"/>
+            <path d="M4 7h2v3H4z" fill="currentColor"/>
+            <path d="M7 7h2v3H7z" fill="currentColor"/>
+            <path d="M10 7h2v3h-2z" fill="currentColor"/>
+            <path d="M4 2v2"/>
+            <path d="M8 2v2"/>
+            <path d="M12 2v2"/>
+        </svg>`,
+        
+        rocket: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 1c0 0 4 2 4 8-1 1-2.5 1.5-4 1.5S5 10 4 9c0-6 4-8 4-8z"/>
+            <path d="M6 10v3l2-1.5 2 1.5v-3"/>
+            <circle cx="8" cy="6" r="1.5"/>
+            <path d="M3 7c-1 1-2 3-2 4 1.5 0 3-.5 4-1"/>
+            <path d="M13 7c1 1 2 3 2 4-1.5 0-3-.5-4-1"/>
+        </svg>`,
+        
+        canvas: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="12" height="12" rx="1"/>
+            <circle cx="5.5" cy="5.5" r="1.5"/>
+            <circle cx="10.5" cy="5.5" r="1.5"/>
+            <circle cx="8" cy="10.5" r="1.5"/>
+            <path d="M6.5 6.5l1 2.5"/>
+            <path d="M9.5 6.5l-1 2.5"/>
+        </svg>`,
+        
+        graph: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="8" r="2"/>
+            <circle cx="13" cy="4" r="2"/>
+            <circle cx="13" cy="12" r="2"/>
+            <path d="M5 7.5l6-3"/>
+            <path d="M5 8.5l6 3"/>
+        </svg>`,
 
         // Deep Learning / Embeddings - neural network icon
         embeddings: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -194,6 +246,22 @@ const Icons = {
             <rect x="9" y="3" width="3" height="10" fill="currentColor"/>
         </svg>`,
         
+        next: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3l7 5-7 5V3z" fill="currentColor"/>
+            <rect x="11" y="3" width="2" height="10" fill="currentColor"/>
+        </svg>`,
+        
+        maximize: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 6V2h4"/>
+            <path d="M10 2h4v4"/>
+            <path d="M14 10v4h-4"/>
+            <path d="M6 14H2v-4"/>
+            <path d="M2 2l5 5"/>
+            <path d="M14 2l-5 5"/>
+            <path d="M2 14l5-5"/>
+            <path d="M14 14l-5-5"/>
+        </svg>`,
+        
         zoomIn: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="7" cy="7" r="4.5"/>
             <path d="M10.5 10.5L14 14"/>
@@ -241,6 +309,37 @@ const Icons = {
         arrowRight: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 8h12"/>
             <path d="M9 3l5 5-5 5"/>
+        </svg>`,
+        
+        // Swap icons (vertical and horizontal)
+        swapVertical: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 3v10"/>
+            <path d="M2 5l2-2 2 2"/>
+            <path d="M12 3v10"/>
+            <path d="M10 11l2 2 2-2"/>
+        </svg>`,
+        
+        swapHorizontal: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 4h10"/>
+            <path d="M5 2l-2 2 2 2"/>
+            <path d="M3 12h10"/>
+            <path d="M11 10l2 2-2 2"/>
+        </svg>`,
+        
+        // Trend indicators
+        trendUp: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12l4-4 3 3 5-5"/>
+            <path d="M10 6h5v5"/>
+        </svg>`,
+        
+        trendDown: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 4l4 4 3-3 5 5"/>
+            <path d="M10 10h5v-5"/>
+        </svg>`,
+        
+        trendStable: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 8h12"/>
+            <path d="M10 5l3 3-3 3"/>
         </svg>`,
         
         // Math operators
@@ -341,6 +440,41 @@ const Icons = {
             <ellipse cx="8" cy="3" rx="6" ry="2"/>
             <path d="M2 3v8c0 1.1 2.7 2 6 2s6-.9 6-2V3"/>
             <path d="M2 7c0 1.1 2.7 2 6 2s6-.9 6-2"/>
+        </svg>`,
+        
+        // Cosmos simulation control icons
+        stepForward: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3l6 5-6 5V3z" fill="currentColor"/>
+            <rect x="11" y="3" width="2" height="10" fill="currentColor"/>
+        </svg>`,
+        
+        fitView: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 5V2h3"/>
+            <path d="M14 5V2h-3"/>
+            <path d="M2 11v3h3"/>
+            <path d="M14 11v3h-3"/>
+            <rect x="5" y="5" width="6" height="6" rx="1"/>
+        </svg>`,
+        
+        edges: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="3" r="2"/>
+            <circle cx="13" cy="3" r="2"/>
+            <circle cx="3" cy="13" r="2"/>
+            <circle cx="13" cy="13" r="2"/>
+            <path d="M5 3h6"/>
+            <path d="M3 5v6"/>
+            <path d="M13 5v6"/>
+            <path d="M5 13h6"/>
+            <path d="M5 5l6 6" stroke-dasharray="2 2"/>
+        </svg>`,
+        
+        restore: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 8a6 6 0 1 1 1.8 4.3"/>
+            <path d="M2 13V9h4"/>
+        </svg>`,
+        
+        stop: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="10" height="10" fill="currentColor"/>
         </svg>`,
         
         // App logo - network pattern inspired design

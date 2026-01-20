@@ -8,6 +8,13 @@
  * - Batch analysis with progress
  */
 
+// Inline SVG icons for snapshot analysis
+const SnapshotIcons = {
+    chart: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M2 14V6"/><path d="M6 14V2"/><path d="M10 14V8"/><path d="M14 14V4"/></svg>`,
+    warning: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#faad14" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M8 1.5l6.5 12H1.5L8 1.5z"/><path d="M8 6v3"/><circle cx="8" cy="11" r="0.5" fill="#faad14"/></svg>`,
+    time: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>`
+};
+
 const SnapshotAnalysis = {
     // State
     currentAnalysis: null,
@@ -304,19 +311,19 @@ const SnapshotAnalysis = {
         container.innerHTML = `
             <div class="analysis-summary">
                 <div class="analysis-stat">
-                    <span class="stat-icon">📊</span>
+                    <span class="stat-icon">${SnapshotIcons.chart}</span>
                     <span class="stat-value">${metricsCount}</span>
                     <span class="stat-label">metrics</span>
                 </div>
                 ${hasAnomaly ? `
                 <div class="analysis-stat">
-                    <span class="stat-icon">⚠️</span>
+                    <span class="stat-icon">${SnapshotIcons.warning}</span>
                     <span class="stat-value">${anomalyCount}</span>
                     <span class="stat-label">anomalies</span>
                 </div>
                 ` : ''}
                 <div class="analysis-stat">
-                    <span class="stat-icon">⏱️</span>
+                    <span class="stat-icon">${SnapshotIcons.time}</span>
                     <span class="stat-value">${result.computation_time_seconds.toFixed(1)}s</span>
                     <span class="stat-label">time</span>
                 </div>

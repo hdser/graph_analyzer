@@ -786,24 +786,51 @@ class NetworkService:
             
             graphs[layer_id] = G
             
-            # Get layout
+            # Get layout - with incremental support for new nodes
             cached_layout = None
+            layout_cached = False
+            positions = None
+            
             if config.use_cached_layout:
                 cached_layout = self.cache_service.get_cached_layout(layer_id)
+                
                 if cached_layout:
-                    layout_cached = True
+                    # Check for new nodes not in cached layout
+                    cached_node_ids = set(cached_layout.keys())
+                    current_node_ids = set(str(n) for n in G.nodes())
+                    new_node_ids = current_node_ids - cached_node_ids
+                    
+                    if new_node_ids:
+                        # Use incremental layout for new nodes
+                        print(f"[LAYOUT] {len(new_node_ids)} new nodes detected, using incremental layout")
+                        positions = self.layout_service.compute_incremental_layout(
+                            G,
+                            cached_layout,
+                            list(new_node_ids)
+                        )
+                        # Save updated layout
+                        self.cache_service.save_layout_cache(layer_id, positions)
+                        layout_algorithm = "incremental"
+                        layout_cached = True  # Indicate we used cached positions as base
+                    else:
+                        # All nodes have cached positions
+                        positions = cached_layout
+                        layout_algorithm = "cached"
+                        layout_cached = True
             
-            positions, algorithm, comp_time = self.layout_service.compute_layout(
-                G, layer_id, cached_layout
-            )
+            # If no cached layout or cache disabled, compute full layout
+            if positions is None:
+                positions, algorithm, comp_time = self.layout_service.compute_layout(
+                    G, layer_id, cached_layout
+                )
+                layout_time += comp_time
+                layout_algorithm = algorithm
+                
+                # Save layout to cache
+                if algorithm != "cached":
+                    self.cache_service.save_layout_cache(layer_id, positions)
             
             layouts[layer_id] = positions
-            layout_time += comp_time
-            layout_algorithm = algorithm
-            
-            # Save layout to cache
-            if algorithm != "cached":
-                self.cache_service.save_layout_cache(layer_id, positions)
         
         # Phase 5: Atomic state swap
         self.edge_layers = edge_layers

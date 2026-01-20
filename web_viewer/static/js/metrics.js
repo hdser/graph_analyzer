@@ -509,7 +509,11 @@ const Metrics = {
      * Filter nodes by property criteria
      */
     filter() {
-        if (!State.cy) return;
+        const renderer = State.renderer;
+        if (!renderer) {
+            if (typeof Toast !== 'undefined') Toast.error('Load a graph first');
+            return;
+        }
         
         const property = document.getElementById('filter-metric')?.value;
         if (!property) {
@@ -518,7 +522,10 @@ const Metrics = {
         }
         
         const type = (this.propertyTypes && this.propertyTypes[property]) || 'number';
-        let matchingNodes;
+        let matchingNodeIds = [];
+        
+        // Get all node IDs and data from the renderer
+        const allNodeIds = renderer.getAllNodeIds();
         
         if (type === 'number') {
             const operator = document.getElementById('filter-operator').value;
@@ -529,8 +536,9 @@ const Metrics = {
                 return;
             }
             
-            matchingNodes = State.cy.nodes().filter(node => {
-                const nodeValue = node.data(property);
+            matchingNodeIds = allNodeIds.filter(nodeId => {
+                const nodeData = renderer.getNodeData(nodeId);
+                const nodeValue = nodeData?.[property];
                 if (nodeValue === undefined || nodeValue === null) return false;
                 
                 switch (operator) {
@@ -551,8 +559,9 @@ const Metrics = {
                 return;
             }
             
-            matchingNodes = State.cy.nodes().filter(node => {
-                const nodeValue = node.data(property);
+            matchingNodeIds = allNodeIds.filter(nodeId => {
+                const nodeData = renderer.getNodeData(nodeId);
+                const nodeValue = nodeData?.[property];
                 if (!Array.isArray(nodeValue)) return false;
                 
                 if (operator === 'regex') {
@@ -580,8 +589,9 @@ const Metrics = {
                 return;
             }
             
-            matchingNodes = State.cy.nodes().filter(node => {
-                const nodeValue = String(node.data(property) || '');
+            matchingNodeIds = allNodeIds.filter(nodeId => {
+                const nodeData = renderer.getNodeData(nodeId);
+                const nodeValue = String(nodeData?.[property] || '');
                 
                 if (operator === 'regex') {
                     try {
@@ -605,13 +615,16 @@ const Metrics = {
             });
         }
         
-        if (matchingNodes && matchingNodes.length > 0) {
-            State.cy.nodes().unselect();
-            matchingNodes.select();
-            if (typeof Toast !== 'undefined') Toast.success(`Selected ${matchingNodes.length} nodes`);
+        if (matchingNodeIds && matchingNodeIds.length > 0) {
+            // Clear current selection and select matching nodes
+            renderer.clearSelection();
+            renderer.selectNodes(matchingNodeIds);
             
-            if (matchingNodes.length <= 100) {
-                State.cy.fit(matchingNodes, 50);
+            if (typeof Toast !== 'undefined') Toast.success(`Selected ${matchingNodeIds.length} nodes`);
+            
+            // Fit view to selected nodes if reasonable count
+            if (matchingNodeIds.length <= 100) {
+                renderer.fitView(matchingNodeIds);
             }
         } else {
             if (typeof Toast !== 'undefined') Toast.error('No matching nodes found');
@@ -622,46 +635,68 @@ const Metrics = {
      * Reset selection
      */
     reset() {
-        if (State.cy) {
-            State.cy.nodes().unselect();
+        const renderer = State.renderer;
+        if (renderer) {
+            renderer.clearSelection();
             if (typeof Toast !== 'undefined') Toast.success('Selection cleared');
         }
     },
     
     /**
      * Show only selected nodes (hide all others)
+     * Note: Full hide/show only works with Cytoscape. With Cosmos, we highlight selected nodes.
      */
     showOnlySelected() {
-        if (!State.cy) {
+        const renderer = State.renderer;
+        if (!renderer) {
             if (typeof Toast !== 'undefined') Toast.error('Load a graph first');
             return;
         }
         
-        const selected = State.cy.nodes(':selected');
-        if (selected.length === 0) {
+        const selectedIds = renderer.getSelectedNodes();
+        if (selectedIds.length === 0) {
             if (typeof Toast !== 'undefined') Toast.error('No nodes selected');
             return;
         }
         
-        // Hide all non-selected nodes and their edges
-        State.cy.batch(() => {
-            State.cy.nodes().not(':selected').style('display', 'none');
-            State.cy.edges().style('display', 'none');
+        if (State.rendererType === 'cytoscape' && State.cy) {
+            const selected = State.cy.nodes(':selected');
+            // Hide all non-selected nodes and their edges
+            State.cy.batch(() => {
+                State.cy.nodes().not(':selected').style('display', 'none');
+                State.cy.edges().style('display', 'none');
+                
+                // Show edges between visible nodes
+                selected.connectedEdges().filter(edge => {
+                    const source = edge.source();
+                    const target = edge.target();
+                    return source.selected() && target.selected();
+                }).style('display', 'element');
+            });
             
-            // Show edges between visible nodes
-            selected.connectedEdges().filter(edge => {
-                const source = edge.source();
-                const target = edge.target();
-                return source.selected() && target.selected();
-            }).style('display', 'element');
-        });
-        
-        // Fit view to selected nodes
-        State.cy.fit(selected, 50);
-        
-        if (typeof Toast !== 'undefined') {
-            const hiddenCount = State.cy.nodes().length - selected.length;
-            Toast.success(`Showing only ${selected.length} selected nodes (${hiddenCount} hidden)`);
+            // Fit view to selected nodes
+            State.cy.fit(selected, 50);
+            
+            if (typeof Toast !== 'undefined') {
+                const hiddenCount = State.cy.nodes().length - selected.length;
+                Toast.success(`Showing only ${selected.length} selected nodes (${hiddenCount} hidden)`);
+            }
+        } else if (State.rendererType === 'cosmos' && renderer.showOnlyNodes) {
+            // Cosmos: Use alpha channel visibility
+            renderer.showOnlyNodes(selectedIds);
+            renderer.fitView(selectedIds);
+            
+            if (typeof Toast !== 'undefined') {
+                const totalCount = renderer.getAllNodeIds().length;
+                const hiddenCount = totalCount - selectedIds.length;
+                Toast.success(`Showing only ${selectedIds.length} selected nodes (${hiddenCount} hidden)`);
+            }
+        } else {
+            // Fallback: Fit view to selected nodes
+            renderer.fitView(selectedIds);
+            if (typeof Toast !== 'undefined') {
+                Toast.info(`Focused on ${selectedIds.length} selected nodes`);
+            }
         }
     },
     
@@ -669,45 +704,76 @@ const Metrics = {
      * Hide selected nodes (show only non-selected)
      */
     hideSelected() {
-        if (!State.cy) {
+        const renderer = State.renderer;
+        console.log('[Metrics] hideSelected called, rendererType:', State.rendererType, 'renderer exists:', !!renderer);
+        
+        if (!renderer) {
             if (typeof Toast !== 'undefined') Toast.error('Load a graph first');
             return;
         }
         
-        const selected = State.cy.nodes(':selected');
-        if (selected.length === 0) {
+        const selectedIds = renderer.getSelectedNodes();
+        console.log('[Metrics] Selected nodes:', selectedIds?.length, selectedIds?.slice(0, 3));
+        
+        if (selectedIds.length === 0) {
             if (typeof Toast !== 'undefined') Toast.error('No nodes selected');
             return;
         }
         
-        // Hide selected nodes and their edges
-        State.cy.batch(() => {
-            selected.style('display', 'none');
+        if (State.rendererType === 'cytoscape' && State.cy) {
+            const selected = State.cy.nodes(':selected');
+            // Hide selected nodes and their edges
+            State.cy.batch(() => {
+                selected.style('display', 'none');
+                
+                // Hide edges connected to hidden nodes
+                selected.connectedEdges().style('display', 'none');
+                
+                // Show edges between visible nodes
+                const visibleNodes = State.cy.nodes().not(':selected');
+                visibleNodes.connectedEdges().filter(edge => {
+                    const source = edge.source();
+                    const target = edge.target();
+                    return !source.selected() && !target.selected();
+                }).style('display', 'element');
+            });
             
-            // Hide edges connected to hidden nodes
-            selected.connectedEdges().style('display', 'none');
+            // Clear selection
+            State.cy.nodes().unselect();
             
-            // Show edges between visible nodes
-            const visibleNodes = State.cy.nodes().not(':selected');
-            visibleNodes.connectedEdges().filter(edge => {
-                const source = edge.source();
-                const target = edge.target();
-                return !source.selected() && !target.selected();
-            }).style('display', 'element');
-        });
-        
-        // Clear selection
-        State.cy.nodes().unselect();
-        
-        // Fit view to remaining visible nodes
-        const visibleNodes = State.cy.nodes('[display != "none"]');
-        if (visibleNodes.length > 0) {
-            State.cy.fit(visibleNodes, 50);
-        }
-        
-        if (typeof Toast !== 'undefined') {
-            const visibleCount = State.cy.nodes().length - selected.length;
-            Toast.success(`Hidden ${selected.length} nodes (${visibleCount} visible)`);
+            // Fit view to remaining visible nodes
+            const visibleNodes = State.cy.nodes('[display != "none"]');
+            if (visibleNodes.length > 0) {
+                State.cy.fit(visibleNodes, 50);
+            }
+            
+            if (typeof Toast !== 'undefined') {
+                const visibleCount = State.cy.nodes().length - selectedIds.length;
+                Toast.success(`Hidden ${selectedIds.length} nodes (${visibleCount} visible)`);
+            }
+        } else if (State.rendererType === 'cosmos' && renderer.hideNodes) {
+            console.log('[Metrics] Using Cosmos hideNodes');
+            // Cosmos: Use alpha channel visibility
+            renderer.hideNodes(selectedIds);
+            renderer.clearSelection();
+            
+            // Fit view to visible nodes
+            const allIds = renderer.getAllNodeIds();
+            const visibleIds = allIds.filter(id => !renderer.isNodeHidden(id));
+            if (visibleIds.length > 0) {
+                renderer.fitView(visibleIds);
+            }
+            
+            if (typeof Toast !== 'undefined') {
+                Toast.success(`Hidden ${selectedIds.length} nodes (${visibleIds.length} visible)`);
+            }
+        } else {
+            console.log('[Metrics] Fallback: clearing selection, hideNodes exists:', typeof renderer.hideNodes);
+            // Fallback: Just clear selection
+            renderer.clearSelection();
+            if (typeof Toast !== 'undefined') {
+                Toast.info(`Cleared ${selectedIds.length} selected nodes`);
+            }
         }
     },
     
@@ -715,22 +781,41 @@ const Metrics = {
      * Show all nodes (reset visibility)
      */
     showAllNodes() {
-        if (!State.cy) {
+        const renderer = State.renderer;
+        if (!renderer) {
             if (typeof Toast !== 'undefined') Toast.error('Load a graph first');
             return;
         }
         
-        // Show all nodes and edges
-        State.cy.batch(() => {
-            State.cy.nodes().style('display', 'element');
-            State.cy.edges().style('display', 'element');
-        });
-        
-        // Fit to all
-        State.cy.fit();
-        
-        if (typeof Toast !== 'undefined') {
-            Toast.success(`All ${State.cy.nodes().length} nodes visible`);
+        if (State.rendererType === 'cytoscape' && State.cy) {
+            // Show all nodes and edges
+            State.cy.batch(() => {
+                State.cy.nodes().style('display', 'element');
+                State.cy.edges().style('display', 'element');
+            });
+            
+            // Fit to all
+            State.cy.fit();
+            
+            if (typeof Toast !== 'undefined') {
+                Toast.success(`All ${State.cy.nodes().length} nodes visible`);
+            }
+        } else if (State.rendererType === 'cosmos' && renderer.showAllNodes) {
+            // Cosmos: Reset visibility
+            renderer.showAllNodes();
+            renderer.fitView();
+            
+            const nodeCount = renderer.getAllNodeIds().length;
+            if (typeof Toast !== 'undefined') {
+                Toast.success(`All ${nodeCount} nodes visible`);
+            }
+        } else {
+            // Fallback: Just fit view to show all
+            renderer.fitView();
+            const nodeCount = renderer.getAllNodeIds().length;
+            if (typeof Toast !== 'undefined') {
+                Toast.success(`Fit view to all ${nodeCount} nodes`);
+            }
         }
     },
     

@@ -124,9 +124,23 @@ const CapacityFlow = (function() {
     }
     
     // ==========================================================================
-    // CYTOSCAPE ACCESS
+    // RENDERER ACCESS
     // ==========================================================================
     
+    /**
+     * Get the current renderer (supports both Cytoscape and Cosmos)
+     */
+    function getRenderer() {
+        if (typeof State !== 'undefined' && State.renderer) {
+            return State.renderer;
+        }
+        console.warn('[CapacityFlow] Could not find renderer');
+        return null;
+    }
+    
+    /**
+     * Get Cytoscape instance if available (for Cytoscape-specific operations)
+     */
     function getCytoscape() {
         if (typeof State !== 'undefined' && State.cy) {
             return State.cy;
@@ -137,8 +151,21 @@ const CapacityFlow = (function() {
         if (typeof window.cy !== 'undefined') {
             return window.cy;
         }
-        console.warn('[CapacityFlow] Could not find Cytoscape instance');
         return null;
+    }
+    
+    /**
+     * Check if we're using Cytoscape renderer
+     */
+    function isCytoscapeRenderer() {
+        return typeof State !== 'undefined' && State.rendererType === 'cytoscape';
+    }
+    
+    /**
+     * Check if we're using Cosmos renderer
+     */
+    function isCosmosRenderer() {
+        return typeof State !== 'undefined' && State.rendererType === 'cosmos';
     }
     
     // ==========================================================================
@@ -171,7 +198,8 @@ const CapacityFlow = (function() {
                 state.availableAlgorithms.forEach(function(algo) {
                     const opt = document.createElement('option');
                     opt.value = algo.id;
-                    opt.textContent = algo.label + (algo.supports_cutoff ? ' ✓' : '');
+                    // Use unicode checkmark instead of [ok] for better display
+                    opt.textContent = algo.label;
                     opt.title = algo.description || '';
                     opt.dataset.backend = algo.backend;
                     opt.dataset.algorithm = algo.algorithm;
@@ -318,13 +346,45 @@ const CapacityFlow = (function() {
             // Store data for later
             state.capacityGraphData = data;
             
-            const cy = getCytoscape();
-            if (!cy) {
-                throw new Error('Cytoscape not available');
+            // Create appropriate renderer for capacity graph size
+            // Capacity graphs are typically large (20k+ nodes) so prefer CosmosGL
+            const container = document.getElementById('cy');
+            if (!container) {
+                throw new Error('Graph container not found');
             }
             
-            // Load nodes into Cytoscape
-            loadCapacityNodesIntoCytoscape(cy, data);
+            const nodeCount = data.node_count || data.nodes?.length || 0;
+            console.log('[CapacityFlow] Creating renderer for', nodeCount, 'nodes');
+            
+            // Use RendererFactory to create appropriate renderer
+            // Force cosmos for large graphs, or use auto selection
+            let renderer;
+            if (typeof RendererFactory !== 'undefined') {
+                renderer = RendererFactory.create(container, {
+                    expectedNodeCount: nodeCount,
+                    // For capacity graphs, prefer cosmos since they're usually large
+                    rendererPreference: nodeCount > 5000 ? 'cosmos' : State.rendererPreference
+                });
+                
+                // Update state with new renderer
+                State.setRenderer(renderer);
+                
+                console.log('[CapacityFlow] Created renderer:', renderer.getType());
+            } else {
+                // Fallback to existing renderer
+                renderer = getRenderer();
+                if (!renderer) {
+                    throw new Error('Renderer not available');
+                }
+            }
+            
+            // Load nodes into the graph
+            loadCapacityNodesIntoRenderer(renderer, data);
+            
+            // Update renderer indicator
+            if (typeof GraphLoader !== 'undefined' && GraphLoader.updateRendererIndicator) {
+                GraphLoader.updateRendererIndicator();
+            }
             
             state.capacityGraphLoaded = true;
             state.isCapacityView = true;
@@ -334,7 +394,7 @@ const CapacityFlow = (function() {
             updateEdgeLoadingUI();
             updateGraphSwitchUI();
             
-            showToast('Loaded ' + formatNumber(data.node_count) + ' capacity nodes', 'success');
+            showToast('Loaded ' + formatNumber(data.node_count) + ' capacity nodes [' + renderer.getType() + ']', 'success');
             
         } catch (err) {
             console.error('[CapacityFlow] Failed to view graph:', err);
@@ -451,6 +511,173 @@ const CapacityFlow = (function() {
     // ==========================================================================
     // CAPACITY GRAPH VISUALIZATION
     // ==========================================================================
+    
+    /**
+     * Load capacity graph nodes into the renderer (works with both Cytoscape and Cosmos)
+     */
+    function loadCapacityNodesIntoRenderer(renderer, data) {
+        console.log('[CapacityFlow] Loading', data.nodes ? data.nodes.length : 0, 'nodes into renderer');
+        console.log('[CapacityFlow] Renderer type:', renderer.getType ? renderer.getType() : 'unknown');
+        
+        // Debug: show sample of raw data structure
+        if (data.nodes && data.nodes.length > 0) {
+            console.log('[CapacityFlow] Sample raw node structure:', JSON.stringify(data.nodes[0]).substring(0, 500));
+        }
+        
+        // Color scheme for node types
+        const nodeColors = {
+            'avatar': '#4A90E2',
+            'token_pool': '#9B59B6',
+            'group': '#2ECC71',
+            'virtual_sink': '#E74C3C'
+        };
+        
+        // Check if we're using Cytoscape (needs special handling)
+        if (isCytoscapeRenderer() && getCytoscape()) {
+            console.log('[CapacityFlow] Using Cytoscape path');
+            // Use the existing Cytoscape-specific function
+            loadCapacityNodesIntoCytoscape(getCytoscape(), data);
+            return;
+        }
+        
+        console.log('[CapacityFlow] Using CosmosGL path');
+        
+        // For Cosmos or other renderers, use the renderer abstraction
+        // Clear existing data
+        renderer.clear();
+        
+        // Transform nodes for renderer - Cytoscape format has { data: { id, ... }, position: { x, y } }
+        const nodes = data.nodes.map((node, index) => {
+            // Extract node data - handle both Cytoscape format and flat format
+            let nodeData;
+            let nodeId;
+            
+            if (node.data && typeof node.data === 'object') {
+                // Cytoscape format: { data: { id, type, ... }, position: { x, y } }
+                nodeData = Object.assign({}, node.data);
+                nodeId = node.data.id;
+            } else {
+                // Flat format: { id, type, x, y, ... }
+                nodeData = Object.assign({}, node);
+                nodeId = node.id;
+            }
+            
+            // Ensure id is set - try multiple sources
+            if (!nodeId) {
+                nodeId = nodeData.id || nodeData.address || node.id || `node_${index}`;
+            }
+            nodeData.id = nodeId;
+            
+            // Add position if available
+            if (node.position && node.position.x !== undefined && node.position.y !== undefined) {
+                nodeData.x = node.position.x;
+                nodeData.y = node.position.y;
+            } else if (node.x !== undefined && node.y !== undefined) {
+                nodeData.x = node.x;
+                nodeData.y = node.y;
+            }
+            
+            // Add color based on type
+            nodeData._color = nodeColors[nodeData.type] || '#666666';
+            
+            return nodeData;
+        });
+        
+        console.log('[CapacityFlow] Transformed', nodes.length, 'nodes for CosmosGL');
+        
+        // Debug: show sample transformed nodes
+        if (nodes.length > 0) {
+            console.log('[CapacityFlow] Sample transformed node IDs:', nodes.slice(0, 5).map(n => n.id));
+        }
+        
+        // Load nodes into renderer (empty edges for now)
+        renderer.setData(nodes, []);
+        
+        // Verify nodes were loaded correctly
+        console.log('[CapacityFlow] Renderer node count:', renderer.nodeIds?.length);
+        if (renderer.nodeIds?.length > 0) {
+            console.log('[CapacityFlow] Renderer first 5 node IDs:', renderer.nodeIds.slice(0, 5));
+        }
+        
+        // Apply node colors based on type
+        applyCapacityNodeColors(renderer, nodes, nodeColors);
+        
+        // Setup event handlers for CosmosGL
+        setupCosmosEventHandlers(renderer);
+        
+        // Fit view
+        renderer.fitView();
+        
+        // Pause simulation after initial layout
+        if (typeof renderer.pauseSimulation === 'function') {
+            setTimeout(() => {
+                renderer.pauseSimulation();
+            }, 1000);
+        }
+        
+        // Update header counts
+        const nodeCountEl = document.getElementById('node-count');
+        const edgeCountEl = document.getElementById('edge-count');
+        if (nodeCountEl) nodeCountEl.textContent = nodes.length + ' nodes';
+        if (edgeCountEl) edgeCountEl.textContent = '0 edges';
+        
+        console.log('[CapacityFlow] CosmosGL graph loaded successfully');
+    }
+    
+    /**
+     * Setup event handlers for CosmosGL renderer
+     */
+    function setupCosmosEventHandlers(renderer) {
+        if (!renderer || !renderer.graph) return;
+        
+        console.log('[CapacityFlow] Setting up CosmosGL event handlers');
+        
+        // Node click handler
+        renderer.graph.setConfig({
+            onClick: (node, index, position, event) => {
+                if (node) {
+                    const nodeId = renderer.nodeIds[index];
+                    const nodeData = renderer.nodeDataMap.get(nodeId);
+                    
+                    console.log('[CapacityFlow] Node clicked:', nodeId);
+                    
+                    // Use InfoPanel if available
+                    if (typeof InfoPanel !== 'undefined' && InfoPanel.showNodeData) {
+                        InfoPanel.showNodeData(nodeData);
+                    }
+                    
+                    // Update selection
+                    renderer.setSelectedNode(nodeId);
+                }
+            }
+        });
+    }
+    
+    /**
+     * Apply capacity node colors based on node type
+     */
+    function applyCapacityNodeColors(renderer, nodes, colorMap) {
+        if (!renderer || !renderer.graph) return;
+        
+        // Build color array for Cosmos
+        const colors = new Float32Array(nodes.length * 4);
+        
+        nodes.forEach((node, index) => {
+            const colorHex = colorMap[node.type] || '#666666';
+            const rgba = RendererSettings.hexToRgba(colorHex);
+            
+            colors[index * 4] = rgba[0];
+            colors[index * 4 + 1] = rgba[1];
+            colors[index * 4 + 2] = rgba[2];
+            colors[index * 4 + 3] = rgba[3];
+        });
+        
+        // Apply colors to Cosmos
+        if (typeof renderer.graph.setPointColors === 'function') {
+            renderer.graph.setPointColors(colors);
+            renderer.graph.render();
+        }
+    }
     
     function loadCapacityNodesIntoCytoscape(cy, data) {
         console.log('[CapacityFlow] Loading', data.nodes ? data.nodes.length : 0, 'nodes into Cytoscape');
@@ -572,40 +799,61 @@ const CapacityFlow = (function() {
     }
     
     function addEdgesToCytoscape(edges) {
-        var cy = getCytoscape();
-        if (!cy) return;
-        
-        var edgeColors = {
+        const edgeColors = {
             'balance': '#3498DB',
             'trust': '#9B59B6',
             'mint': '#2ECC71'
         };
         
-        var cyEdges = [];
-        for (var i = 0; i < edges.length; i++) {
-            cyEdges.push({
-                data: Object.assign({}, edges[i].data)
+        // Check if we're using Cytoscape
+        if (isCytoscapeRenderer() && getCytoscape()) {
+            const cy = getCytoscape();
+            
+            const cyEdges = edges.map(edge => ({
+                data: Object.assign({}, edge.data)
+            }));
+            
+            cy.add(cyEdges);
+            
+            cy.style()
+                .selector('edge')
+                .style({
+                    'line-color': function(ele) { return edgeColors[ele.data('type')] || '#666'; },
+                    'width': 1,
+                    'opacity': 0.4,
+                    'curve-style': 'bezier',
+                    'target-arrow-shape': 'triangle',
+                    'target-arrow-color': function(ele) { return edgeColors[ele.data('type')] || '#666'; },
+                    'arrow-scale': 0.4
+                })
+                .update();
+            
+            // Update edge count
+            const edgeCountEl = document.getElementById('edge-count');
+            if (edgeCountEl) edgeCountEl.textContent = cy.edges().length + ' edges';
+        } else {
+            // For Cosmos or other renderers
+            const renderer = getRenderer();
+            if (!renderer) return;
+            
+            // Transform edges for renderer
+            const rendererEdges = edges.map(edge => Object.assign({}, edge.data));
+            
+            // Add edges to renderer
+            renderer.addEdges(rendererEdges);
+            
+            // Apply edge style
+            renderer.setEdgeStyle({
+                color: '#3498DB',
+                opacity: 0.4,
+                width: 1
             });
+            
+            // Update edge count
+            const edgeCountEl = document.getElementById('edge-count');
+            const totalEdges = renderer.edgeDataMap ? renderer.edgeDataMap.size : edges.length;
+            if (edgeCountEl) edgeCountEl.textContent = totalEdges + ' edges';
         }
-        
-        cy.add(cyEdges);
-        
-        cy.style()
-            .selector('edge')
-            .style({
-                'line-color': function(ele) { return edgeColors[ele.data('type')] || '#666'; },
-                'width': 1,
-                'opacity': 0.4,
-                'curve-style': 'bezier',
-                'target-arrow-shape': 'triangle',
-                'target-arrow-color': function(ele) { return edgeColors[ele.data('type')] || '#666'; },
-                'arrow-scale': 0.4
-            })
-            .update();
-        
-        // Update edge count
-        var edgeCountEl = document.getElementById('edge-count');
-        if (edgeCountEl) edgeCountEl.textContent = cy.edges().length + ' edges';
     }
     
     // ==========================================================================
@@ -856,14 +1104,14 @@ const CapacityFlow = (function() {
         if (nodes.length > 5) {
             var first = [fmt(nodes[0]), fmt(nodes[1])];
             var last = [fmt(nodes[nodes.length - 2]), fmt(nodes[nodes.length - 1])];
-            return first.join(' → ') + ' → ... → ' + last.join(' → ');
+            return first.join(' -> ') + ' -> ... -> ' + last.join(' -> ');
         }
         
         var result = [];
         for (var i = 0; i < nodes.length; i++) {
             result.push(fmt(nodes[i]));
         }
-        return result.join(' → ');
+        return result.join(' -> ');
     }
     
     // ==========================================================================
@@ -944,6 +1192,13 @@ const CapacityFlow = (function() {
         
         clearHighlights();
         
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            highlightPathCosmos(path);
+            return;
+        }
+        
+        // Cytoscape implementation
         var cy = getCytoscape();
         if (!cy) return;
         
@@ -1045,12 +1300,133 @@ const CapacityFlow = (function() {
         }
     }
     
+    /**
+     * Highlight a single path using CosmosGL renderer
+     */
+    function highlightPathCosmos(path) {
+        const renderer = getRenderer();
+        if (!renderer) {
+            console.warn('[CapacityFlow] No renderer available for CosmosGL highlighting');
+            return;
+        }
+        
+        console.log('[CapacityFlow] Highlighting path with CosmosGL:', path.nodes.length, 'nodes');
+        console.log('[CapacityFlow] Path nodes:', path.nodes);
+        console.log('[CapacityFlow] Renderer has', renderer.nodeIds?.length || 0, 'nodes');
+        
+        const nodes = path.nodes;
+        const nodeColorMap = new Map();
+        const edgePairs = [];
+        
+        // Build node color map
+        for (let i = 0; i < nodes.length; i++) {
+            const nodeId = nodes[i];
+            // Find actual node ID in renderer (handle prefixes)
+            const actualNodeId = findCosmosNodeId(renderer, nodeId);
+            
+            console.log('[CapacityFlow] Node', i, ':', nodeId, '->', actualNodeId, 
+                       '(found:', renderer.nodeIndices?.has(actualNodeId), ')');
+            
+            if (actualNodeId && renderer.nodeIndices?.has(actualNodeId)) {
+                let type;
+                if (i === 0) {
+                    type = 'source';
+                } else if (i === nodes.length - 1) {
+                    type = 'target';
+                } else {
+                    type = 'intermediate';
+                }
+                
+                const color = type === 'source' ? '#22c55e' : type === 'target' ? '#ef4444' : '#00d4ff';
+                nodeColorMap.set(actualNodeId, { color: color, type: type });
+            } else {
+                console.warn('[CapacityFlow] Node not found in renderer:', nodeId);
+            }
+        }
+        
+        // Build edge pairs
+        for (let i = 0; i < nodes.length - 1; i++) {
+            const sourceId = findCosmosNodeId(renderer, nodes[i]);
+            const targetId = findCosmosNodeId(renderer, nodes[i + 1]);
+            
+            if (sourceId && targetId && renderer.nodeIndices?.has(sourceId) && renderer.nodeIndices?.has(targetId)) {
+                edgePairs.push({ source: sourceId, target: targetId });
+            }
+        }
+        
+        console.log('[CapacityFlow] Built nodeColorMap with', nodeColorMap.size, 'nodes');
+        console.log('[CapacityFlow] Built edgePairs with', edgePairs.length, 'edges');
+        
+        // Apply highlighting
+        if (nodeColorMap.size > 0 && typeof renderer.highlightPathNodes === 'function') {
+            renderer.highlightPathNodes(nodeColorMap);
+        }
+        
+        if (edgePairs.length > 0 && typeof renderer.highlightPathEdges === 'function') {
+            renderer.highlightPathEdges(edgePairs, '#00d4ff', 1.0);
+        }
+        
+        // Fit view to path nodes
+        if (nodeColorMap.size > 0 && typeof renderer.fitView === 'function') {
+            renderer.fitView(Array.from(nodeColorMap.keys()), 0.2);
+        }
+        
+        // Store for cleanup
+        state.originalStyles.set('_cosmosPath', { nodes: Array.from(nodeColorMap.keys()), edges: edgePairs });
+    }
+    
+    /**
+     * Find node ID in CosmosGL renderer (handles prefixes like a_, t_)
+     */
+    function findCosmosNodeId(renderer, nodeId) {
+        if (!renderer || !renderer.nodeIndices) {
+            console.warn('[CapacityFlow] findCosmosNodeId: No renderer or nodeIndices');
+            return nodeId;
+        }
+        
+        // Try direct match
+        if (renderer.nodeIndices.has(nodeId)) {
+            return nodeId;
+        }
+        
+        // Try with prefixes
+        const prefixes = ['', 'a_', 't_'];
+        const cleanId = nodeId.replace(/^[at]_/, '');
+        
+        for (const prefix of prefixes) {
+            const testId = prefix + cleanId;
+            if (renderer.nodeIndices.has(testId)) {
+                return testId;
+            }
+        }
+        
+        // Try without prefix if it has one
+        if (renderer.nodeIndices.has(cleanId)) {
+            return cleanId;
+        }
+        
+        // Debug: Print some sample node IDs from renderer for comparison
+        if (renderer.nodeIds && renderer.nodeIds.length > 0) {
+            console.log('[CapacityFlow] Looking for:', nodeId, '(cleaned:', cleanId, ')');
+            console.log('[CapacityFlow] Sample renderer node IDs:', renderer.nodeIds.slice(0, 5));
+        }
+        
+        return null; // Return null if not found to indicate failure
+    }
+    
     function highlightAllPaths() {
         if (!state.lastResult || !state.lastResult.paths || state.lastResult.paths.length === 0) {
             showToast('No paths to highlight. Compute flow first.', 'warning');
             return;
         }
         
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            highlightAllPathsCosmos();
+            return;
+        }
+        
+        // Cytoscape implementation
         var cy = getCytoscape();
         if (!cy) return;
         
@@ -1181,9 +1557,115 @@ const CapacityFlow = (function() {
         showToast('Highlighting ' + paths.length + ' paths (' + nodeIdToType.size + ' nodes)', 'info');
     }
     
+    /**
+     * Highlight all paths using CosmosGL renderer
+     */
+    function highlightAllPathsCosmos() {
+        const renderer = getRenderer();
+        if (!renderer) {
+            console.warn('[CapacityFlow] No renderer available for CosmosGL highlighting');
+            return;
+        }
+        
+        console.log('[CapacityFlow] Highlighting all paths with CosmosGL');
+        
+        // Reset isolation first
+        if (state.isIsolated) {
+            restoreAllNodesQuietly();
+        }
+        
+        clearHighlights();
+        
+        console.log('[CapacityFlow] Highlighting all paths in CosmosGL');
+        
+        const nodeColorMap = new Map();
+        const edgePairs = [];
+        const paths = state.lastResult.paths;
+        
+        // Collect all nodes and edges from all paths
+        for (let p = 0; p < paths.length; p++) {
+            const path = paths[p];
+            const nodes = path.nodes || [];
+            
+            for (let i = 0; i < nodes.length; i++) {
+                const nodeId = nodes[i];
+                const actualNodeId = findCosmosNodeId(renderer, nodeId);
+                
+                if (actualNodeId && renderer.nodeIndices?.has(actualNodeId) && !nodeColorMap.has(actualNodeId)) {
+                    let type;
+                    if (i === 0) {
+                        type = 'source';
+                    } else if (i === nodes.length - 1) {
+                        type = 'target';
+                    } else {
+                        type = 'intermediate';
+                    }
+                    
+                    // Don't downgrade source/target to intermediate
+                    const existing = nodeColorMap.get(actualNodeId);
+                    if (!existing || (type !== 'intermediate' && existing.type === 'intermediate')) {
+                        const color = type === 'source' ? '#22c55e' : type === 'target' ? '#ef4444' : '#00d4ff';
+                        nodeColorMap.set(actualNodeId, { color: color, type: type });
+                    }
+                }
+            }
+            
+            // Build edge pairs
+            for (let i = 0; i < nodes.length - 1; i++) {
+                const sourceId = findCosmosNodeId(renderer, nodes[i]);
+                const targetId = findCosmosNodeId(renderer, nodes[i + 1]);
+                
+                if (sourceId && targetId && renderer.nodeIndices?.has(sourceId) && renderer.nodeIndices?.has(targetId)) {
+                    edgePairs.push({ source: sourceId, target: targetId });
+                }
+            }
+        }
+        
+        console.log('[CapacityFlow] Built nodeColorMap with', nodeColorMap.size, 'nodes');
+        console.log('[CapacityFlow] Built edgePairs with', edgePairs.length, 'edges');
+        
+        if (nodeColorMap.size === 0) {
+            showToast('No matching nodes found in graph', 'warning');
+            return;
+        }
+        
+        // Apply highlighting
+        if (typeof renderer.highlightPathNodes === 'function') {
+            renderer.highlightPathNodes(nodeColorMap);
+        }
+        
+        if (edgePairs.length > 0 && typeof renderer.highlightPathEdges === 'function') {
+            renderer.highlightPathEdges(edgePairs, '#00d4ff', 1.0);
+        }
+        
+        // Fit view
+        if (typeof renderer.fitView === 'function') {
+            renderer.fitView(Array.from(nodeColorMap.keys()), 0.2);
+        }
+        
+        // Store for cleanup
+        state.originalStyles.set('_cosmosAllPaths', { nodes: Array.from(nodeColorMap.keys()), edges: edgePairs });
+        
+        showToast('Highlighting ' + paths.length + ' paths (' + nodeColorMap.size + ' nodes)', 'info');
+    }
+    
     function clearHighlights() {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.clearPathHighlights === 'function') {
+                renderer.clearPathHighlights();
+            }
+            state.originalStyles.clear();
+            return;
+        }
+        
+        // Cytoscape implementation
         var cy = getCytoscape();
-        if (!cy) return;
+        if (!cy) {
+            state.originalStyles.clear();
+            return;
+        }
         
         cy.batch(function() {
             // Remove temporary path edges
@@ -1192,6 +1674,7 @@ const CapacityFlow = (function() {
             // Reset styled elements
             state.originalStyles.forEach(function(info, key) {
                 if (info.type === 'temp') return;
+                if (key === '_cosmosPath' || key === '_cosmosAllPaths') return; // Cosmos markers
                 
                 var ele = cy.getElementById(key);
                 if (ele && ele.length) {
@@ -1245,7 +1728,7 @@ const CapacityFlow = (function() {
             var isTokenPool = nodeId.toLowerCase().indexOf('t_') === 0;
             
             var hopClass = isSource ? 'source' : isTarget ? 'target' : isTokenPool ? 'token' : '';
-            var hopLabel = isSource ? 'S' : isTarget ? 'T' : isTokenPool ? '◆' : i;
+            var hopLabel = isSource ? 'S' : isTarget ? 'T' : isTokenPool ? '*' : i;
             var itemClass = isTokenPool ? 'token-pool' : '';
             var displayId = cleanNodeIdForDisplay(nodeId);
             
@@ -1255,7 +1738,7 @@ const CapacityFlow = (function() {
                 '</div>';
             
             if (i < nodes.length - 1) {
-                html += '<div class="path-edge-info">↓ hop ' + (i + 1) + '</div>';
+                html += '<div class="path-edge-info">| hop ' + (i + 1) + '</div>';
             }
         }
         
@@ -1321,6 +1804,19 @@ const CapacityFlow = (function() {
     }
     
     function zoomToNode(nodeId) {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer) {
+                const actualNodeId = findCosmosNodeId(renderer, nodeId);
+                if (actualNodeId && typeof renderer.zoomToNode === 'function') {
+                    renderer.zoomToNode(actualNodeId, 2, 400);
+                }
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         var cy = getCytoscape();
         if (!cy) return;
         
@@ -1340,10 +1836,31 @@ const CapacityFlow = (function() {
         var path = state.lastResult.paths[state.selectedPathIndex];
         if (!path) return;
         
+        var nodes = path.nodes || [];
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer) {
+                const nodeIds = [];
+                for (let i = 0; i < nodes.length; i++) {
+                    const actualNodeId = findCosmosNodeId(renderer, nodes[i]);
+                    if (actualNodeId) {
+                        nodeIds.push(actualNodeId);
+                    }
+                }
+                
+                if (nodeIds.length > 0 && typeof renderer.fitView === 'function') {
+                    renderer.fitView(nodeIds, 0.2);
+                }
+            }
+            return;
+        }
+        
+        // Cytoscape implementation
         var cy = getCytoscape();
         if (!cy) return;
         
-        var nodes = path.nodes || [];
         var foundIds = [];
         
         for (var i = 0; i < nodes.length; i++) {
@@ -1376,7 +1893,7 @@ const CapacityFlow = (function() {
             cleanNodes.push(cleanNodeIdForDisplay(nodes[i]));
         }
         
-        navigator.clipboard.writeText(cleanNodes.join(' → ')).then(function() {
+        navigator.clipboard.writeText(cleanNodes.join(' -> ')).then(function() {
             showToast('Path copied!', 'success');
         });
     }
@@ -1386,18 +1903,68 @@ const CapacityFlow = (function() {
     // ==========================================================================
     
     function isolatePath() {
-        var cy = getCytoscape();
-        if (!cy) return;
-        
         if (state.selectedPathIndex < 0 || !state.lastResult || !state.lastResult.paths) {
             showToast('No path selected', 'error');
             return;
         }
         
         var path = state.lastResult.paths[state.selectedPathIndex];
+        var nodes = path.nodes || [];
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (!renderer) return;
+            
+            console.log('[CapacityFlow] Isolating path in CosmosGL, nodes:', nodes);
+            
+            const pathNodeIds = [];
+            const pathEdges = [];
+            
+            for (let i = 0; i < nodes.length; i++) {
+                const actualNodeId = findCosmosNodeId(renderer, nodes[i]);
+                if (actualNodeId && renderer.nodeIndices?.has(actualNodeId)) {
+                    pathNodeIds.push(actualNodeId);
+                } else {
+                    // Still add the original ID - showOnlyNodes will handle mapping
+                    pathNodeIds.push(nodes[i]);
+                    console.warn('[CapacityFlow] Node not found for isolation:', nodes[i]);
+                }
+            }
+            
+            // Collect path edges
+            for (let i = 0; i < nodes.length - 1; i++) {
+                pathEdges.push({ source: nodes[i], target: nodes[i + 1] });
+            }
+            
+            console.log('[CapacityFlow] Found', pathNodeIds.length, 'nodes,', pathEdges.length, 'edges for isolation');
+            
+            if (pathNodeIds.length === 0) {
+                showToast('No nodes found for path', 'error');
+                return;
+            }
+            
+            if (typeof renderer.showOnlyNodes === 'function') {
+                // Pass both nodes AND path edges
+                renderer.showOnlyNodes(pathNodeIds, pathEdges);
+            }
+            
+            if (typeof renderer.fitView === 'function') {
+                renderer.fitView(pathNodeIds, 0.1);
+            }
+            
+            state.isIsolated = true;
+            showToast('Isolated ' + pathNodeIds.length + ' path nodes', 'success');
+            updateIsolateButtons();
+            return;
+        }
+        
+        // Cytoscape implementation
+        var cy = getCytoscape();
+        if (!cy) return;
+        
         var pathNodeIds = new Set();
         
-        var nodes = path.nodes || [];
         for (var i = 0; i < nodes.length; i++) {
             var cyNode = findCyNode(cy, nodes[i]);
             if (cyNode && cyNode.length) {
@@ -1447,11 +2014,69 @@ const CapacityFlow = (function() {
     }
     
     function isolateAllPaths() {
-        var cy = getCytoscape();
-        if (!cy || !state.lastResult || !state.lastResult.paths || state.lastResult.paths.length === 0) {
+        if (!state.lastResult || !state.lastResult.paths || state.lastResult.paths.length === 0) {
             showToast('No paths to isolate', 'warning');
             return;
         }
+        
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (!renderer) return;
+            
+            // First restore all if already isolated
+            if (state.isIsolated) {
+                restoreAllNodesQuietly();
+            }
+            
+            console.log('[CapacityFlow] Isolating all paths in CosmosGL');
+            
+            const pathNodeIds = [];
+            const pathEdges = [];
+            const paths = state.lastResult.paths;
+            
+            for (let p = 0; p < paths.length; p++) {
+                const nodes = paths[p].nodes || [];
+                for (let i = 0; i < nodes.length; i++) {
+                    const actualNodeId = findCosmosNodeId(renderer, nodes[i]);
+                    if (actualNodeId && renderer.nodeIndices?.has(actualNodeId) && pathNodeIds.indexOf(actualNodeId) === -1) {
+                        pathNodeIds.push(actualNodeId);
+                    } else if (pathNodeIds.indexOf(nodes[i]) === -1) {
+                        // Still add original ID for mapping
+                        pathNodeIds.push(nodes[i]);
+                    }
+                }
+                // Collect edges for this path
+                for (let i = 0; i < nodes.length - 1; i++) {
+                    pathEdges.push({ source: nodes[i], target: nodes[i + 1] });
+                }
+            }
+            
+            console.log('[CapacityFlow] Found', pathNodeIds.length, 'unique nodes,', pathEdges.length, 'edges for isolation');
+            
+            if (pathNodeIds.length === 0) {
+                showToast('No matching nodes found', 'warning');
+                return;
+            }
+            
+            if (typeof renderer.showOnlyNodes === 'function') {
+                // Pass both nodes AND path edges
+                renderer.showOnlyNodes(pathNodeIds, pathEdges);
+            }
+            
+            if (typeof renderer.fitView === 'function') {
+                renderer.fitView(pathNodeIds, 0.1);
+            }
+            
+            state.isIsolated = true;
+            showToast('Isolated ' + pathNodeIds.length + ' nodes from all paths', 'success');
+            updateIsolateButtons();
+            return;
+        }
+        
+        // Cytoscape implementation
+        var cy = getCytoscape();
+        if (!cy) return;
         
         // First restore all if already isolated
         if (state.isIsolated) {
@@ -1508,6 +2133,18 @@ const CapacityFlow = (function() {
     }
     
     function restoreAllNodesQuietly() {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.showAllNodes === 'function') {
+                renderer.showAllNodes();
+            }
+            state.isIsolated = false;
+            state.hiddenNodes = [];
+            return;
+        }
+        
+        // Cytoscape implementation
         var cy = getCytoscape();
         if (!cy) return;
         
@@ -1550,6 +2187,25 @@ const CapacityFlow = (function() {
     }
     
     function showAllNodes() {
+        // Check if using CosmosGL renderer
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer) {
+                if (typeof renderer.showAllNodes === 'function') {
+                    renderer.showAllNodes();
+                }
+                if (typeof renderer.fitView === 'function') {
+                    renderer.fitView();
+                }
+            }
+            state.isIsolated = false;
+            state.hiddenNodes = [];
+            showToast('Showing all nodes', 'success');
+            updateIsolateButtons();
+            return;
+        }
+        
+        // Cytoscape implementation
         var cy = getCytoscape();
         if (!cy) return;
         

@@ -6,6 +6,16 @@
  * UPDATED: Now snapshot-aware - supports timeseries analysis when viewing snapshots
  */
 
+// Inline SVG icon helpers - for use in popup windows that don't have access to Icons module
+const InlineSVG = {
+    check: (size = 14, color = '#52c41a') => `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M3 8l3.5 3.5L13 4"/></svg>`,
+    x: (size = 14, color = '#ff4d4f') => `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M4 4l8 8"/><path d="M12 4l-8 8"/></svg>`,
+    warning: (size = 14, color = '#faad14') => `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M8 1.5l6.5 12H1.5L8 1.5z"/><path d="M8 6v3"/><circle cx="8" cy="11" r="0.5" fill="${color}"/></svg>`,
+    info: (size = 14, color = '#4A90E2') => `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="8" cy="8" r="6"/><path d="M8 7v4"/><circle cx="8" cy="5" r="0.5" fill="${color}"/></svg>`,
+    trend: (size = 14, color = '#4A90E2') => `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M2 12L6 8L9 11L14 4"/><path d="M10 4h4v4"/></svg>`,
+    graph: (size = 14, color = '#4A90E2') => `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 7l4-2"/><path d="M6 9l4 2"/></svg>`
+};
+
 // Global state
 let nodeData = [];
 let allMetrics = [];
@@ -1587,7 +1597,7 @@ function renderPCAScatterChart(result) {
                                 `PC2: ${point.y.toFixed(4)}`
                             ];
                             if (point.isSelected) {
-                                lines.unshift('â˜… SELECTED');
+                                lines.unshift('* SELECTED');
                             }
                             if (result.reconstruction_errors) {
                                 const idx = context.dataIndex;
@@ -1922,7 +1932,7 @@ function updateAlgorithmUI() {
     document.getElementById('algorithm-description').innerHTML = `
         <p>${info.description}</p>
         <p class="complexity">Complexity: ${info.complexity}</p>
-         <p class="multivariate">${info.multivariate ? 'âœ“ Supports multiple metrics' : 'â—‹ Single metric recommended'}</p>
+         <p class="multivariate">${info.multivariate ? InlineSVG.check() + ' Supports multiple metrics' : InlineSVG.x() + ' Single metric recommended'}</p>
     `;
     
     // Update parameters
@@ -2274,7 +2284,7 @@ function renderAnomalyTable(anomaliesOnly = false) {
                 (hasSelection ? ` (${selectedInView} selected)` : '');
         } else {
             tableInfo.textContent = `Showing ${filteredData.length} nodes (${anomalyCount} anomalies)` +
-                (hasSelection ? ` â€¢ ${selectedInView} selected highlighted` : '');
+                (hasSelection ? ` - ${selectedInView} selected highlighted` : '');
         }
     }
     
@@ -2315,7 +2325,7 @@ function renderAnomalyTable(anomaliesOnly = false) {
         const rowStyle = isSelected 
             ? 'background: rgba(255, 152, 0, 0.25); border-left: 3px solid #ff9800;' 
             : '';
-        const selectedMarker = isSelected ? '<span style="color:#ff9800;">â˜…</span> ' : '';
+        const selectedMarker = isSelected ? '<span style="color:#ff9800;">*</span> ' : '';
         
         return `
             <tr data-node-id="${node.id}" data-is-anomaly="${node.is_anomaly}" data-is-selected="${isSelected}" style="${rowStyle}">
@@ -2928,15 +2938,15 @@ function renderCompositePreview(result, metric1, metric2) {
     if (corrDisplay) {
         corrDisplay.innerHTML = `
             <div class="correlation-row">
-                <span>Input Correlation (${metric1} Ã¢â€ â€ ${metric2}):</span>
+                <span>Input Correlation (${metric1} <-> ${metric2}):</span>
                 <span class="${getCorrelationClass(corr.input_correlation)}">${formatNumber(corr.input_correlation)}</span>
             </div>
             <div class="correlation-row">
-                <span>${metric1} Ã¢â€ â€ Composite:</span>
+                <span>${metric1} <-> Composite:</span>
                 <span class="${getCorrelationClass(corr.m1_composite)}">${formatNumber(corr.m1_composite)}</span>
             </div>
             <div class="correlation-row">
-                <span>${metric2} Ã¢â€ â€ Composite:</span>
+                <span>${metric2} <-> Composite:</span>
                 <span class="${getCorrelationClass(corr.m2_composite)}">${formatNumber(corr.m2_composite)}</span>
             </div>
         `;
@@ -3617,7 +3627,7 @@ function displayMetricTimeseries(data) {
     if (data.trend) {
         const direction = data.trend.direction || 'stable';
         const change = data.trend.percent_change?.toFixed(1) || '0';
-        const icon = direction === 'increasing' ? '↑' : direction === 'decreasing' ? '↓' : '→';
+        const icon = direction === 'increasing' ? '\u2191' : direction === 'decreasing' ? '\u2193' : '\u2192';
         trendEl.textContent = `${icon} ${Math.abs(change)}%`;
         trendEl.className = direction === 'increasing' ? 'trend-up' : 
                             direction === 'decreasing' ? 'trend-down' : 'trend-stable';
@@ -3837,7 +3847,7 @@ function displayNetworkSummary(data) {
     if (first.node_count && latest.node_count) {
         const growth = ((latest.node_count - first.node_count) / first.node_count * 100).toFixed(1);
         const trendEl = document.getElementById('ts-trend');
-        trendEl.textContent = `${growth > 0 ? '↑' : '↓'} ${Math.abs(growth)}% nodes`;
+        trendEl.textContent = `${growth > 0 ? '\u2191' : '\u2193'} ${Math.abs(growth)}% nodes`;
         trendEl.className = growth > 0 ? 'trend-up' : 'trend-down';
     }
     
@@ -3997,10 +4007,10 @@ function displayDistributionComparison(data) {
     // Significance - use correct field names
     const trendEl = document.getElementById('ts-trend');
     if (data.distributions_differ) {
-        trendEl.textContent = '⚠️ Different';
+        trendEl.innerHTML = InlineSVG.warning() + ' Different';
         trendEl.className = 'trend-down';
     } else {
-        trendEl.textContent = '✓ Similar';
+        trendEl.innerHTML = InlineSVG.check() + ' Similar';
         trendEl.className = 'trend-stable';
     }
     
@@ -4368,7 +4378,7 @@ function displayTemporalMetric(data) {
     document.getElementById('ts-metric-name').textContent = data.name || '-';
     document.getElementById('ts-snapshot-count').textContent = data.snapshots_used || data.blocks_used?.length || '-';
     document.getElementById('ts-aggregation').textContent = data.temporal_operation || '-';
-    document.getElementById('ts-trend').textContent = `μ=${stats.mean?.toFixed(3) || '-'}`;
+    document.getElementById('ts-trend').textContent = `u=${stats.mean?.toFixed(3) || '-'}`;
     
     // Statistics table with proper styling
     const thead = document.getElementById('timeseries-table-head');
