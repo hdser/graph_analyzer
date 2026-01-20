@@ -41,6 +41,7 @@ env/
 *.log
 cytoscape/*.cys 
 logs/
+#web_viewer/cache/*
 
 node_modules/
 # Jupyter Notebook

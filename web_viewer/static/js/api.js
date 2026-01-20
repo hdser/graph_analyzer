@@ -244,6 +244,27 @@ const API = {
         });
     },
 
+    /**
+     * Save layout positions to server
+     * Used to persist cosmos.gl or other frontend-computed layouts
+     * @param {string} graphId - Graph identifier
+     * @param {Object} positions - {nodeId: {x: number, y: number}, ...}
+     * @param {Object} options - Optional settings
+     * @param {string} options.name - Layout name (default: "frontend")
+     * @param {boolean} options.saveAsBase - Save as base/default layout
+     * @returns {Promise<Object>} Save result
+     */
+    saveLayoutToServer(graphId, positions, options = {}) {
+        return this.fetch(`/api/layout/save/${encodeURIComponent(graphId)}`, {
+            method: 'POST',
+            body: JSON.stringify({
+                positions: positions,
+                name: options.name || null,
+                save_as_base: options.saveAsBase || false
+            })
+        });
+    },
+
     // =========================================================================
     // Snapshot Analysis
     // =========================================================================

@@ -55,6 +55,13 @@ class SetDefaultLayoutRequest(BaseModel):
     filename: str
 
 
+class SaveLayoutRequest(BaseModel):
+    """Request to save layout positions from frontend."""
+    positions: dict  # {node_id: {x: float, y: float}, ...}
+    name: Optional[str] = None  # Optional layout name (default: "frontend")
+    save_as_base: bool = False  # Whether to also save as base layout
+
+
 @router.get("/config")
 async def get_config():
     """Get application configuration including available SQL files and features."""
@@ -393,6 +400,72 @@ async def recompute_layout(graph_id: str, request: LayoutRequest):
         raise
     except Exception as e:
         print(f"[LAYOUT] Recompute error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/layout/save/{graph_id}")
+async def save_layout_positions(graph_id: str, request: SaveLayoutRequest):
+    """
+    Save layout positions from the frontend (e.g., from cosmos.gl).
+    
+    This allows saving the current visual layout to the server cache
+    so it persists across page refreshes and server restarts.
+    
+    Args:
+        graph_id: Graph identifier
+        request: Contains positions dict and optional name/save_as_base flags
+        
+    Returns:
+        Save result with file path
+    """
+    if graph_id not in network_service.graphs:
+        raise HTTPException(status_code=404, detail=f"Graph not found: {graph_id}")
+    
+    positions = request.positions
+    if not positions:
+        raise HTTPException(status_code=400, detail="No positions provided")
+    
+    # Validate positions format
+    for node_id, pos in list(positions.items())[:5]:  # Check first 5
+        if not isinstance(pos, dict) or 'x' not in pos or 'y' not in pos:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid position format for node {node_id}. Expected {{x: float, y: float}}"
+            )
+    
+    try:
+        # Determine layout name
+        layout_name = request.name or "frontend"
+        
+        # Save as named layout
+        layout_path = network_service.cache_service.save_named_layout(
+            graph_id,
+            positions,
+            backend="frontend",  # Mark as from frontend
+            algorithm=layout_name
+        )
+        
+        # Update stored layout
+        network_service.layouts[graph_id] = positions
+        
+        # Also save as base if requested
+        base_path = None
+        if request.save_as_base:
+            base_path = network_service.cache_service.save_base_layout(graph_id, positions)
+        
+        return {
+            "status": "success",
+            "graph_id": graph_id,
+            "node_count": len(positions),
+            "layout_file": layout_path,
+            "saved_as_base": request.save_as_base,
+            "base_file": base_path
+        }
+        
+    except Exception as e:
+        print(f"[LAYOUT] Save error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

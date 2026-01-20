@@ -319,6 +319,66 @@ function setupEnhancedSimulationControls() {
         });
     }
     
+    // Save to Server button (saves to parquet cache)
+    const saveServerBtn = document.getElementById('cosmos-save-server-btn');
+    if (saveServerBtn) {
+        saveServerBtn.addEventListener('click', async () => {
+            console.log('[App] Save to server clicked');
+            const renderer = State.renderer;
+            const graphId = State.currentGraph;
+            
+            if (!graphId) {
+                Toast.show('No graph loaded', 'error');
+                return;
+            }
+            
+            if (!renderer || typeof renderer.exportPositions !== 'function') {
+                Toast.show('Renderer not available', 'error');
+                return;
+            }
+            
+            const positions = renderer.exportPositions();
+            if (!positions || Object.keys(positions).length === 0) {
+                Toast.show('No positions to save', 'error');
+                return;
+            }
+            
+            const saveAsBase = document.getElementById('cosmos-save-as-base')?.checked || false;
+            
+            try {
+                saveServerBtn.disabled = true;
+                saveServerBtn.innerHTML = '<span data-icon="loading"></span> Saving...';
+                Icons.inject();
+                
+                const result = await API.saveLayoutToServer(graphId, positions, {
+                    name: 'cosmos',
+                    saveAsBase: saveAsBase
+                });
+                
+                console.log('[App] Layout saved to server:', result);
+                
+                if (saveAsBase) {
+                    Toast.show(`Layout saved as default (${result.node_count} nodes)`, 'success');
+                } else {
+                    Toast.show(`Layout saved to server (${result.node_count} nodes)`, 'success');
+                }
+                
+                // Refresh the saved layouts list
+                if (typeof Layout !== 'undefined' && Layout.loadSavedLayouts) {
+                    Layout.loadSavedLayouts();
+                }
+                
+            } catch (error) {
+                console.error('[App] Failed to save layout:', error);
+                Toast.show(`Failed to save: ${error.message}`, 'error');
+            } finally {
+                saveServerBtn.disabled = false;
+                saveServerBtn.innerHTML = '<span data-icon="save"></span> Save to Server';
+                Icons.inject();
+            }
+        });
+    }
+    
     // Position import
     const importBtn = document.getElementById('cosmos-import-pos-btn');
     if (importBtn) {

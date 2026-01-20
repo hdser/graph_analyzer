@@ -604,13 +604,23 @@ const InfoPanel = {
 
     /**
      * Push current selection to history
+     * Supports both Cytoscape.js and cosmos.gl
      */
     pushHistory() {
-        if (!State.cy) return;
-        const selected = State.cy.nodes(':selected');
-        if (selected.length > 0) {
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        let selectedIds = [];
+        if (isCosmos) {
+            selectedIds = State.renderer.getSelectedNodes() || [];
+        } else if (isCytoscape) {
+            const selected = State.cy.nodes(':selected');
+            selectedIds = selected.map(n => n.id());
+        }
+        
+        if (selectedIds.length > 0) {
             this.history.push({
-                ids: selected.map(n => n.id()),
+                ids: selectedIds,
                 hop: this.currentHop
             });
             if (this.history.length > 20) this.history.shift();
@@ -619,20 +629,30 @@ const InfoPanel = {
 
     /**
      * Go back to previous selection
+     * Supports both Cytoscape.js and cosmos.gl
      */
     goBack() {
-        if (!State.cy || this.history.length === 0) return;
+        if (this.history.length === 0) return;
+        
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        if (!isCosmos && !isCytoscape) return;
         
         const prev = this.history.pop();
         this.currentHop = prev.hop;
         
-        State.cy.batch(() => {
-            State.cy.nodes().unselect();
-            prev.ids.forEach(id => {
-                const node = State.cy.getElementById(id);
-                if (node.length) node.select();
+        if (isCosmos) {
+            State.renderer.selectNodes(prev.ids, false); // Replace selection
+        } else {
+            State.cy.batch(() => {
+                State.cy.nodes().unselect();
+                prev.ids.forEach(id => {
+                    const node = State.cy.getElementById(id);
+                    if (node.length) node.select();
+                });
             });
-        });
+        }
         
         updateStatus(`Back (${prev.ids.length} nodes)`, 'info');
         this.updateNavState();
@@ -640,20 +660,30 @@ const InfoPanel = {
 
     /**
      * Reset to origin
+     * Supports both Cytoscape.js and cosmos.gl
      */
     resetToOrigin() {
-        if (!State.cy || !this.originNodes) return;
+        if (!this.originNodes) return;
+        
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        if (!isCosmos && !isCytoscape) return;
         
         this.pushHistory();
         this.currentHop = 0;
         
-        State.cy.batch(() => {
-            State.cy.nodes().unselect();
-            this.originNodes.forEach(id => {
-                const node = State.cy.getElementById(id);
-                if (node.length) node.select();
+        if (isCosmos) {
+            State.renderer.selectNodes(this.originNodes, false); // Replace selection
+        } else {
+            State.cy.batch(() => {
+                State.cy.nodes().unselect();
+                this.originNodes.forEach(id => {
+                    const node = State.cy.getElementById(id);
+                    if (node.length) node.select();
+                });
             });
-        });
+        }
         
         updateStatus(`Reset to origin (${this.originNodes.length} nodes)`, 'info');
         this.updateNavState();
@@ -662,32 +692,68 @@ const InfoPanel = {
     /**
      * Navigate to neighbors - EXPANDS selection cumulatively
      * Each click adds more neighbors to the current selection
+     * Supports both Cytoscape.js and cosmos.gl renderers
      */
     async goToNeighbors(direction) {
-        if (!State.cy) return;
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
         
-        const selected = State.cy.nodes(':selected');
-        if (selected.length === 0) {
+        if (!isCosmos && !isCytoscape) {
+            updateStatus('No renderer available', 'error');
+            return;
+        }
+        
+        // Get currently selected nodes
+        let selectedIds = [];
+        if (isCosmos) {
+            selectedIds = State.renderer.getSelectedNodes() || [];
+        } else {
+            const selected = State.cy.nodes(':selected');
+            selectedIds = selected.map(n => n.id());
+        }
+        
+        if (selectedIds.length === 0) {
             updateStatus('Select node(s) first', 'info');
             return;
         }
         
-        const currentCount = selected.length;
+        const currentCount = selectedIds.length;
         
-        // Try to get neighbors from loaded edges first
-        let neighbors;
-        if (direction === 'in') {
-            neighbors = selected.incomers('node');
-        } else {
-            neighbors = selected.outgoers('node');
+        // Get neighbors - try from renderer first, then backend
+        let allNeighborIds = [];
+        
+        if (isCosmos) {
+            // cosmos.gl - use renderer's edge maps
+            const neighborSet = new Set();
+            for (const nodeId of selectedIds) {
+                let neighbors;
+                if (direction === 'in') {
+                    neighbors = State.renderer.getIncomingNeighbors(nodeId) || [];
+                } else {
+                    neighbors = State.renderer.getOutgoingNeighbors(nodeId) || [];
+                }
+                neighbors.forEach(id => neighborSet.add(id));
+            }
+            allNeighborIds = [...neighborSet];
+        } else if (isCytoscape) {
+            // Cytoscape - use graph traversal
+            const selected = State.cy.nodes(':selected');
+            let neighbors;
+            if (direction === 'in') {
+                neighbors = selected.incomers('node');
+            } else {
+                neighbors = selected.outgoers('node');
+            }
+            allNeighborIds = neighbors.map(n => n.id());
         }
         
         // If we have neighbors from loaded edges, use them
-        if (neighbors.length > 0) {
+        if (allNeighborIds.length > 0) {
             // Filter to only new neighbors (not already selected)
-            const newNeighbors = neighbors.filter(n => !n.selected());
+            const selectedSet = new Set(selectedIds);
+            const newNeighborIds = allNeighborIds.filter(id => !selectedSet.has(id));
             
-            if (newNeighbors.length === 0) {
+            if (newNeighborIds.length === 0) {
                 updateStatus(`No new ${direction === 'in' ? 'incoming' : 'outgoing'} neighbors to add`, 'info');
                 return;
             }
@@ -696,12 +762,21 @@ const InfoPanel = {
             this.currentHop += (direction === 'out' ? 1 : -1);
             
             // ADD to selection (don't unselect existing)
-            State.cy.batch(() => {
-                newNeighbors.select();
-            });
+            if (isCosmos) {
+                State.renderer.selectNodes(newNeighborIds, true); // additive=true
+                const newTotal = State.renderer.getSelectedNodes().length;
+                updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
+            } else {
+                State.cy.batch(() => {
+                    newNeighborIds.forEach(id => {
+                        const node = State.cy.getElementById(id);
+                        if (node.length) node.select();
+                    });
+                });
+                const newTotal = State.cy.nodes(':selected').length;
+                updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
+            }
             
-            const newTotal = State.cy.nodes(':selected').length;
-            updateStatus(`+${newNeighbors.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
             this.updateNavState();
             return;
         }
@@ -715,11 +790,10 @@ const InfoPanel = {
         updateStatus(`Querying ${direction} neighbors...`, 'info');
         
         try {
-            const nodeIds = selected.map(n => n.id());
             const response = await fetch(`/api/network/graphs/${State.currentGraph}/neighbors`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ node_ids: nodeIds, direction: direction })
+                body: JSON.stringify({ node_ids: selectedIds, direction: direction })
             });
             
             if (!response.ok) {
@@ -730,7 +804,7 @@ const InfoPanel = {
             const neighborIds = direction === 'in' ? data.incoming : data.outgoing;
             
             // Filter to only new neighbors (not already selected)
-            const currentSelectedIds = new Set(nodeIds);
+            const currentSelectedIds = new Set(selectedIds);
             const newNeighborIds = neighborIds.filter(id => !currentSelectedIds.has(id));
             
             if (newNeighborIds.length === 0) {
@@ -742,15 +816,21 @@ const InfoPanel = {
             this.currentHop += (direction === 'out' ? 1 : -1);
             
             // ADD to selection (don't unselect existing)
-            State.cy.batch(() => {
-                newNeighborIds.forEach(id => {
-                    const node = State.cy.getElementById(id);
-                    if (node.length) node.select();
+            if (isCosmos) {
+                State.renderer.selectNodes(newNeighborIds, true); // additive=true
+                const newTotal = State.renderer.getSelectedNodes().length;
+                updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
+            } else {
+                State.cy.batch(() => {
+                    newNeighborIds.forEach(id => {
+                        const node = State.cy.getElementById(id);
+                        if (node.length) node.select();
+                    });
                 });
-            });
+                const newTotal = State.cy.nodes(':selected').length;
+                updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
+            }
             
-            const newTotal = State.cy.nodes(':selected').length;
-            updateStatus(`+${newNeighborIds.length} ${direction === 'in' ? 'in' : 'out'} (${newTotal} total)`, 'success');
             this.updateNavState();
             
         } catch (err) {
@@ -771,33 +851,53 @@ const InfoPanel = {
 
     /**
      * Set current selection as new origin
+     * Supports both Cytoscape.js and cosmos.gl
      */
     setAsOrigin() {
-        if (!State.cy) return;
-        const selected = State.cy.nodes(':selected');
-        if (selected.length > 0) {
-            this.originNodes = selected.map(n => n.id());
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        let selectedIds = [];
+        if (isCosmos) {
+            selectedIds = State.renderer.getSelectedNodes() || [];
+        } else if (isCytoscape) {
+            const selected = State.cy.nodes(':selected');
+            selectedIds = selected.map(n => n.id());
+        }
+        
+        if (selectedIds.length > 0) {
+            this.originNodes = selectedIds;
             this.history = [];
             this.currentHop = 0;
-            updateStatus(`Set ${selected.length} node(s) as origin`, 'success');
+            updateStatus(`Set ${selectedIds.length} node(s) as origin`, 'success');
             this.updateNavState();
         }
     },
 
     /**
      * Copy all selected node IDs
+     * Supports both Cytoscape.js and cosmos.gl
      */
     async copySelectedIds() {
-        if (!State.cy) return;
-        const selected = State.cy.nodes(':selected');
-        if (selected.length === 0) {
+        const isCosmos = State.rendererType === 'cosmos' && State.renderer;
+        const isCytoscape = State.cy && State.rendererType !== 'cosmos';
+        
+        let selectedIds = [];
+        if (isCosmos) {
+            selectedIds = State.renderer.getSelectedNodes() || [];
+        } else if (isCytoscape) {
+            const selected = State.cy.nodes(':selected');
+            selectedIds = selected.map(n => n.id());
+        }
+        
+        if (selectedIds.length === 0) {
             updateStatus('No nodes selected', 'error');
             return;
         }
         
-        const ids = selected.map(n => n.id()).join('\n');
+        const ids = selectedIds.join('\n');
         const success = await Utils.copyToClipboard(ids);
-        updateStatus(success ? `Copied ${selected.length} node IDs` : 'Copy failed', success ? 'success' : 'error');
+        updateStatus(success ? `Copied ${selectedIds.length} node IDs` : 'Copy failed', success ? 'success' : 'error');
     },
 
     /**

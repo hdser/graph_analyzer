@@ -1639,6 +1639,10 @@ input[type="range"]::-moz-range-thumb:hover {
     to { transform: rotate(360deg); }
 }
 
+.icon-spin {
+    animation: spin 1s linear infinite;
+}
+
 .loading-text {
     margin-top: 20px;
     font-size: 14px;

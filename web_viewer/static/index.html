@@ -656,7 +656,7 @@
                                     <div class="option-row">
                                         <label>Algorithm</label>
                                         <select id="cf-algorithm-select">
-                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“</option>
+                                            <option value="networkx:edmonds_karp">Edmonds-Karp (NetworkX) ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ</option>
                                             <option value="networkx:preflow_push">Preflow Push (NetworkX)</option>
                                             <option value="networkx:dinitz">Dinitz (NetworkX)</option>
                                             <option value="ortools:max_flow">Max Flow (OR-Tools)</option>
@@ -996,10 +996,18 @@
                             <details class="cosmos-snapshots">
                                 <summary>Layout Snapshots</summary>
                                 <div class="cosmos-snapshot-grid">
-                                    <button id="cosmos-snapshot-btn" class="secondary-btn">Save</button>
-                                    <button id="cosmos-restore-btn" class="secondary-btn">Restore</button>
-                                    <button id="cosmos-export-pos-btn" class="secondary-btn">Export</button>
-                                    <button id="cosmos-import-pos-btn" class="secondary-btn">Import</button>
+                                    <button id="cosmos-snapshot-btn" class="secondary-btn" title="Save to browser memory">Save</button>
+                                    <button id="cosmos-restore-btn" class="secondary-btn" title="Restore from browser memory">Restore</button>
+                                    <button id="cosmos-export-pos-btn" class="secondary-btn" title="Download as JSON file">Export</button>
+                                    <button id="cosmos-import-pos-btn" class="secondary-btn" title="Load from JSON file">Import</button>
+                                </div>
+                                <div class="cosmos-snapshot-grid" style="margin-top: 8px;">
+                                    <button id="cosmos-save-server-btn" class="primary-btn" title="Save to server (persists across refreshes)" style="grid-column: span 2;">
+                                        <span data-icon="save"></span> Save to Server
+                                    </button>
+                                    <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; grid-column: span 2;">
+                                        <input type="checkbox" id="cosmos-save-as-base"> Set as default layout
+                                    </label>
                                 </div>
                                 <input type="file" id="cosmos-import-file" accept=".json" style="display: none;">
                             </details>

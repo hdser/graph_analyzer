@@ -24,6 +24,17 @@ const Icons = {
             <path d="M5 2v3h5"/>
         </svg>`,
         
+        loading: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon-spin">
+            <path d="M8 2v2"/>
+            <path d="M8 12v2"/>
+            <path d="M2 8h2"/>
+            <path d="M12 8h2"/>
+            <path d="M3.76 3.76l1.41 1.41"/>
+            <path d="M10.83 10.83l1.41 1.41"/>
+            <path d="M3.76 12.24l1.41-1.41"/>
+            <path d="M10.83 5.17l1.41-1.41"/>
+        </svg>`,
+        
         refresh: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 8a6 6 0 0 1 10.3-4.2"/>
             <path d="M14 8a6 6 0 0 1-10.3 4.2"/>
