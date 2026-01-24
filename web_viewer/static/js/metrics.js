@@ -683,13 +683,23 @@ const Metrics = {
             }
         } else if (State.rendererType === 'cosmos' && renderer.showOnlyNodes) {
             // Cosmos: Use alpha channel visibility
-            renderer.showOnlyNodes(selectedIds);
+            const result = renderer.showOnlyNodes(selectedIds);
+
+            // Check if operation succeeded
+            if (!result || !result.success) {
+                console.error('[Metrics] showOnlyNodes failed:', result?.reason || 'unknown');
+                if (typeof Toast !== 'undefined') {
+                    Toast.error(`Failed to isolate nodes: ${result?.reason || 'unknown error'}`);
+                }
+                return;
+            }
+
             renderer.fitView(selectedIds);
-            
+
             if (typeof Toast !== 'undefined') {
                 const totalCount = renderer.getAllNodeIds().length;
-                const hiddenCount = totalCount - selectedIds.length;
-                Toast.success(`Showing only ${selectedIds.length} selected nodes (${hiddenCount} hidden)`);
+                const hiddenCount = totalCount - result.visibleCount;
+                Toast.success(`Showing only ${result.visibleCount} selected nodes (${hiddenCount} hidden)`);
             }
         } else {
             // Fallback: Fit view to selected nodes
@@ -754,18 +764,28 @@ const Metrics = {
         } else if (State.rendererType === 'cosmos' && renderer.hideNodes) {
             console.log('[Metrics] Using Cosmos hideNodes');
             // Cosmos: Use alpha channel visibility
-            renderer.hideNodes(selectedIds);
+            const result = renderer.hideNodes(selectedIds);
+
+            // Check if operation succeeded
+            if (!result || !result.success) {
+                console.error('[Metrics] hideNodes failed:', result?.reason || 'unknown');
+                if (typeof Toast !== 'undefined') {
+                    Toast.error(`Failed to hide nodes: ${result?.reason || 'unknown error'}`);
+                }
+                return;
+            }
+
             renderer.clearSelection();
-            
+
             // Fit view to visible nodes
             const allIds = renderer.getAllNodeIds();
             const visibleIds = allIds.filter(id => !renderer.isNodeHidden(id));
             if (visibleIds.length > 0) {
                 renderer.fitView(visibleIds);
             }
-            
+
             if (typeof Toast !== 'undefined') {
-                Toast.success(`Hidden ${selectedIds.length} nodes (${visibleIds.length} visible)`);
+                Toast.success(`Hidden ${result.hiddenCount} nodes (${visibleIds.length} visible)`);
             }
         } else {
             console.log('[Metrics] Fallback: clearing selection, hideNodes exists:', typeof renderer.hideNodes);
