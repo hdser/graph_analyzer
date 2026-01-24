@@ -126,15 +126,29 @@ const CytoscapeManager = {
 
     /**
      * Get performance-optimized style
+     * Uses RendererSettings for consistent defaults across both renderers
      */
     getPerformanceStyle() {
+        // Get style config from RendererSettings for consistency with Cosmos
+        const styleConfig = typeof RendererSettings !== 'undefined'
+            ? RendererSettings.getStyleConfig()
+            : {};
+
+        // Use RendererSettings values with fallbacks to original defaults
+        const defaultNodeColor = styleConfig.defaultNodeColor || '#c8c8c8';
+        const defaultNodeSize = styleConfig.defaultNodeSize || 13;
+        const defaultEdgeColor = styleConfig.defaultEdgeColor || '#ffffff';
+        const defaultEdgeOpacity = styleConfig.defaultEdgeOpacity || 0.3;
+        const selectionColor = styleConfig.selectionColor || '#FF0000';
+        const highlightColor = styleConfig.highlightColor || '#FFA500';
+
         return [
             {
                 selector: 'node',
                 style: {
-                    'background-color': '#c8c8c8',
-                    'width': 13,
-                    'height': 13,
+                    'background-color': defaultNodeColor,
+                    'width': defaultNodeSize,
+                    'height': defaultNodeSize,
                     'label': '',
                     'border-width': 0
                 }
@@ -142,9 +156,9 @@ const CytoscapeManager = {
             {
                 selector: 'edge',
                 style: {
-                    'line-color': '#f0f0f0',
+                    'line-color': defaultEdgeColor,
                     'width': 1,
-                    'opacity': 0.3,
+                    'opacity': defaultEdgeOpacity,
                     'curve-style': 'straight',
                     'target-arrow-shape': 'none'
                 }
@@ -152,16 +166,16 @@ const CytoscapeManager = {
             {
                 selector: 'node:selected',
                 style: {
-                    'background-color': '#FF0000',
+                    'background-color': selectionColor,
                     'border-width': 3,
-                    'border-color': '#FF0000',
+                    'border-color': selectionColor,
                     'z-index': 999
                 }
             },
             {
                 selector: 'edge:selected',
                 style: {
-                    'line-color': '#FF0000',
+                    'line-color': selectionColor,
                     'width': 2,
                     'opacity': 1,
                     'z-index': 999
@@ -170,8 +184,8 @@ const CytoscapeManager = {
             {
                 selector: '.highlighted',
                 style: {
-                    'background-color': '#FFA500',
-                    'line-color': '#FFA500',
+                    'background-color': highlightColor,
+                    'line-color': highlightColor,
                     'opacity': 0.8,
                     'z-index': 998
                 }

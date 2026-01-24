@@ -50,12 +50,9 @@ const SubgraphTools = (function() {
         // Action buttons
         document.getElementById('extract-subgraph-btn')?.addEventListener('click', extractSubgraph);
         document.getElementById('clear-subgraph-btn')?.addEventListener('click', clearResults);
-        
-        // Result action buttons
-        document.getElementById('highlight-subgraph-btn')?.addEventListener('click', highlightSubgraph);
-        document.getElementById('isolate-subgraph-btn')?.addEventListener('click', isolateSubgraph);
-        document.getElementById('show-all-subgraph-btn')?.addEventListener('click', showAllNodes);
-        document.getElementById('export-subgraph-btn')?.addEventListener('click', exportSubgraph);
+
+        // Note: Result action buttons (Highlight, Isolate, Show All, Export) are in the info panel
+        // and use onclick handlers defined in showSubgraphDetails()
         
         // Initial mode setup
         onModeChange();
@@ -64,9 +61,9 @@ const SubgraphTools = (function() {
     }
     
     // ==========================================================================
-    // CYTOSCAPE ACCESS
+    // RENDERER ACCESS
     // ==========================================================================
-    
+
     function getCytoscape() {
         if (typeof State !== 'undefined' && State.cy) {
             return State.cy;
@@ -75,6 +72,24 @@ const SubgraphTools = (function() {
             return getCy();
         }
         return null;
+    }
+
+    function getRenderer() {
+        if (typeof State !== 'undefined' && State.renderer) {
+            return State.renderer;
+        }
+        return null;
+    }
+
+    function getRendererType() {
+        if (typeof State !== 'undefined' && State.rendererType) {
+            return State.rendererType;
+        }
+        return 'cytoscape';
+    }
+
+    function isCosmosRenderer() {
+        return getRendererType() === 'cosmos';
     }
     
     // ==========================================================================
@@ -325,15 +340,47 @@ const SubgraphTools = (function() {
     
     function highlightSubgraph() {
         if (!state.lastResult?.nodes) return;
-        
+
         clearHighlights();
-        
+
+        const subgraphNodes = new Set(state.lastResult.nodes);
+        const subgraphNodeIds = Array.from(subgraphNodes);
+        const centerNode = state.lastResult.center || state.centerNode;
+
+        // Use renderer-specific highlighting for Cosmos
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.highlightPathNodes === 'function') {
+                // Build node colors map in the format expected by highlightPathNodes
+                // Map<nodeId, { color: '#hex', type: 'source'|'target'|'intermediate' }>
+                const nodeColorMap = new Map();
+                subgraphNodeIds.forEach(nodeId => {
+                    const isCenter = nodeId === centerNode;
+                    nodeColorMap.set(nodeId, {
+                        color: isCenter ? '#22c55e' : '#00d4ff',
+                        type: isCenter ? 'source' : 'intermediate'
+                    });
+                });
+                renderer.highlightPathNodes(nodeColorMap);
+
+                // Highlight edges if available
+                if (state.lastResult.edges && state.lastResult.edges.length > 0) {
+                    renderer.highlightPathEdges(state.lastResult.edges);
+                }
+
+                // Fit to highlighted nodes
+                renderer.fitView(subgraphNodeIds);
+
+                showToast(`Highlighted ${subgraphNodes.size} nodes`, 'success');
+                showSubgraphDetails();
+                return;
+            }
+        }
+
+        // Fallback to Cytoscape
         const cy = getCytoscape();
         if (!cy) return;
-        
-        const subgraphNodes = new Set(state.lastResult.nodes);
-        const centerNode = state.lastResult.center || state.centerNode;
-        
+
         // Non-blocking: yield to event loop before heavy work
         setTimeout(() => {
             cy.batch(() => {
@@ -354,7 +401,7 @@ const SubgraphTools = (function() {
                     }
                 });
             });
-            
+
             // Highlight edges in chunks to avoid blocking
             if (state.lastResult.edges && state.lastResult.edges.length > 0) {
                 highlightEdgesChunked(cy, state.lastResult.edges, 0);
@@ -362,7 +409,7 @@ const SubgraphTools = (function() {
                 finishHighlight(cy, subgraphNodes);
             }
         }, 0);
-        
+
         // Show details in info panel
         showSubgraphDetails();
     }
@@ -543,12 +590,28 @@ const SubgraphTools = (function() {
     
     function isolateSubgraph() {
         if (!state.lastResult?.nodes) return;
-        
+
+        const subgraphNodes = new Set(state.lastResult.nodes);
+        const subgraphNodeIds = Array.from(subgraphNodes);
+
+        // Use renderer-specific isolation
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.showOnlyNodes === 'function') {
+                // Get path edges if available
+                const pathEdges = state.lastResult.edges || null;
+                renderer.showOnlyNodes(subgraphNodeIds, pathEdges);
+                renderer.fitView(subgraphNodeIds);
+                state.isIsolated = true;
+                showToast(`Isolated ${subgraphNodes.size} nodes`, 'success');
+                return;
+            }
+        }
+
+        // Fallback to Cytoscape
         const cy = getCytoscape();
         if (!cy) return;
-        
-        const subgraphNodes = new Set(state.lastResult.nodes);
-        
+
         // Non-blocking: yield to event loop
         setTimeout(() => {
             cy.batch(() => {
@@ -558,7 +621,7 @@ const SubgraphTools = (function() {
                         node.style('display', 'none');
                     }
                 });
-                
+
                 // Hide edges not within subgraph
                 cy.edges().forEach(edge => {
                     const src = edge.source().id();
@@ -568,9 +631,9 @@ const SubgraphTools = (function() {
                     }
                 });
             });
-            
+
             state.isIsolated = true;
-            
+
             // Fit to visible
             const visible = cy.nodes().filter(n => subgraphNodes.has(n.id()));
             if (visible.length > 0) {
@@ -579,46 +642,68 @@ const SubgraphTools = (function() {
                     duration: 500
                 });
             }
-            
+
             showToast(`Isolated ${subgraphNodes.size} nodes`, 'success');
         }, 0);
     }
     
     function showAllNodes() {
+        // Use renderer-specific show all
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.showAllNodes === 'function') {
+                renderer.showAllNodes();
+                renderer.fitView();
+                state.isIsolated = false;
+                showToast('Showing all nodes', 'success');
+                return;
+            }
+        }
+
+        // Fallback to Cytoscape
         const cy = getCytoscape();
         if (!cy) return;
-        
+
         // Non-blocking: yield to event loop
         setTimeout(() => {
             cy.batch(() => {
                 cy.nodes().style('display', 'element');
                 cy.edges().style('display', 'element');
             });
-            
+
             state.isIsolated = false;
             cy.fit(50);
-            
+
             showToast('Showing all nodes', 'success');
         }, 0);
     }
     
     function clearHighlights() {
+        // Clear Cosmos highlights
+        if (isCosmosRenderer()) {
+            const renderer = getRenderer();
+            if (renderer && typeof renderer.clearPathHighlight === 'function') {
+                renderer.clearPathHighlight();
+            }
+        }
+
+        // Clear Cytoscape highlights
         const cy = getCytoscape();
-        if (!cy) return;
-        
-        cy.batch(() => {
-            state.highlightedElements.forEach((ele, id) => {
-                const element = cy.getElementById(id);
-                if (element.length) {
-                    if (element.isNode()) {
-                        element.removeStyle('background-color border-color border-width width height z-index');
-                    } else if (element.isEdge()) {
-                        element.removeStyle('line-color line-style target-arrow-color source-arrow-color width opacity z-index');
+        if (cy) {
+            cy.batch(() => {
+                state.highlightedElements.forEach((ele, id) => {
+                    const element = cy.getElementById(id);
+                    if (element.length) {
+                        if (element.isNode()) {
+                            element.removeStyle('background-color border-color border-width width height z-index');
+                        } else if (element.isEdge()) {
+                            element.removeStyle('line-color line-style target-arrow-color source-arrow-color width opacity z-index');
+                        }
                     }
-                }
+                });
             });
-        });
-        
+        }
+
         state.highlightedElements.clear();
     }
     

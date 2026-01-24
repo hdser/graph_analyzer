@@ -18,12 +18,13 @@ const RendererSettings = {
         },
         cosmos: {
             spaceSize: 8192,
-            pointSize: 6,
+            pointSize: 4,   // Smaller base size since it doesn't scale like Cytoscape
             linkWidth: 1,
             backgroundColor: '#1a1a1a',
             curvedLinks: true,
             enableDrag: true,
             enableRightClickRepulsion: false,
+            scalePointsOnZoom: true,  // Scale nodes with zoom like Cytoscape
             simulationOnLoad: false,  // Default to static mode for stable displays
             simulation: {
                 // Core parameters - cosmos.gl defaults from documentation
@@ -43,12 +44,14 @@ const RendererSettings = {
         style: {
             nodeSizeMin: 5,
             nodeSizeMax: 30,
+            defaultNodeSize: 13,        // Match Cytoscape default
             defaultGradient: 'spectral',
             selectionColor: '#FF0000',
             highlightColor: '#FFA500',
-            defaultNodeColor: '#999999',
-            defaultEdgeColor: '#ffffff',
-            defaultEdgeOpacity: 0.5
+            defaultNodeColor: '#c8c8c8', // Default node color
+            defaultNodeOpacity: 1.0,     // Full opacity - crispy colors
+            defaultEdgeColor: '#ffffff', // White edges
+            defaultEdgeOpacity: 0.3      // Edge opacity
         }
     },
     
@@ -495,9 +498,11 @@ const RendererSettings = {
     
     /**
      * Get default node color as RGBA for cosmos.gl
+     * Includes defaultNodeOpacity if set
      */
     getDefaultNodeColorRgba() {
-        return this.hexToRgba(this.getStyleConfig().defaultNodeColor);
+        const styleConfig = this.getStyleConfig();
+        return this.hexToRgba(styleConfig.defaultNodeColor, styleConfig.defaultNodeOpacity);
     },
     
     /**
