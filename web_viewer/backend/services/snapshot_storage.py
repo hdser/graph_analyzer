@@ -839,24 +839,276 @@ class SnapshotStorage:
     def load_snapshot_layout_dict(self, base_sql_file: str, block_number: int) -> Dict[str, Dict[str, float]]:
         """
         Load layout as a dictionary (for comparison/animation).
-        
+
         Args:
             base_sql_file: Base SQL file name
             block_number: Block number
-            
+
         Returns:
             Dict mapping node_id -> {x, y}
         """
         snapshot_dir = self.get_snapshot_dir(base_sql_file, block_number)
         layout_path = snapshot_dir / "layout.parquet"
-        
+
         if not layout_path.exists():
             raise ValueError(f"Snapshot not found: {base_sql_file}_block_{block_number}")
-        
+
         layout_df = pd.read_parquet(layout_path)
         layout_df['node_id'] = layout_df['node_id'].astype(str)
-        
+
         return {
             row['node_id']: {'x': float(row['x']), 'y': float(row['y'])}
             for row in layout_df.to_dict(orient='records')
         }
+
+    # =========================================================================
+    # Diff-Based Storage Integration
+    # =========================================================================
+
+    def save_snapshot_with_diff(
+        self,
+        base_sql_file: str,
+        block_number: int,
+        edges_df: pd.DataFrame,
+        layout: Dict[str, Dict[str, float]],
+        metrics_df: Optional[pd.DataFrame],
+        metadata: SnapshotMetadata,
+        previous_block: Optional[int] = None,
+    ) -> bool:
+        """
+        Save snapshot using diff-based storage if enabled and beneficial.
+
+        Args:
+            base_sql_file: Base SQL file name
+            block_number: Block number
+            edges_df: DataFrame with source, target columns
+            layout: Position dictionary {node_id: {x, y}}
+            metrics_df: Optional metrics DataFrame
+            metadata: Snapshot metadata
+            previous_block: Previous snapshot block number for diff
+
+        Returns:
+            True if saved as diff, False if saved as full snapshot
+        """
+        # Check if diff storage is enabled
+        if not getattr(settings, 'SNAPSHOT_DIFF_ENABLED', False):
+            self.save_snapshot(base_sql_file, block_number, edges_df, layout, metrics_df, metadata)
+            return False
+
+        # Import here to avoid circular imports
+        from .diff_storage_service import DiffStorageService
+
+        diff_service = DiffStorageService(cache_dir=self.cache_dir)
+
+        # Check if we should create an anchor
+        anchor_decision = diff_service.should_create_anchor(base_sql_file, block_number)
+
+        if anchor_decision.create_anchor:
+            # Save as full snapshot (anchor)
+            self.save_snapshot(base_sql_file, block_number, edges_df, layout, metrics_df, metadata)
+
+            # Update diff index to mark as anchor
+            from ..models.snapshot_diff import DiffMetadata
+            diff_metadata = DiffMetadata(
+                snapshot_id=metadata.snapshot_id,
+                is_anchor=True,
+                block_number=block_number,
+                block_timestamp=metadata.block_timestamp,
+            )
+            diff_service._update_diff_index(base_sql_file, diff_metadata)
+
+            print(f"[SNAPSHOT] Saved as anchor: {anchor_decision.reason}")
+            return False
+
+        # Need to compute diff from previous snapshot
+        if previous_block is None:
+            # Find the most recent snapshot
+            index = self.load_index()
+            if base_sql_file in index.get("snapshots", {}):
+                entries = sorted(
+                    index["snapshots"][base_sql_file],
+                    key=lambda x: x["block_number"],
+                    reverse=True
+                )
+                for entry in entries:
+                    if entry["block_number"] < block_number:
+                        previous_block = entry["block_number"]
+                        break
+
+        if previous_block is None:
+            # No previous snapshot, save as anchor
+            self.save_snapshot(base_sql_file, block_number, edges_df, layout, metrics_df, metadata)
+            return False
+
+        try:
+            # Load previous snapshot data
+            from_nodes = self.load_snapshot_node_ids(base_sql_file, previous_block)
+            from_edges = self.load_snapshot_edge_set(base_sql_file, previous_block)
+
+            # Current snapshot data
+            to_nodes = set(layout.keys())
+            to_edges = set(zip(
+                edges_df['source'].astype(str).tolist(),
+                edges_df['target'].astype(str).tolist()
+            ))
+
+            # Build metrics dict
+            to_metrics = {}
+            if metrics_df is not None and len(metrics_df) > 0:
+                id_col = 'avatar' if 'avatar' in metrics_df.columns else metrics_df.columns[0]
+                for record in metrics_df.to_dict(orient='records'):
+                    node_id = str(record[id_col])
+                    to_metrics[node_id] = {
+                        k: self._safe_value(v)
+                        for k, v in record.items()
+                        if k != id_col
+                    }
+
+            # Compute diff
+            diff_result = diff_service.compute_diff(
+                base_sql_file=base_sql_file,
+                from_nodes=from_nodes,
+                from_edges=from_edges,
+                to_nodes=to_nodes,
+                to_edges=to_edges,
+                to_positions=layout,
+                to_metrics=to_metrics,
+                from_block=previous_block,
+                to_block=block_number,
+            )
+
+            if diff_result.should_be_anchor:
+                # Diff savings aren't worth it, save as full
+                self.save_snapshot(base_sql_file, block_number, edges_df, layout, metrics_df, metadata)
+                print(f"[SNAPSHOT] Saved as full (savings too low: {diff_result.storage_savings_percent:.1f}%)")
+                return False
+
+            # Save as diff
+            diff_result.diff.block_timestamp = metadata.block_timestamp
+            diff_service.save_as_diff(base_sql_file, diff_result.diff)
+
+            # Also save full layout for fast loading (hybrid approach)
+            # This allows quick loads while still getting storage savings on edges/metrics
+            snapshot_dir = self.get_snapshot_dir(base_sql_file, block_number)
+            snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+            layout_path = snapshot_dir / "layout.parquet"
+            layout_df = pd.DataFrame([
+                {'node_id': str(k), 'x': float(v['x']), 'y': float(v['y'])}
+                for k, v in layout.items()
+            ])
+            layout_df.to_parquet(layout_path, index=False, **self.PARQUET_CONFIG)
+
+            # Save minimal metadata
+            metadata_path = snapshot_dir / "metadata.json"
+            metadata.checksums = {}
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata.model_dump(mode='json'), f, indent=2, default=str)
+
+            # Update index
+            self.update_index(SnapshotInfo(
+                snapshot_id=metadata.snapshot_id,
+                base_sql_file=base_sql_file,
+                block_number=block_number,
+                block_timestamp=metadata.block_timestamp,
+                label=metadata.label,
+                node_count=metadata.node_count,
+                edge_count=metadata.edge_count,
+                metrics_computed=metadata.metrics_computed,
+                layout_source=LayoutSource(metadata.layout_source),
+                layout_unknown_nodes=metadata.layout_unknown_nodes,
+                created_at=metadata.created_at,
+                status=SnapshotStatus.READY,
+            ))
+
+            print(f"[SNAPSHOT] Saved as diff (savings: {diff_result.storage_savings_percent:.1f}%)")
+            return True
+
+        except Exception as e:
+            print(f"[SNAPSHOT] Diff save failed, falling back to full: {e}")
+            self.save_snapshot(base_sql_file, block_number, edges_df, layout, metrics_df, metadata)
+            return False
+
+    def load_snapshot_with_diff(
+        self,
+        base_sql_file: str,
+        block_number: int,
+    ) -> Optional[SnapshotData]:
+        """
+        Load snapshot, reconstructing from diff chain if necessary.
+
+        Args:
+            base_sql_file: Base SQL file name
+            block_number: Block number
+
+        Returns:
+            SnapshotData or None if not found
+        """
+        # First try loading as full snapshot
+        try:
+            return self.load_snapshot(base_sql_file, block_number)
+        except Exception:
+            pass
+
+        # Check if diff storage is enabled
+        if not getattr(settings, 'SNAPSHOT_DIFF_ENABLED', False):
+            return None
+
+        # Try loading from diff chain
+        from .diff_storage_service import DiffStorageService
+
+        diff_service = DiffStorageService(cache_dir=self.cache_dir)
+        chain = diff_service.get_diff_chain(base_sql_file, block_number)
+
+        if not chain:
+            return None
+
+        # Load anchor data
+        anchor_parts = chain.anchor_id.rsplit("_block_", 1)
+        if len(anchor_parts) != 2:
+            return None
+
+        anchor_block = int(anchor_parts[1])
+
+        try:
+            anchor_data = self.load_snapshot(base_sql_file, anchor_block)
+            anchor_dict = {
+                "nodes": list(anchor_data.layout.keys()),
+                "edges": [(e["source"], e["target"]) for e in anchor_data.edges],
+                "positions": anchor_data.layout,
+                "metrics": anchor_data.metrics,
+            }
+        except Exception:
+            return None
+
+        # Reconstruct from diff chain
+        reconstructed = diff_service.reconstruct_snapshot(
+            base_sql_file, block_number, anchor_dict
+        )
+
+        if not reconstructed:
+            return None
+
+        # Load metadata
+        metadata = self.load_snapshot_metadata(base_sql_file, block_number)
+        if not metadata:
+            # Create minimal metadata
+            from datetime import datetime as dt
+            metadata = SnapshotInfo(
+                snapshot_id=f"{base_sql_file}_block_{block_number}",
+                base_sql_file=base_sql_file,
+                block_number=block_number,
+                node_count=len(reconstructed.nodes),
+                edge_count=len(reconstructed.edges),
+                layout_source=LayoutSource.MASTER,
+                created_at=dt.utcnow(),
+                status=SnapshotStatus.READY,
+            )
+
+        return SnapshotData(
+            snapshot_id=reconstructed.snapshot_id,
+            edges=[{"source": e[0], "target": e[1]} for e in reconstructed.edges],
+            layout=reconstructed.positions,
+            metrics=reconstructed.metrics,
+            metadata=metadata,
+        )

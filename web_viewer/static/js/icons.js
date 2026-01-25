@@ -476,7 +476,33 @@ const Icons = {
         stop: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="10" height="10" fill="currentColor"/>
         </svg>`,
-        
+
+        // Edges icon - network connections (used for load/clear toggle)
+        edges: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="3" cy="3" r="2"/>
+            <circle cx="13" cy="3" r="2"/>
+            <circle cx="3" cy="13" r="2"/>
+            <circle cx="13" cy="13" r="2"/>
+            <path d="M5 3h6"/>
+            <path d="M3 5v6"/>
+            <path d="M13 5v6"/>
+            <path d="M5 13h6"/>
+            <path d="M5 5l6 6" stroke-dasharray="2 2"/>
+        </svg>`,
+
+        // Data table/explorer icon
+        table: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="12" height="12" rx="1"/>
+            <path d="M2 6h12"/>
+            <path d="M6 6v8"/>
+        </svg>`,
+
+        // Clock/history icon for timeline
+        clock: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="8" r="6"/>
+            <path d="M8 4v4l2.5 2.5"/>
+        </svg>`,
+
         // App logo - network pattern inspired design
         appLogo: `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- Thick C shape as a filled path -->

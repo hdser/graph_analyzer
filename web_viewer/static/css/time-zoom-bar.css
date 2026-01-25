@@ -1,0 +1,375 @@
+/**
+ * Time Zoom Bar Styles
+ * Dropdown timeline component that expands from the toolbar
+ * Matches the app's panel styling (#1a1a1a bg, #2a2a2a borders, #4A90E2 accent)
+ */
+
+/* Container - dropdown positioned below toolbar */
+#time-zoom-bar {
+    position: absolute;
+    top: 50px; /* Below toolbar */
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    max-width: 700px;
+    min-width: 500px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+    font-size: 12px;
+    color: #e0e0e0;
+    display: none; /* Hidden by default */
+    transition: opacity 0.2s ease;
+    /* GPU acceleration to prevent layout thrashing */
+    contain: layout style paint;
+    backface-visibility: hidden;
+}
+
+#time-zoom-bar.visible {
+    display: block;
+}
+
+#time-zoom-bar.collapsed .tzb-content {
+    display: none;
+}
+
+#time-zoom-bar.collapsed {
+    min-width: auto;
+    width: auto;
+}
+
+/* Header - compact horizontal layout */
+.tzb-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 14px;
+    border-bottom: 1px solid #2a2a2a;
+    background: linear-gradient(180deg, #1e1e1e 0%, #1a1a1a 100%);
+}
+
+.tzb-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #4A90E2;
+}
+
+.tzb-toggle {
+    width: 20px;
+    height: 20px;
+    background: transparent;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #707070;
+    font-size: 12px;
+    line-height: 1;
+    transition: all 0.2s ease;
+}
+
+.tzb-toggle:hover {
+    background: #2a2a2a;
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
+/* Content - compact layout */
+.tzb-content {
+    padding: 10px 14px;
+}
+
+/* Inline layout for info + track */
+.tzb-main-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+/* Info section - inline with track */
+.tzb-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 140px;
+    flex-shrink: 0;
+    /* Prevent layout shifts from text changes */
+    contain: layout;
+}
+
+.tzb-current-date {
+    color: #e0e0e0;
+    font-weight: 500;
+    font-size: 11px;
+    white-space: nowrap;
+    min-width: 130px;
+}
+
+.tzb-current-block {
+    color: #4A90E2;
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 10px;
+    min-width: 100px;
+}
+
+.tzb-position {
+    color: #707070;
+    font-size: 10px;
+}
+
+/* Track Container - grows to fill space */
+.tzb-track-container {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+}
+
+.tzb-track {
+    position: relative;
+    height: 24px;
+    background: #252525;
+    border-radius: 4px;
+    border: 1px solid #2a2a2a;
+    overflow: hidden;
+}
+
+/* Progress Bar */
+.tzb-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(74, 144, 226, 0.15), rgba(74, 144, 226, 0.25));
+    transition: width 0.15s ease-out;
+    pointer-events: none;
+    will-change: width;
+}
+
+/* Markers */
+.tzb-markers {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+}
+
+.tzb-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 8px;
+    background: rgba(112, 112, 112, 0.4);
+    border-radius: 1px;
+    pointer-events: auto;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.tzb-marker:hover {
+    background: #4A90E2;
+    height: 14px;
+}
+
+/* Scrubber */
+.tzb-scrubber {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 5px;
+    height: 16px;
+    background: #4A90E2;
+    border: 1px solid #fff;
+    border-radius: 2px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+    transition: left 0.15s ease-out;
+    will-change: left;
+}
+
+/* Hidden Range Input */
+.tzb-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    margin: 0;
+    z-index: 10;
+}
+
+/* Controls Row - compact inline layout */
+.tzb-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    /* Prevent layout shifts */
+    contain: layout;
+}
+
+/* Playback Controls */
+.tzb-playback {
+    display: flex;
+    gap: 3px;
+}
+
+/* Buttons - compact style */
+.tzb-btn {
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    color: #a0a0a0;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    transition: all 0.2s ease;
+}
+
+.tzb-btn:hover {
+    background: #2a2a2a;
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
+.tzb-btn:active {
+    transform: scale(0.95);
+}
+
+.tzb-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.tzb-play {
+    width: 28px;
+    background: rgba(74, 144, 226, 0.15);
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
+.tzb-play:hover {
+    background: #4A90E2;
+    color: #fff;
+}
+
+/* Speed & Zoom Controls - compact */
+.tzb-speed,
+.tzb-zoom {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tzb-speed label,
+.tzb-zoom label {
+    font-size: 9px;
+    color: #707070;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Select - compact style */
+.tzb-speed-select,
+.tzb-zoom-select {
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    color: #a0a0a0;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.tzb-speed-select:hover,
+.tzb-zoom-select:hover {
+    border-color: #4a4a4a;
+    color: #e0e0e0;
+}
+
+.tzb-speed-select:focus,
+.tzb-zoom-select:focus {
+    border-color: #4A90E2;
+    color: #e0e0e0;
+}
+
+/* Preload Status - inline with fixed width to prevent layout shifts */
+.tzb-preload-status {
+    display: flex;
+    align-items: center;
+    min-width: 60px;
+    justify-content: flex-end;
+}
+
+.tzb-preload-text {
+    font-size: 8px;
+    color: #505050;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Animation for loading */
+@keyframes tzb-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+.tzb-preload-text.loading {
+    animation: tzb-pulse 1.5s ease-in-out infinite;
+    color: #4A90E2;
+}
+
+/* Timeline toggle button in toolbar - active state */
+.toolbar-btn.timeline-toggle.active {
+    background: rgba(74, 144, 226, 0.15);
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
+/* Responsive */
+@media (max-width: 700px) {
+    #time-zoom-bar {
+        width: calc(100% - 20px);
+        min-width: 300px;
+        left: 10px;
+        right: 10px;
+        transform: none;
+    }
+
+    .tzb-main-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .tzb-info {
+        flex-direction: row;
+        justify-content: space-between;
+        min-width: auto;
+    }
+
+    .tzb-controls {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+}

@@ -238,17 +238,134 @@ const AutoReload = {
 
     /**
      * Refresh graph data after auto-reload
+     * Supports both Cytoscape and cosmos.gl renderers
      */
     async refreshGraphData(data) {
         try {
-            if (data.nodes_added > 0 || data.nodes_removed > 0) {
-                await this.fullGraphRefresh();
+            const hasStructuralChanges = data.nodes_added > 0 || data.nodes_removed > 0;
+            const rendererType = State.rendererType;
+
+            if (hasStructuralChanges) {
+                // Use incremental refresh with position preservation
+                if (rendererType === 'cosmos' && State.renderer) {
+                    await this.incrementalCosmosRefresh(data);
+                } else {
+                    await this.fullGraphRefresh();
+                }
             } else {
                 await this.incrementalMetricsUpdate();
             }
         } catch (error) {
             console.error('Auto-reload refresh error:', error);
             Toast.error('Failed to refresh graph display');
+        }
+    },
+
+    /**
+     * Incremental refresh for cosmos.gl renderer
+     * Uses server-side incremental reload to get positioned new nodes
+     */
+    async incrementalCosmosRefresh(changeData) {
+        Toast.info('Updating graph incrementally...');
+
+        const renderer = State.renderer;
+        const graphId = State.currentGraph;
+
+        if (!renderer || !graphId) {
+            console.warn('[AUTO-RELOAD] No renderer or graph ID, falling back to full refresh');
+            await this.fullGraphRefresh();
+            return;
+        }
+
+        try {
+            // Get the current loaded SQL files from the config
+            const config = await API.getState();
+            const sqlFiles = config.loaded_graphs || [graphId];
+
+            // Call incremental reload endpoint to get changes with computed positions
+            const response = await fetch(`/api/incremental-reload/${graphId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sql_files: sqlFiles,
+                    preserve_layout: true
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Incremental reload failed: ${response.status}`);
+            }
+
+            const changes = await response.json();
+
+            if (changes.status !== 'success') {
+                console.warn('[AUTO-RELOAD] Incremental reload returned:', changes);
+                await this.fullGraphRefresh();
+                return;
+            }
+
+            // Handle removals first
+            if (changes.removed_nodes && changes.removed_nodes.length > 0) {
+                console.log('[AUTO-RELOAD] Removing', changes.removed_nodes.length, 'nodes');
+                if (typeof renderer.removeNodes === 'function') {
+                    renderer.removeNodes(changes.removed_nodes);
+                } else {
+                    // Fallback for renderers without removeNodes method
+                    console.warn('[AUTO-RELOAD] Renderer does not support removeNodes');
+                }
+            }
+
+            // Handle additions with pre-computed positions
+            if (changes.added_nodes && changes.added_nodes.length > 0) {
+                console.log('[AUTO-RELOAD] Adding', changes.added_nodes.length, 'nodes');
+
+                // Fetch full node data for new nodes
+                const nodesResponse = await API.getGraphElements(graphId, 'nodes_only');
+                const allNodes = nodesResponse.elements;
+
+                // Filter to only new nodes
+                const addedSet = new Set(changes.added_nodes);
+                const newNodes = allNodes.filter(n => addedSet.has(n.data.id));
+
+                // Apply positions from server
+                const positions = changes.new_positions || {};
+                newNodes.forEach(node => {
+                    const pos = positions[node.data.id];
+                    if (pos) {
+                        node.position = { x: pos.x, y: pos.y };
+                        node.data.x = pos.x;
+                        node.data.y = pos.y;
+                    }
+                });
+
+                if (typeof renderer.addNodesPreserving === 'function') {
+                    renderer.addNodesPreserving(newNodes, positions);
+                } else if (typeof renderer.addNodes === 'function') {
+                    renderer.addNodes(newNodes);
+                    // If renderer has importPositions, use it for the new nodes
+                    if (typeof renderer.importPositions === 'function') {
+                        renderer.importPositions(positions, true);
+                    }
+                } else {
+                    console.warn('[AUTO-RELOAD] Renderer does not support addNodes');
+                }
+            }
+
+            // Update counts
+            if (DOMCache.nodeCount) {
+                DOMCache.nodeCount.textContent = `${changes.total_nodes} nodes`;
+            }
+            if (DOMCache.edgeCount) {
+                DOMCache.edgeCount.textContent = `${changes.total_edges} edges`;
+            }
+
+            console.log(`[AUTO-RELOAD] Incremental refresh: +${changes.added_nodes?.length || 0}/-${changes.removed_nodes?.length || 0} nodes`);
+            Toast.success(`Graph updated: +${changes.added_nodes?.length || 0}/-${changes.removed_nodes?.length || 0} nodes`);
+
+        } catch (error) {
+            console.error('[AUTO-RELOAD] Incremental cosmos refresh error:', error);
+            // Fallback to full refresh
+            await this.fullGraphRefresh();
         }
     },
 

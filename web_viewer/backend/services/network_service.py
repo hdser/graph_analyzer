@@ -26,6 +26,8 @@ from .cache_service import CacheService
 from .layout_service import LayoutService
 from .auto_reload_service import AutoReloadManager
 from .api_properties_service import api_properties_service
+from .snapshot_storage import SnapshotStorage
+from .unified_layout_service import UnifiedLayoutService
 from ..utils.helpers import clean_numpy_types
 
 from engines.metrics import MetricEngine, METRIC_CATEGORIES, METRIC_PRESETS
@@ -66,6 +68,13 @@ class NetworkService:
         self.layout_service = LayoutService()
         self.auto_reload_manager = AutoReloadManager()
         self.auto_reload_manager.set_network_service(self)
+
+        # Unified layout service for consistent positions across live/snapshots
+        self._snapshot_storage = SnapshotStorage()
+        self.unified_layout = UnifiedLayoutService(
+            cache_service=self.cache_service,
+            snapshot_storage=self._snapshot_storage
+        )
         
         # Anomaly detection (if available)
         self.anomaly_engine = AnomalyEngine() if HAS_ANOMALY else None
@@ -1194,6 +1203,245 @@ class NetworkService:
             "incoming_count": len(incoming_set),
             "outgoing_count": len(outgoing_set),
             "source_nodes": node_ids,
+        }
+
+    # =========================================================================
+    # Unified Layout Integration Methods
+    # =========================================================================
+
+    def get_base_sql_file(self, graph_id: str) -> Optional[str]:
+        """
+        Get the base SQL file name for a graph.
+
+        This is used by the unified layout service to identify the
+        master layout file.
+
+        Args:
+            graph_id: Graph identifier
+
+        Returns:
+            Base SQL file name or None
+        """
+        # For now, graph_id is the base SQL file name
+        # In the future, this could be a lookup in case of aliases
+        if graph_id in self.graphs:
+            return graph_id
+        return None
+
+    def update_layout_from_frontend(
+        self,
+        graph_id: str,
+        positions: Dict[str, Dict[str, float]],
+        source: str = "cosmos"
+    ) -> int:
+        """
+        Update layout positions from frontend (cosmos.gl auto-sync).
+
+        This method:
+        1. Updates the unified layout service's live positions
+        2. Updates the in-memory layout for this graph
+        3. Optionally persists to layout cache
+
+        Args:
+            graph_id: Graph identifier
+            positions: Position updates {node_id: {x, y}}
+            source: Source identifier
+
+        Returns:
+            Number of positions updated
+        """
+        if not positions:
+            return 0
+
+        # Update unified layout service
+        count = self.unified_layout.update_live_positions(
+            graph_id=graph_id,
+            positions=positions,
+            source=source
+        )
+
+        # Update in-memory layout
+        if graph_id not in self.layouts:
+            self.layouts[graph_id] = {}
+
+        for node_id, pos in positions.items():
+            self.layouts[graph_id][node_id] = {
+                'x': float(pos['x']),
+                'y': float(pos['y'])
+            }
+
+        # Persist to cache if configured
+        if settings.UNIFIED_LAYOUT_PERSIST_ON_SYNC and len(positions) >= 100:
+            self.cache_service.save_layout_cache(graph_id, self.layouts[graph_id])
+            print(f"[NETWORK] Persisted {len(self.layouts[graph_id])} positions to cache")
+
+        return count
+
+    def sync_layout_to_master(self, graph_id: str) -> Dict[str, Any]:
+        """
+        Sync current layout to master layout for snapshots.
+
+        Args:
+            graph_id: Graph identifier
+
+        Returns:
+            Sync status dict
+        """
+        base_sql_file = self.get_base_sql_file(graph_id)
+        if not base_sql_file:
+            return {"status": "skipped", "reason": "no_base_sql_file"}
+
+        count = self.unified_layout.sync_to_master(
+            graph_id=graph_id,
+            base_sql_file=base_sql_file
+        )
+
+        return {
+            "status": "success",
+            "graph_id": graph_id,
+            "synced_count": count,
+            "base_sql_file": base_sql_file
+        }
+
+    # =========================================================================
+    # Incremental Reload Methods (Phase 4)
+    # =========================================================================
+
+    def load_network_incremental(
+        self,
+        graph_id: str,
+        sql_files: List[str],
+        preserve_layout: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Incrementally update network, preserving existing node positions.
+
+        This method is used by auto-reload to efficiently update the graph
+        when new nodes appear, without losing existing layout positions.
+
+        Args:
+            graph_id: Graph identifier to update
+            sql_files: SQL files to load data from
+            preserve_layout: Whether to preserve existing positions
+
+        Returns:
+            Dict with added_nodes, removed_nodes, new_positions,
+            total_nodes, total_edges
+        """
+        # Get current state
+        current_nodes = set()
+        current_edges_set = set()
+        current_layout = {}
+
+        if graph_id in self.graphs:
+            G = self.graphs[graph_id]
+            current_nodes = set(str(n) for n in G.nodes())
+            current_edges_set = set((str(u), str(v)) for u, v in G.edges())
+            current_layout = self.layouts.get(graph_id, {})
+
+        # Load new data
+        new_edge_layers = self.load_edge_layers_from_sql(sql_files)
+
+        if graph_id not in new_edge_layers:
+            return {
+                "status": "error",
+                "message": f"No data for {graph_id}",
+                "added_nodes": [],
+                "removed_nodes": [],
+                "new_positions": {},
+                "total_nodes": len(current_nodes),
+                "total_edges": len(current_edges_set)
+            }
+
+        new_edges_df = new_edge_layers[graph_id]
+        new_nodes = set(new_edges_df['source'].astype(str).unique()) | set(new_edges_df['target'].astype(str).unique())
+
+        # Compute diff
+        added_nodes = new_nodes - current_nodes
+        removed_nodes = current_nodes - new_nodes
+
+        # Get positions for new nodes
+        new_positions = {}
+        if added_nodes and preserve_layout:
+            # Get edges involving new nodes
+            new_edges = [
+                (str(row['source']), str(row['target']))
+                for _, row in new_edges_df.iterrows()
+                if str(row['source']) in added_nodes or str(row['target']) in added_nodes
+            ]
+
+            new_positions = self.unified_layout.resolve_new_nodes(
+                graph_id=graph_id,
+                new_nodes=added_nodes,
+                edges=new_edges,
+                existing_positions=current_layout
+            )
+
+        # Update graph
+        G = nx.DiGraph()
+        for _, row in new_edges_df.iterrows():
+            source = str(row['source'])
+            target = str(row['target'])
+            G.add_edge(source, target)
+
+        # Update layout with new positions
+        updated_layout = dict(current_layout)
+        updated_layout.update(new_positions)
+
+        # Remove positions for removed nodes
+        for node_id in removed_nodes:
+            updated_layout.pop(node_id, None)
+
+        # Update state
+        self.graphs[graph_id] = G
+        self.edge_layers[graph_id] = new_edges_df
+        self.layouts[graph_id] = updated_layout
+
+        # Save updated layout to cache
+        if new_positions or removed_nodes:
+            self.cache_service.save_layout_cache(graph_id, updated_layout)
+
+        return {
+            "status": "success",
+            "added_nodes": list(added_nodes),
+            "removed_nodes": list(removed_nodes),
+            "new_positions": new_positions,
+            "total_nodes": len(new_nodes),
+            "total_edges": len(new_edges_df)
+        }
+
+    def get_incremental_changes(self, graph_id: str) -> Dict[str, Any]:
+        """
+        Get information about incremental changes for a graph.
+
+        This is called by the frontend to check if there are pending
+        changes that need to be applied incrementally.
+
+        Args:
+            graph_id: Graph identifier
+
+        Returns:
+            Dict with change information
+        """
+        if graph_id not in self.graphs:
+            return {
+                "status": "no_data",
+                "graph_id": graph_id
+            }
+
+        G = self.graphs[graph_id]
+        layout = self.layouts.get(graph_id, {})
+        sync_status = self.unified_layout.get_sync_status(graph_id)
+
+        return {
+            "status": "ok",
+            "graph_id": graph_id,
+            "node_count": G.number_of_nodes(),
+            "edge_count": G.number_of_edges(),
+            "layout_node_count": len(layout),
+            "has_live_positions": self.unified_layout.has_live_positions(graph_id),
+            "live_position_count": self.unified_layout.get_live_position_count(graph_id),
+            "last_sync": sync_status.get("last_sync").isoformat() if sync_status and sync_status.get("last_sync") else None
         }
 
 

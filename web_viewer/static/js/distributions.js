@@ -251,42 +251,70 @@ const DistributionsComm = {
 
     /**
      * Locate and focus on a specific node
+     * Works with both cosmos.gl (State.renderer) and Cytoscape (State.cy)
      */
     locateNode(nodeId) {
-        if (!State.cy) return;
-        
-        const node = State.cy.getElementById(nodeId);
-        if (!node || node.empty()) {
-            console.warn(`[DistributionsComm] Node not found: ${nodeId}`);
-            updateStatus(`Node ${nodeId} not found`, 'error');
+        const renderer = State.renderer;
+        const cy = State.cy;
+
+        // Try cosmos.gl renderer first
+        if (renderer && typeof renderer.zoomToNode === 'function') {
+            // Check if node exists in renderer
+            const nodeData = renderer.nodeDataMap ? renderer.nodeDataMap.get(nodeId) : null;
+            if (!nodeData) {
+                console.warn(`[DistributionsComm] Node not found in cosmos.gl: ${nodeId}`);
+                updateStatus(`Node ${nodeId} not found`, 'error');
+                return;
+            }
+
+            // Zoom to the node
+            renderer.zoomToNode(nodeId, 2, 500);
+
+            // Select the node if renderer supports selection
+            if (typeof renderer.selectNodes === 'function') {
+                renderer.selectNodes([nodeId]);
+            }
+
+            console.log(`[DistributionsComm] Located node via cosmos.gl: ${nodeId}`);
+        } else if (cy) {
+            // Fallback to Cytoscape
+            const node = cy.getElementById(nodeId);
+            if (!node || node.empty()) {
+                console.warn(`[DistributionsComm] Node not found: ${nodeId}`);
+                updateStatus(`Node ${nodeId} not found`, 'error');
+                return;
+            }
+
+            // Clear current selection
+            cy.elements().unselect();
+
+            // Select the target node
+            node.select();
+
+            // Fit view to the node with some padding
+            cy.animate({
+                fit: {
+                    eles: node,
+                    padding: 150
+                },
+                duration: 500,
+                easing: 'ease-out-cubic'
+            });
+
+            // Flash the node for visibility (single node, so we can use flash)
+            this._flashNode(node);
+
+            console.log(`[DistributionsComm] Located node via Cytoscape: ${nodeId}`);
+        } else {
+            console.warn(`[DistributionsComm] No renderer available to locate node: ${nodeId}`);
+            updateStatus('No graph renderer available', 'error');
             return;
         }
-        
-        // Clear current selection
-        State.cy.elements().unselect();
-        
-        // Select the target node
-        node.select();
-        
-        // Fit view to the node with some padding
-        State.cy.animate({
-            fit: {
-                eles: node,
-                padding: 150
-            },
-            duration: 500,
-            easing: 'ease-out-cubic'
-        });
-        
-        // Flash the node for visibility (single node, so we can use flash)
-        this._flashNode(node);
-        
-        // Update info panel
+
+        // Update info panel (works for both renderers)
         if (typeof InfoPanel !== 'undefined' && InfoPanel.show) {
             InfoPanel.show(nodeId);
         }
-        
-        console.log(`[DistributionsComm] Located node: ${nodeId}`);
     },
 
     /**

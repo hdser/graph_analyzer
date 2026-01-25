@@ -62,6 +62,18 @@ class SaveLayoutRequest(BaseModel):
     save_as_base: bool = False  # Whether to also save as base layout
 
 
+class SyncLayoutRequest(BaseModel):
+    """Request to sync layout positions from cosmos.gl to server."""
+    positions: dict  # {node_id: {x: float, y: float}, ...}
+    source: str = "cosmos"  # Source identifier (cosmos, manual, etc.)
+
+
+class IncrementalReloadRequest(BaseModel):
+    """Request for incremental network reload."""
+    sql_files: List[str]
+    preserve_layout: bool = True
+
+
 @router.get("/config")
 async def get_config():
     """Get application configuration including available SQL files and features."""
@@ -463,11 +475,187 @@ async def save_layout_positions(graph_id: str, request: SaveLayoutRequest):
             "saved_as_base": request.save_as_base,
             "base_file": base_path
         }
-        
+
     except Exception as e:
         print(f"[LAYOUT] Save error: {e}")
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/layout/sync/{graph_id}")
+async def sync_layout_positions(graph_id: str, request: SyncLayoutRequest):
+    """
+    Sync layout positions from cosmos.gl to server (auto-sync).
+
+    This endpoint is called automatically by cosmos.gl when:
+    - Simulation pauses
+    - User manually drags nodes
+    - Periodic sync timer fires
+
+    Positions are merged into:
+    1. Live position cache (unified layout service)
+    2. In-memory layout for the graph
+    3. Optionally persisted to layout cache
+
+    Args:
+        graph_id: Graph identifier
+        request: Contains positions dict and source identifier
+
+    Returns:
+        Sync result with count of positions synced
+    """
+    if not request.positions:
+        return {"synced": 0, "status": "empty"}
+
+    try:
+        # Update via unified layout service
+        count = network_service.update_layout_from_frontend(
+            graph_id=graph_id,
+            positions=request.positions,
+            source=request.source
+        )
+
+        return {
+            "status": "success",
+            "synced": count,
+            "graph_id": graph_id,
+            "source": request.source
+        }
+
+    except Exception as e:
+        print(f"[LAYOUT] Sync error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/layout/sync-to-master/{graph_id}")
+async def sync_layout_to_master(graph_id: str):
+    """
+    Sync current layout to master layout for snapshots.
+
+    This ensures that cosmos.gl positions are used when creating
+    new snapshots, maintaining visual consistency between live
+    view and historical snapshots.
+
+    Args:
+        graph_id: Graph identifier
+
+    Returns:
+        Sync status with count of positions synced
+    """
+    if graph_id not in network_service.graphs:
+        raise HTTPException(status_code=404, detail=f"Graph not found: {graph_id}")
+
+    try:
+        result = network_service.sync_layout_to_master(graph_id)
+        return result
+
+    except Exception as e:
+        print(f"[LAYOUT] Master sync error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/layout/unified/{graph_id}")
+async def get_unified_layout(
+    graph_id: str,
+    node_ids: Optional[str] = Query(None, description="Comma-separated node IDs")
+):
+    """
+    Get positions from unified layout cache.
+
+    This endpoint returns positions resolved from all sources:
+    - Live positions (from cosmos.gl)
+    - Cached layout positions
+    - Master layout positions
+
+    Args:
+        graph_id: Graph identifier
+        node_ids: Optional comma-separated list of node IDs
+
+    Returns:
+        Positions dict and metadata
+    """
+    try:
+        if node_ids:
+            node_id_list = [n.strip() for n in node_ids.split(',') if n.strip()]
+            positions = network_service.unified_layout.get_positions_batch(
+                graph_id=graph_id,
+                node_ids=node_id_list
+            )
+        else:
+            positions = network_service.unified_layout.get_all_positions(graph_id)
+
+        return {
+            "graph_id": graph_id,
+            "positions": positions,
+            "count": len(positions),
+            "has_live_positions": network_service.unified_layout.has_live_positions(graph_id)
+        }
+
+    except Exception as e:
+        print(f"[LAYOUT] Unified layout error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# INCREMENTAL RELOAD ENDPOINTS (Phase 4)
+# =============================================================================
+
+@router.post("/incremental-reload/{graph_id}")
+async def incremental_reload(graph_id: str, request: IncrementalReloadRequest):
+    """
+    Incrementally reload graph, returning only changes.
+
+    This endpoint is used by auto-reload to efficiently update the graph
+    when new nodes appear, without losing existing layout positions.
+
+    Args:
+        graph_id: Graph identifier
+        request: SQL files to reload from, preserve_layout flag
+
+    Returns:
+        Dict with added_nodes, removed_nodes, new_positions
+    """
+    try:
+        result = network_service.load_network_incremental(
+            graph_id=graph_id,
+            sql_files=request.sql_files,
+            preserve_layout=request.preserve_layout
+        )
+        return result
+
+    except Exception as e:
+        print(f"[RELOAD] Incremental reload error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/incremental-changes/{graph_id}")
+async def get_incremental_changes(graph_id: str):
+    """
+    Get information about incremental changes for a graph.
+
+    This is used by the frontend to check sync status and
+    live position availability.
+
+    Args:
+        graph_id: Graph identifier
+
+    Returns:
+        Change information and sync status
+    """
+    try:
+        return network_service.get_incremental_changes(graph_id)
+
+    except Exception as e:
+        print(f"[RELOAD] Get changes error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

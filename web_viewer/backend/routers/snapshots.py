@@ -485,18 +485,92 @@ async def get_animation_data(
 ):
     """
     Get all snapshots for animation with compact layout data.
-    
+
     Returns minimal data needed for animation:
     - snapshots: List of snapshot metadata with layouts
     """
     from fastapi.responses import JSONResponse
-    
+
     try:
         animation_data = await asyncio.to_thread(
             service.get_animation_data, base_sql_file
         )
-        
+
         return JSONResponse(content=animation_data)
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# =============================================================================
+# Preload Endpoints (for TimeZoomBar)
+# =============================================================================
+
+@router.get("/preload/{base_sql_file}")
+async def preload_snapshots(
+    base_sql_file: str,
+    snapshot_ids: str = Query(..., description="Comma-separated snapshot IDs to preload"),
+    service: SnapshotService = Depends(get_snapshot_service)
+):
+    """
+    Preload multiple snapshots for timeline navigation.
+
+    Used by TimeZoomBar to preload adjacent snapshots for smooth scrubbing.
+    Returns lightweight data (layout positions + metadata) for each snapshot.
+
+    Args:
+        base_sql_file: The base SQL file name
+        snapshot_ids: Comma-separated list of snapshot IDs to preload
+
+    Returns:
+        preloaded: Dict mapping snapshot_id to preloaded data
+        failed: List of snapshot_ids that failed to preload
+    """
+    from fastapi.responses import JSONResponse
+
+    ids = [s.strip() for s in snapshot_ids.split(",") if s.strip()]
+
+    if len(ids) > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 10 snapshots can be preloaded at once"
+        )
+
+    preloaded = {}
+    failed = []
+
+    for snapshot_id in ids:
+        try:
+            _, block_number = parse_snapshot_id(snapshot_id)
+
+            # Load layout (positions) - lightweight
+            positions = await asyncio.to_thread(
+                service.storage.load_snapshot_layout_dict,
+                base_sql_file,
+                block_number
+            )
+
+            # Load metadata
+            metadata = await asyncio.to_thread(
+                service.storage.load_snapshot_metadata,
+                base_sql_file,
+                block_number
+            )
+
+            preloaded[snapshot_id] = {
+                "positions": positions,
+                "node_count": len(positions),
+                "edge_count": metadata.edge_count if metadata else 0,
+                "block_number": block_number,
+                "block_timestamp": metadata.block_timestamp.isoformat() if metadata and metadata.block_timestamp else None,
+                "label": metadata.label if metadata else None
+            }
+
+        except Exception as e:
+            failed.append({"snapshot_id": snapshot_id, "error": str(e)})
+
+    return JSONResponse(content={
+        "preloaded": preloaded,
+        "failed": failed,
+        "preload_count": len(preloaded)
+    })
