@@ -7,7 +7,12 @@ const Snapshots = (function() {
     let currentBaseSqlFile = null;
     let currentSnapshotId = null;
     let batchEventSource = null;
-    
+    let edgesWereLoaded = false; // Track if edges were loaded for auto-loading on snapshot switch
+    let cachedEdgesMap = null; // Map of edge_id -> edge object for incremental updates
+    let currentEdgeIds = new Set(); // Set of currently displayed edge IDs
+    let currentSnapshotNodeIds = new Set(); // Node IDs in current snapshot (for edge filtering) - normalized to lowercase
+    let nodeIdMapping = new Map(); // Map from lowercase node ID to original case node ID
+
     // Comparison state
     let isComparing = false;
     let comparisonData = null;
@@ -35,11 +40,71 @@ const Snapshots = (function() {
         cacheElements();
         bindEvents();
         updateStatusIndicator(false);
-        
+
         // Listen for graph load to update current SQL file
         document.addEventListener('graphLoaded', handleGraphLoaded);
-        
+
+        // Initialize TimeZoomBar if available
+        initTimeZoomBar();
+
         console.log('[Snapshots] Initialized');
+    }
+
+    /**
+     * Initialize TimeZoomBar integration
+     */
+    function initTimeZoomBar() {
+        if (typeof TimeZoomBar === 'undefined') {
+            console.log('[Snapshots] TimeZoomBar not available');
+            return;
+        }
+
+        if (!TimeZoomBar.init('time-zoom-bar')) {
+            console.warn('[Snapshots] TimeZoomBar initialization failed');
+            return;
+        }
+
+        // Listen for TimeZoomBar events
+        document.addEventListener('timeZoomBarLoadSnapshot', async (e) => {
+            const { snapshotId, snapshot, preloadedData, isPlayback } = e.detail;
+            console.log('[Snapshots] TimeZoomBar requested snapshot:', snapshotId, isPlayback ? '(playback)' : '');
+
+            // Check if edges were loaded before switching snapshots
+            const hadEdges = edgesWereLoaded || checkEdgesLoaded();
+
+            // Load the snapshot
+            if (elements.dropdown) {
+                elements.dropdown.value = snapshotId;
+            }
+
+            // Common options for timeline navigation - preserve camera and minimize UI updates
+            const timelineOptions = {
+                suppressToast: true,
+                autoLoadEdges: false,
+                preserveCamera: true, // Don't reset camera position
+                suppressProgress: true, // Don't show loading progress (causes flicker)
+                preserveStyles: true // Re-apply node coloring/sizing after load
+            };
+
+            // If edges were loaded, use incremental edge update instead of full reload
+            if (hadEdges && cachedEdgesMap) {
+                // Load nodes only, then do incremental edge update
+                await handleLoadSnapshot(timelineOptions);
+                // Now do incremental edge update
+                await updateEdgesIncremental(snapshotId);
+            } else {
+                // No edges loaded yet, just load nodes
+                await handleLoadSnapshot(timelineOptions);
+            }
+        });
+
+        document.addEventListener('timeZoomBarPositionChange', (e) => {
+            const { index, snapshot, total } = e.detail;
+            // Update any related UI elements
+            console.log('[Snapshots] TimeZoomBar position:', index + 1, '/', total);
+        });
+
+        console.log('[Snapshots] TimeZoomBar integration ready');
     }
     
     /**
@@ -140,15 +205,20 @@ const Snapshots = (function() {
             console.log('[Snapshots] No SQL file selected');
             return;
         }
-        
+
         try {
             console.log('[Snapshots] Loading snapshots for:', currentBaseSqlFile);
             const result = await SnapshotAPI.listSnapshots(currentBaseSqlFile);
-            
+
             State.setAvailableSnapshots(result.snapshots || []);
             populateDropdown(result.snapshots || []);
             populateComparisonDropdowns(result.snapshots || []);
-            
+
+            // Update TimeZoomBar if available
+            if (typeof TimeZoomBar !== 'undefined' && result.snapshots && result.snapshots.length > 0) {
+                TimeZoomBar.loadSnapshots(currentBaseSqlFile, result.snapshots);
+            }
+
             console.log(`[Snapshots] Loaded ${result.snapshots?.length || 0} snapshots`);
         } catch (error) {
             console.error('[Snapshots] Failed to load snapshots:', error);
@@ -211,99 +281,273 @@ const Snapshots = (function() {
     /**
      * Handle loading selected snapshot
      * Loads nodes only - user must click "Load Edges" for edges
+     * Supports both Cytoscape and cosmos.gl renderers
+     * @param {Object} options - Optional settings
+     * @param {boolean} options.suppressToast - If true, don't show toast notification
+     * @param {boolean} options.autoLoadEdges - If true, automatically load edges after nodes
      */
-    async function handleLoadSnapshot() {
+    async function handleLoadSnapshot(options = {}) {
+        const {
+            suppressToast = false,
+            autoLoadEdges = false,
+            preserveCamera = false,
+            suppressProgress = false,
+            preserveStyles = false
+        } = options;
         const snapshotId = elements.dropdown?.value;
         if (!snapshotId) {
             Toast.show('Please select a snapshot', 'warning');
             return;
         }
-        
-        setLoading(true);
-        showProgress(true, 0, 'Loading snapshot...');
-        
+
+        // Save camera state before loading if preserveCamera is true
+        let savedCameraState = null;
+        let savedStyleState = null;
+        const renderer = State.renderer;
+        const cy = State.cy;
+        const rendererType = State.rendererType || 'cytoscape';
+
+        if (preserveCamera) {
+            if (rendererType === 'cosmos' && renderer && typeof renderer.getCameraState === 'function') {
+                savedCameraState = renderer.getCameraState();
+                console.log('[Snapshots] Saved cosmos camera state:', savedCameraState);
+            } else if (cy) {
+                savedCameraState = {
+                    zoom: cy.zoom(),
+                    pan: cy.pan()
+                };
+                console.log('[Snapshots] Saved cytoscape camera state:', savedCameraState);
+            }
+        }
+
+        // Save style state before loading if preserveStyles is true
+        if (preserveStyles) {
+            if (rendererType === 'cosmos' && renderer) {
+                savedStyleState = {
+                    colorMetric: renderer._currentColorMetric,
+                    colorScale: renderer._currentColorScale,
+                    sizeMetric: renderer._currentSizeMetric,
+                    sizeScale: renderer._currentSizeScale ? { ...renderer._currentSizeScale } : null,
+                    edgeStyle: renderer._edgeStyle ? { ...renderer._edgeStyle } : null
+                };
+                console.log('[Snapshots] Saved cosmos style state:', savedStyleState);
+            }
+            // For Cytoscape, styles are applied via stylesheets and persist
+        }
+
+        if (!suppressProgress) {
+            setLoading(true);
+            showProgress(true, 0, 'Loading snapshot...');
+        }
+
         try {
             // Load nodes only (fast)
-            showProgress(true, 30, 'Loading nodes...');
+            if (!suppressProgress) showProgress(true, 30, 'Loading nodes...');
             console.log('[Snapshots] Loading nodes for:', snapshotId);
-            
+
             const nodesData = await SnapshotAPI.getSnapshotNodes(snapshotId);
-            
+
             console.log('[Snapshots] Received nodes:', {
                 nodeCount: nodesData.elements?.length || 0,
-                metadata: nodesData.metadata
+                metadata: nodesData.metadata,
+                samplePosition: nodesData.elements?.[0]?.position
             });
-            
+
             if (!nodesData.elements || nodesData.elements.length === 0) {
                 throw new Error('No nodes in snapshot data');
             }
-            
-            // Render nodes in Cytoscape
-            showProgress(true, 60, 'Rendering nodes...');
-            const cy = State.cy;
-            if (!cy) {
-                throw new Error('Cytoscape not initialized');
+
+            // Render nodes using appropriate renderer
+            if (!suppressProgress) showProgress(true, 60, 'Rendering nodes...');
+
+            const rendererType = State.rendererType || 'cytoscape';
+            let nodeCount = 0;
+
+            if (rendererType === 'cosmos' && State.renderer) {
+                // Use cosmos.gl renderer - convert Cytoscape format to cosmos format with positions
+                const renderer = State.renderer;
+
+                // Convert Cytoscape elements to cosmos format, preserving positions
+                // IMPORTANT: cosmos-adapter.js setData() expects x/y at node top level, not in data
+                const cosmosNodes = nodesData.elements.map(el => {
+                    const node = {
+                        id: el.data.id,
+                        data: {
+                            id: el.data.id,
+                            ...el.data
+                        }
+                    };
+                    // Include position at TOP LEVEL for cosmos.gl to use
+                    if (el.position) {
+                        node.x = el.position.x;
+                        node.y = el.position.y;
+                    }
+                    return node;
+                });
+
+                // Check if we have positions (at top level)
+                const hasPositions = cosmosNodes.some(n =>
+                    n.x !== undefined && n.y !== undefined
+                );
+
+                if (hasPositions && typeof renderer.setDataWithPositions === 'function') {
+                    // Use setDataWithPositions to preserve snapshot layout
+                    // Skip fitView if we're preserving camera position
+                    renderer.setDataWithPositions(cosmosNodes, [], {
+                        pauseSimulation: true,
+                        fitView: !preserveCamera
+                    });
+                    console.log('[Snapshots] Nodes rendered via cosmos.gl with positions');
+                } else {
+                    renderer.setData(cosmosNodes, [], { skipFitView: preserveCamera });
+                    console.log('[Snapshots] Nodes rendered via cosmos.gl (no positions)');
+                }
+
+                nodeCount = cosmosNodes.length;
+                // Clear currentEdgeIds since setData/setDataWithPositions cleared all edges
+                // (but keep cachedEdgesMap for timeline navigation)
+                currentEdgeIds = new Set();
+
+                // Restore camera state if we saved it, otherwise fit view
+                if (savedCameraState && typeof renderer.setCameraState === 'function') {
+                    setTimeout(() => {
+                        renderer.setCameraState(savedCameraState);
+                        console.log('[Snapshots] Restored cosmos camera state');
+                    }, 50);
+                } else if (!preserveCamera) {
+                    // Only fit view if we're not preserving camera
+                    setTimeout(() => renderer.fitView(), 300);
+                }
+
+                // Restore styles IMMEDIATELY (no setTimeout to prevent flicker)
+                if (savedStyleState) {
+                    // Re-apply node coloring if it was active
+                    if (savedStyleState.colorMetric && savedStyleState.colorScale) {
+                        const values = renderer._getMetricValues(savedStyleState.colorMetric);
+                        if (Object.keys(values).length > 0) {
+                            renderer.colorNodesByMetric(savedStyleState.colorMetric, values, savedStyleState.colorScale);
+                            console.log('[Snapshots] Restored cosmos node coloring:', savedStyleState.colorMetric);
+                        }
+                    }
+                    // Re-apply node sizing if it was active
+                    if (savedStyleState.sizeMetric && savedStyleState.sizeScale) {
+                        const values = renderer._getMetricValues(savedStyleState.sizeMetric);
+                        if (Object.keys(values).length > 0) {
+                            renderer.sizeNodesByMetric(savedStyleState.sizeMetric, values,
+                                savedStyleState.sizeScale.min, savedStyleState.sizeScale.max);
+                            console.log('[Snapshots] Restored cosmos node sizing:', savedStyleState.sizeMetric);
+                        }
+                    }
+                    // Re-apply edge style if it was set
+                    if (savedStyleState.edgeStyle) {
+                        renderer.setEdgeStyle(savedStyleState.edgeStyle);
+                        console.log('[Snapshots] Restored cosmos edge style');
+                    }
+                }
+
+            } else if (State.cy) {
+                // Use Cytoscape
+                const cy = State.cy;
+                cy.batch(() => {
+                    cy.elements().remove();
+                    cy.add(nodesData.elements);
+                });
+
+                // Restore camera state if we saved it, otherwise fit view
+                if (savedCameraState) {
+                    cy.zoom(savedCameraState.zoom);
+                    cy.pan(savedCameraState.pan);
+                    console.log('[Snapshots] Restored cytoscape camera state');
+                } else if (!preserveCamera) {
+                    cy.fit();
+                }
+
+                nodeCount = cy.nodes().length;
+                console.log('[Snapshots] Nodes rendered via Cytoscape:', nodeCount);
+                // Clear currentEdgeIds since cy.elements().remove() cleared all edges
+                // (but keep cachedEdgesMap for timeline navigation)
+                currentEdgeIds = new Set();
+            } else {
+                throw new Error('No renderer initialized');
             }
-            
-            cy.batch(() => {
-                cy.elements().remove();
-                cy.add(nodesData.elements);
-            });
-            
-            // Fit view
-            cy.fit();
-            
-            console.log('[Snapshots] Nodes rendered:', cy.nodes().length);
-            
+
             // Store current snapshot ID for edge loading
             currentSnapshotId = snapshotId;
-            
+
+            // Store node IDs for edge filtering during timeline navigation
+            // Normalize to lowercase for consistent matching (addresses may have different casing)
+            // Also build a mapping from normalized to original IDs for edge creation
+            currentSnapshotNodeIds = new Set();
+            nodeIdMapping = new Map();
+            for (const el of nodesData.elements) {
+                const originalId = String(el.data.id);
+                const normalizedId = originalId.toLowerCase();
+                currentSnapshotNodeIds.add(normalizedId);
+                nodeIdMapping.set(normalizedId, originalId);
+            }
+            console.log('[Snapshots] Stored', currentSnapshotNodeIds.size, 'node IDs for edge filtering (normalized to lowercase)');
+
             // Store metadata
             const snapshotMetadata = nodesData.metadata;
-            
+
             // Update state
             State.setSnapshotActive(true, snapshotMetadata);
             updateStatusIndicator(true, snapshotMetadata);
-            
+
             // Update counts - show pending edge count
             const nodeCountEl = document.getElementById('node-count');
             const edgeCountEl = document.getElementById('edge-count');
             if (nodeCountEl) {
-                nodeCountEl.textContent = `${cy.nodes().length.toLocaleString()} nodes`;
+                nodeCountEl.textContent = `${nodeCount.toLocaleString()} nodes`;
             }
             if (edgeCountEl) {
                 edgeCountEl.textContent = `0 / ${(snapshotMetadata?.edge_count || 0).toLocaleString()} edges`;
             }
-            
-            // Update Load Edges button
-            const loadEdgesBtn = document.getElementById('load-edges-btn');
-            if (loadEdgesBtn) {
-                loadEdgesBtn.textContent = 'Load Edges';
-                loadEdgesBtn.disabled = false;
+
+            // Update edges toggle button state
+            const edgesToggleBtn = document.getElementById('edges-toggle-btn');
+            if (edgesToggleBtn) {
+                edgesToggleBtn.disabled = false;
+                edgesToggleBtn.classList.remove('edges-loaded');
+                edgesToggleBtn.title = 'Load edges';
             }
-            
+
             // Populate metric dropdowns
             if (typeof Metrics !== 'undefined' && Metrics.populateDropdowns) {
                 Metrics.populateDropdowns(nodesData.elements, snapshotMetadata?.metrics_computed);
             }
-            
-            showProgress(true, 100, 'Nodes loaded!');
-            
+
+            if (!suppressProgress) showProgress(true, 100, 'Nodes loaded!');
+
             const label = snapshotMetadata?.label || `Block ${snapshotMetadata?.block_number}`;
-            Toast.show(`Loaded snapshot: ${label} (click "Load Edges" for edges)`, 'success');
-            
+
+            // Auto-load edges if requested (e.g., when switching snapshots with edges previously loaded)
+            if (autoLoadEdges) {
+                console.log('[Snapshots] Auto-loading edges for snapshot:', snapshotId);
+                if (!suppressProgress) showProgress(true, 100, 'Loading edges...');
+                await loadSnapshotEdges();
+                if (!suppressToast) {
+                    Toast.show(`Loaded snapshot: ${label}`, 'success');
+                }
+            } else if (!suppressToast) {
+                Toast.show(`Loaded snapshot: ${label} (click "Load Edges" for edges)`, 'success');
+            }
+
         } catch (error) {
             console.error('[Snapshots] Failed to load snapshot:', error);
-            Toast.show('Failed to load snapshot: ' + error.message, 'error');
+            if (!suppressToast) Toast.show('Failed to load snapshot: ' + error.message, 'error');
         } finally {
-            setLoading(false);
-            setTimeout(() => showProgress(false), 1000);
+            if (!suppressProgress) {
+                setLoading(false);
+                setTimeout(() => showProgress(false), 1000);
+            }
         }
     }
     
     /**
      * Load snapshot edges incrementally in batches
      * Called when user clicks "Load Edges" button
+     * Supports both Cytoscape and cosmos.gl renderers
      */
     async function loadSnapshotEdges() {
         // Disable edge loading during animation - use the checkbox to include edges
@@ -311,84 +555,485 @@ const Snapshots = (function() {
             Toast.show('Use "Include Edges" checkbox before starting animation', 'info');
             return true; // Handled
         }
-        
+
         if (!currentSnapshotId) {
             console.log('[Snapshots] No snapshot loaded, delegating to GraphLoader');
             return false; // Let GraphLoader handle it
         }
-        
+
+        const rendererType = State.rendererType || 'cytoscape';
+        const renderer = State.renderer;
         const cy = State.cy;
-        if (!cy) return false;
-        
-        // If edges already loaded, clear them
-        if (cy.edges().length > 0) {
-            clearSnapshotEdges();
+
+        // Check which renderer to use
+        if (rendererType === 'cosmos' && renderer) {
+            return await loadSnapshotEdgesCosmos(renderer);
+        } else if (cy) {
+            return await loadSnapshotEdgesCytoscape(cy);
+        }
+
+        return false;
+    }
+
+    /**
+     * Load snapshot edges for cosmos.gl renderer
+     */
+    async function loadSnapshotEdgesCosmos(renderer) {
+        // Check if edges already loaded
+        const stats = renderer.getStats();
+        if (stats.edgeCount > 0) {
+            // Clear edges
+            renderer.clearEdges();
+            edgesWereLoaded = false; // Track that edges are now cleared
+            cachedEdgesMap = null; // Clear edge cache
+            currentEdgeIds = new Set();
+            const edgeCountEl = document.getElementById('edge-count');
+            if (edgeCountEl) {
+                edgeCountEl.textContent = '0 edges';
+            }
+            const edgesToggleBtn = document.getElementById('edges-toggle-btn');
+            if (edgesToggleBtn) {
+                edgesToggleBtn.classList.remove('edges-loaded');
+                edgesToggleBtn.title = 'Load edges';
+            }
+            Toast.show('Edges cleared', 'info');
             return true;
         }
-        
+
         const BATCH_SIZE = 50000;
         let offset = 0;
         let totalLoaded = 0;
         let hasMore = true;
-        
-        const loadEdgesBtn = document.getElementById('load-edges-btn');
-        if (loadEdgesBtn) {
-            loadEdgesBtn.disabled = true;
-            loadEdgesBtn.textContent = 'Loading...';
+
+        const edgesToggleBtn = document.getElementById('edges-toggle-btn');
+        if (edgesToggleBtn) {
+            edgesToggleBtn.disabled = true;
         }
-        
-        // CRITICAL: Disable pointer events during bulk add to prevent WebGL crash
+
+        // CRITICAL: Disable pointer events during bulk add
         const container = document.getElementById('cy');
         container.style.pointerEvents = 'none';
-        
-        console.log('[Snapshots] Starting edge loading for:', currentSnapshotId);
-        
+
+        console.log('[Snapshots] Starting cosmos.gl edge loading for:', currentSnapshotId);
+
+        // Initialize edge cache for incremental updates
+        cachedEdgesMap = new Map();
+        currentEdgeIds = new Set();
+
+        // Get the latest snapshot to load ALL possible edges for caching
+        // This ensures we have edges for timeline navigation to later snapshots
+        const availableSnapshots = State.getAvailableSnapshots();
+        let latestSnapshotId = currentSnapshotId;
+        if (availableSnapshots && availableSnapshots.length > 0) {
+            const sorted = [...availableSnapshots].sort((a, b) => b.block_number - a.block_number);
+            latestSnapshotId = sorted[0].snapshot_id;
+            console.log('[Snapshots] Loading edges from latest snapshot for cache:', latestSnapshotId);
+        }
+
         try {
-            while (hasMore) {
-                const result = await SnapshotAPI.getSnapshotEdges(currentSnapshotId, offset, BATCH_SIZE);
-                
-                if (result.edges && result.edges.length > 0) {
-                    // Add edges in batch
-                    cy.batch(() => {
-                        cy.add(result.edges);
-                    });
-                    
-                    totalLoaded += result.edges.length;
-                    offset = totalLoaded;
-                    
-                    // Update edge count display
+            // First, load ALL edges from the latest snapshot into cache
+            let cacheOffset = 0;
+            let cacheHasMore = true;
+            while (cacheHasMore) {
+                const cacheResult = await SnapshotAPI.getSnapshotEdges(latestSnapshotId, cacheOffset, BATCH_SIZE);
+                if (cacheResult.edges && cacheResult.edges.length > 0) {
+                    for (const e of cacheResult.edges) {
+                        // Store edge with original source/target for cosmos compatibility
+                        // But create a normalized key for matching
+                        const originalSource = String(e.data.source);
+                        const originalTarget = String(e.data.target);
+                        const normalizedKey = `${originalSource.toLowerCase()}->${originalTarget.toLowerCase()}`;
+                        const edge = {
+                            source: originalSource,
+                            target: originalTarget,
+                            id: e.data.id || `${originalSource}->${originalTarget}`,
+                            ...e.data,
+                            _normalizedKey: normalizedKey // Store normalized key for matching
+                        };
+                        cachedEdgesMap.set(normalizedKey, edge); // Key by normalized value
+                    }
+                    cacheOffset += cacheResult.edges.length;
+                    cacheHasMore = cacheResult.has_more;
+
                     const edgeCountEl = document.getElementById('edge-count');
                     if (edgeCountEl) {
-                        edgeCountEl.textContent = `${totalLoaded.toLocaleString()} / ${result.total.toLocaleString()} edges`;
+                        edgeCountEl.textContent = `Caching ${cacheOffset.toLocaleString()} / ${cacheResult.total.toLocaleString()} edges...`;
                     }
-                    
-                    // Update progress in edges progress element
-                    const edgesProgress = document.getElementById('edges-progress');
-                    if (edgesProgress) {
-                        edgesProgress.textContent = `${totalLoaded.toLocaleString()} / ${result.total.toLocaleString()}`;
-                    }
-                    
-                    hasMore = result.has_more;
-                    
-                    console.log('[Snapshots] Loaded edges:', totalLoaded, '/', result.total);
                 } else {
-                    hasMore = false;
+                    cacheHasMore = false;
                 }
             }
-            
+            console.log('[Snapshots] Cached', cachedEdgesMap.size, 'edges from latest snapshot');
+
+            // Now load edges for the current snapshot (only those whose nodes exist)
+            // Use currentSnapshotNodeIds which was populated during snapshot load
+            if (!currentSnapshotNodeIds || currentSnapshotNodeIds.size === 0) {
+                console.warn('[Snapshots] No node IDs available for edge filtering, falling back to renderer');
+                // Fallback: try to get from renderer (normalize to lowercase)
+                if (renderer.nodeDataMap) {
+                    currentSnapshotNodeIds = new Set(
+                        Array.from(renderer.nodeDataMap.keys()).map(id => String(id).toLowerCase())
+                    );
+                }
+            }
+
+            console.log('[Snapshots] Filtering edges for', currentSnapshotNodeIds.size, 'nodes');
+
+            // Debug: log some sample node IDs and edge source/targets
+            const sampleNodes = Array.from(currentSnapshotNodeIds).slice(0, 5);
+            const sampleEdges = Array.from(cachedEdgesMap.values()).slice(0, 5);
+            console.log('[Snapshots] Sample node IDs (normalized):', sampleNodes);
+            console.log('[Snapshots] Sample edges:', sampleEdges.map(e => ({
+                source: e.source,
+                target: e.target,
+                sourceNorm: e.source.toLowerCase(),
+                targetNorm: e.target.toLowerCase()
+            })));
+
+            // Filter cached edges to only those valid for current snapshot
+            // Use normalized (lowercase) comparison for matching
+            const edgesToAdd = [];
+            let debugMisses = 0;
+            for (const [normalizedKey, edge] of cachedEdgesMap) {
+                const sourceNorm = String(edge.source).toLowerCase();
+                const targetNorm = String(edge.target).toLowerCase();
+                const hasSource = currentSnapshotNodeIds.has(sourceNorm);
+                const hasTarget = currentSnapshotNodeIds.has(targetNorm);
+                if (hasSource && hasTarget) {
+                    edgesToAdd.push(edge);
+                    currentEdgeIds.add(normalizedKey);
+                } else if (debugMisses < 5) {
+                    console.log('[Snapshots] Edge filtered out:', edge.source, '->', edge.target,
+                        'sourceNorm:', sourceNorm, 'hasSource:', hasSource,
+                        'targetNorm:', targetNorm, 'hasTarget:', hasTarget);
+                    debugMisses++;
+                }
+            }
+            console.log('[Snapshots] Edges filtered: kept', edgesToAdd.length, 'of', cachedEdgesMap.size);
+
+            // Add filtered edges to renderer
+            if (edgesToAdd.length > 0) {
+                renderer.addEdges(edgesToAdd);
+            }
+            totalLoaded = edgesToAdd.length;
+
             // Final update
             const edgeCountEl = document.getElementById('edge-count');
             if (edgeCountEl) {
                 edgeCountEl.textContent = `${totalLoaded.toLocaleString()} edges`;
             }
-            
+
+            // Track that edges are loaded for auto-loading on snapshot switch
+            edgesWereLoaded = true;
+
+            console.log('[Snapshots] Displayed', totalLoaded, 'edges (cached', cachedEdgesMap.size, 'total)');
+            Toast.show(`Loaded ${totalLoaded.toLocaleString()} edges`, 'success');
+
+        } catch (error) {
+            console.error('[Snapshots] Edge loading error:', error);
+            Toast.show('Edge loading failed: ' + error.message, 'error');
+        } finally {
+            setTimeout(() => {
+                container.style.pointerEvents = 'auto';
+            }, 500);
+
+            if (edgesToggleBtn) {
+                edgesToggleBtn.disabled = false;
+                const stats = renderer.getStats();
+                if (stats.edgeCount > 0) {
+                    edgesToggleBtn.classList.add('edges-loaded');
+                    edgesToggleBtn.title = 'Clear edges';
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Update edges incrementally when switching snapshots via TimeZoomBar.
+     * Uses cached edges to add/remove only the differences.
+     * Supports both cosmos.gl and Cytoscape renderers.
+     * @param {string} snapshotId - The new snapshot ID
+     */
+    async function updateEdgesIncremental(snapshotId) {
+        const rendererType = State.rendererType || 'cytoscape';
+        const renderer = State.renderer;
+        const cy = State.cy;
+
+        // Check if we have cached edges
+        if (!cachedEdgesMap || cachedEdgesMap.size === 0) {
+            console.log('[Snapshots] No cached edges, skipping incremental update');
+            return;
+        }
+
+        // Check if we have a valid renderer
+        const hasCosmos = rendererType === 'cosmos' && renderer;
+        const hasCytoscape = rendererType === 'cytoscape' && cy;
+
+        if (!hasCosmos && !hasCytoscape) {
+            console.log('[Snapshots] No valid renderer for incremental edge update');
+            return;
+        }
+
+        // Use currentSnapshotNodeIds which was populated during snapshot load
+        // This is more reliable than querying the renderer which may have timing issues
+        if (!currentSnapshotNodeIds || currentSnapshotNodeIds.size === 0) {
+            console.warn('[Snapshots] No node IDs available for edge filtering');
+            return;
+        }
+
+        // Debug: log some sample node IDs and edge source/targets
+        const sampleNodes = Array.from(currentSnapshotNodeIds).slice(0, 3);
+        const sampleEdges = Array.from(cachedEdgesMap.values()).slice(0, 3);
+        console.log('[Snapshots] Incremental edge update:', {
+            currentNodes: currentSnapshotNodeIds.size,
+            cachedEdges: cachedEdgesMap.size,
+            currentEdgeIds: currentEdgeIds.size,
+            sampleNodes: sampleNodes,
+            sampleEdgeSources: sampleEdges.map(e => e.source?.toLowerCase())
+        });
+
+        // Determine which edges should be visible (both endpoints exist in current snapshot)
+        // Use normalized (lowercase) comparison for matching
+        const targetEdgeIds = new Set();
+        let debugMisses = 0;
+        for (const [normalizedKey, edge] of cachedEdgesMap) {
+            const sourceNorm = String(edge.source).toLowerCase();
+            const targetNorm = String(edge.target).toLowerCase();
+            const hasSource = currentSnapshotNodeIds.has(sourceNorm);
+            const hasTarget = currentSnapshotNodeIds.has(targetNorm);
+            if (hasSource && hasTarget) {
+                targetEdgeIds.add(normalizedKey);
+            } else if (debugMisses < 3) {
+                console.log('[Snapshots] Edge miss:', sourceNorm, '->', targetNorm,
+                    'hasSource:', hasSource, 'hasTarget:', hasTarget);
+                debugMisses++;
+            }
+        }
+        console.log('[Snapshots] Target edges after filtering:', targetEdgeIds.size);
+
+        // Calculate diff
+        const edgesToAdd = [];
+        const edgesToRemove = [];
+
+        // Edges to add (in target but not in current)
+        for (const edgeId of targetEdgeIds) {
+            if (!currentEdgeIds.has(edgeId)) {
+                edgesToAdd.push(cachedEdgesMap.get(edgeId));
+            }
+        }
+
+        // Edges to remove (in current but not in target)
+        // For Cytoscape, we need to generate the same ID format we used when adding
+        for (const normalizedKey of currentEdgeIds) {
+            if (!targetEdgeIds.has(normalizedKey)) {
+                const edge = cachedEdgesMap.get(normalizedKey);
+                if (edge) {
+                    if (hasCytoscape) {
+                        // Generate the same ID format used when adding to Cytoscape
+                        const sourceNorm = String(edge.source).toLowerCase();
+                        const targetNorm = String(edge.target).toLowerCase();
+                        const sourceId = nodeIdMapping.get(sourceNorm) || edge.source;
+                        const targetId = nodeIdMapping.get(targetNorm) || edge.target;
+                        edgesToRemove.push(`${sourceId}->${targetId}`);
+                    } else {
+                        // For cosmos, use original edge ID
+                        edgesToRemove.push(edge.id);
+                    }
+                }
+            }
+        }
+
+        console.log('[Snapshots] Edge diff:', {
+            toAdd: edgesToAdd.length,
+            toRemove: edgesToRemove.length,
+            renderer: hasCosmos ? 'cosmos' : 'cytoscape'
+        });
+
+        // Apply changes based on renderer type
+        if (hasCosmos) {
+            // Cosmos.gl renderer
+            if (edgesToRemove.length > 0) {
+                renderer.removeEdges(edgesToRemove);
+            }
+            if (edgesToAdd.length > 0) {
+                renderer.addEdges(edgesToAdd);
+            }
+        } else if (hasCytoscape) {
+            // Cytoscape renderer
+            cy.batch(() => {
+                // Remove edges
+                for (const edgeId of edgesToRemove) {
+                    const edge = cy.getElementById(edgeId);
+                    if (edge.length > 0) {
+                        edge.remove();
+                    }
+                }
+                // Add edges - convert to Cytoscape format
+                // IMPORTANT: Use nodeIdMapping to get the correct node IDs as they exist in Cytoscape
+                const cyEdges = edgesToAdd.map(edge => {
+                    const sourceNorm = String(edge.source).toLowerCase();
+                    const targetNorm = String(edge.target).toLowerCase();
+                    // Get the original node IDs from the mapping (as they exist in Cytoscape)
+                    const sourceId = nodeIdMapping.get(sourceNorm) || edge.source;
+                    const targetId = nodeIdMapping.get(targetNorm) || edge.target;
+                    return {
+                        group: 'edges',
+                        data: {
+                            id: `${sourceId}->${targetId}`, // Use consistent ID format
+                            source: sourceId,
+                            target: targetId
+                        }
+                    };
+                });
+                if (cyEdges.length > 0) {
+                    cy.add(cyEdges);
+                }
+            });
+        }
+
+        // Update current edge IDs
+        currentEdgeIds = targetEdgeIds;
+
+        // Update edge count display
+        const edgeCountEl = document.getElementById('edge-count');
+        if (edgeCountEl) {
+            edgeCountEl.textContent = `${targetEdgeIds.size.toLocaleString()} edges`;
+        }
+
+        // Update edges toggle button state
+        const edgesToggleBtn = document.getElementById('edges-toggle-btn');
+        if (edgesToggleBtn) {
+            if (targetEdgeIds.size > 0) {
+                edgesToggleBtn.classList.add('edges-loaded');
+                edgesToggleBtn.title = 'Clear edges';
+            } else {
+                edgesToggleBtn.classList.remove('edges-loaded');
+                edgesToggleBtn.title = 'Load edges';
+            }
+        }
+    }
+
+    /**
+     * Load snapshot edges for Cytoscape renderer
+     * Also caches edges for incremental updates during timeline navigation
+     */
+    async function loadSnapshotEdgesCytoscape(cy) {
+        // If edges already loaded, clear them
+        if (cy.edges().length > 0) {
+            clearSnapshotEdges();
+            edgesWereLoaded = false; // Track that edges are now cleared
+            return true;
+        }
+
+        const BATCH_SIZE = 50000;
+        let totalLoaded = 0;
+
+        const edgesToggleBtn = document.getElementById('edges-toggle-btn');
+        if (edgesToggleBtn) {
+            edgesToggleBtn.disabled = true;
+        }
+
+        // CRITICAL: Disable pointer events during bulk add
+        const container = document.getElementById('cy');
+        container.style.pointerEvents = 'none';
+
+        console.log('[Snapshots] Starting Cytoscape edge loading for:', currentSnapshotId);
+
+        // Initialize edge cache for incremental updates (like cosmos does)
+        cachedEdgesMap = new Map();
+        currentEdgeIds = new Set();
+
+        // Get the latest snapshot to load ALL possible edges for caching
+        const availableSnapshots = State.getAvailableSnapshots();
+        let latestSnapshotId = currentSnapshotId;
+        if (availableSnapshots && availableSnapshots.length > 0) {
+            const sorted = [...availableSnapshots].sort((a, b) => b.block_number - a.block_number);
+            latestSnapshotId = sorted[0].snapshot_id;
+            console.log('[Snapshots] Loading edges from latest snapshot for Cytoscape cache:', latestSnapshotId);
+        }
+
+        try {
+            // First, load ALL edges from the latest snapshot into cache
+            let cacheOffset = 0;
+            let cacheHasMore = true;
+            while (cacheHasMore) {
+                const cacheResult = await SnapshotAPI.getSnapshotEdges(latestSnapshotId, cacheOffset, BATCH_SIZE);
+                if (cacheResult.edges && cacheResult.edges.length > 0) {
+                    for (const e of cacheResult.edges) {
+                        // Store edge with original source/target
+                        const originalSource = String(e.data.source);
+                        const originalTarget = String(e.data.target);
+                        const normalizedKey = `${originalSource.toLowerCase()}->${originalTarget.toLowerCase()}`;
+                        const edge = {
+                            source: originalSource,
+                            target: originalTarget,
+                            id: e.data.id || `${originalSource}->${originalTarget}`,
+                            ...e.data,
+                            _normalizedKey: normalizedKey
+                        };
+                        cachedEdgesMap.set(normalizedKey, edge);
+                    }
+                    cacheOffset += cacheResult.edges.length;
+                    cacheHasMore = cacheResult.has_more;
+
+                    const edgeCountEl = document.getElementById('edge-count');
+                    if (edgeCountEl) {
+                        edgeCountEl.textContent = `Caching ${cacheOffset.toLocaleString()} / ${cacheResult.total.toLocaleString()} edges...`;
+                    }
+                } else {
+                    cacheHasMore = false;
+                }
+            }
+            console.log('[Snapshots] Cached', cachedEdgesMap.size, 'edges from latest snapshot for Cytoscape');
+
+            // Now filter and add edges for current snapshot
+            // Use nodeIdMapping to get the correct node IDs as they exist in Cytoscape
+            const edgesToAdd = [];
+            for (const [normalizedKey, edge] of cachedEdgesMap) {
+                const sourceNorm = String(edge.source).toLowerCase();
+                const targetNorm = String(edge.target).toLowerCase();
+                if (currentSnapshotNodeIds.has(sourceNorm) && currentSnapshotNodeIds.has(targetNorm)) {
+                    // Get the original node IDs from the mapping
+                    const sourceId = nodeIdMapping.get(sourceNorm) || edge.source;
+                    const targetId = nodeIdMapping.get(targetNorm) || edge.target;
+                    edgesToAdd.push({
+                        group: 'edges',
+                        data: {
+                            id: `${sourceId}->${targetId}`, // Use consistent ID format
+                            source: sourceId,
+                            target: targetId
+                        }
+                    });
+                    currentEdgeIds.add(normalizedKey);
+                }
+            }
+
+            // Add filtered edges to Cytoscape
+            cy.batch(() => {
+                cy.add(edgesToAdd);
+            });
+            totalLoaded = edgesToAdd.length;
+
+            console.log('[Snapshots] Cytoscape edges loaded:', totalLoaded, 'displayed,', cachedEdgesMap.size, 'cached');
+
+            // Final update
+            const edgeCountEl = document.getElementById('edge-count');
+            if (edgeCountEl) {
+                edgeCountEl.textContent = `${totalLoaded.toLocaleString()} edges`;
+            }
+
             const edgesProgress = document.getElementById('edges-progress');
             if (edgesProgress) {
                 edgesProgress.textContent = '';
             }
-            
-            Toast.show(`Loaded ${totalLoaded.toLocaleString()} edges`, 'success');
-            
+
+            // Track that edges are loaded for auto-loading on snapshot switch
+            edgesWereLoaded = true;
+
+            Toast.show(`Loaded ${totalLoaded.toLocaleString()} edges (${cachedEdgesMap.size} cached for timeline)`, 'success');
+
         } catch (error) {
             console.error('[Snapshots] Edge loading error:', error);
             Toast.show('Edge loading failed: ' + error.message, 'error');
@@ -397,13 +1042,16 @@ const Snapshots = (function() {
             setTimeout(() => {
                 container.style.pointerEvents = 'auto';
             }, 500);
-            
-            if (loadEdgesBtn) {
-                loadEdgesBtn.disabled = false;
-                loadEdgesBtn.textContent = cy.edges().length > 0 ? 'Clear Edges' : 'Load Edges';
+
+            if (edgesToggleBtn) {
+                edgesToggleBtn.disabled = false;
+                if (cy.edges().length > 0) {
+                    edgesToggleBtn.classList.add('edges-loaded');
+                    edgesToggleBtn.title = 'Clear edges';
+                }
             }
         }
-        
+
         return true;
     }
     
@@ -411,45 +1059,83 @@ const Snapshots = (function() {
      * Clear edges from snapshot view
      */
     function clearSnapshotEdges() {
+        const rendererType = State.rendererType || 'cytoscape';
+        const renderer = State.renderer;
         const cy = State.cy;
-        if (!cy) return;
-        
-        const edges = cy.edges();
-        const edgeCount = edges.length;
-        
-        if (edgeCount === 0) {
-            Toast.show('No edges to clear', 'info');
-            return;
-        }
-        
+
+        let edgeCount = 0;
+
         // Disable pointer events during removal
         const container = document.getElementById('cy');
-        container.style.pointerEvents = 'none';
-        
-        // Remove all edges in one operation
-        edges.remove();
-        
+        if (container) container.style.pointerEvents = 'none';
+
+        if (rendererType === 'cosmos' && renderer) {
+            // Cosmos.gl - clear all edges
+            // Use renderer's actual edge count (not snapshots.js tracking which can be out of sync)
+            const stats = typeof renderer.getStats === 'function' ? renderer.getStats() : { edgeCount: 0 };
+            edgeCount = stats.edgeCount || currentEdgeIds.size || 0;
+            console.log('[Snapshots] clearSnapshotEdges - cosmos, renderer edges:', stats.edgeCount, 'tracked:', currentEdgeIds.size);
+            if (edgeCount === 0) {
+                Toast.show('No edges to clear', 'info');
+                if (container) container.style.pointerEvents = 'auto';
+                return;
+            }
+            // Use clearAllEdges for complete edge removal (preferred method)
+            if (typeof renderer.clearAllEdges === 'function') {
+                console.log('[Snapshots] Calling renderer.clearAllEdges()');
+                renderer.clearAllEdges();
+            } else if (typeof renderer.removeEdges === 'function') {
+                // Fallback to removeEdges with all edge IDs
+                console.log('[Snapshots] Falling back to renderer.removeEdges()');
+                const edgeIdsToRemove = Array.from(currentEdgeIds);
+                renderer.removeEdges(edgeIdsToRemove);
+            } else {
+                console.warn('[Snapshots] No edge clearing method available');
+            }
+        } else if (cy) {
+            // Cytoscape - remove all edges
+            const edges = cy.edges();
+            edgeCount = edges.length;
+            if (edgeCount === 0) {
+                Toast.show('No edges to clear', 'info');
+                if (container) container.style.pointerEvents = 'auto';
+                return;
+            }
+            edges.remove();
+        } else {
+            Toast.show('No renderer available', 'error');
+            if (container) container.style.pointerEvents = 'auto';
+            return;
+        }
+
+        // Track that edges are cleared
+        edgesWereLoaded = false;
+        cachedEdgesMap = null;
+        currentEdgeIds = new Set();
+
         // Re-enable after a delay
         setTimeout(() => {
-            container.style.pointerEvents = 'auto';
+            if (container) container.style.pointerEvents = 'auto';
         }, 300);
-        
+
         const edgeCountEl = document.getElementById('edge-count');
         const snapshotInfo = State.getCurrentSnapshot();
         if (edgeCountEl) {
             edgeCountEl.textContent = `0 / ${(snapshotInfo?.edge_count || 0).toLocaleString()} edges`;
         }
-        
+
         const edgesProgress = document.getElementById('edges-progress');
         if (edgesProgress) {
             edgesProgress.textContent = '';
         }
-        
-        const loadEdgesBtn = document.getElementById('load-edges-btn');
-        if (loadEdgesBtn) {
-            loadEdgesBtn.textContent = 'Load Edges';
+
+        // Update edges toggle button state
+        const edgesToggleBtn = document.getElementById('edges-toggle-btn');
+        if (edgesToggleBtn) {
+            edgesToggleBtn.classList.remove('edges-loaded');
+            edgesToggleBtn.title = 'Load edges';
         }
-        
+
         Toast.show(`Cleared ${edgeCount.toLocaleString()} edges`, 'success');
     }
     
@@ -598,7 +1284,7 @@ const Snapshots = (function() {
             
             // Stop any running animation first
             stopAnimation();
-            
+
             // Clear animation state
             animationNodeSets = [];
             animationFrames = [];
@@ -608,10 +1294,13 @@ const Snapshots = (function() {
             animationLoadTimestamp = 0;
             animationAllNodes = null;
             animationAllEdges = null;
+            edgesWereLoaded = false; // Reset edges tracking
+            cachedEdgesMap = null; // Clear edge cache
+            currentEdgeIds = new Set();
             enableAnimationControls(false);
             
             // Re-enable Load Edges button
-            const loadEdgesBtn = document.getElementById('load-edges-btn');
+            const loadEdgesBtn = document.getElementById('edges-toggle-btn');
             if (loadEdgesBtn) {
                 loadEdgesBtn.disabled = false;
                 loadEdgesBtn.title = 'Load edges for this snapshot';
@@ -641,6 +1330,11 @@ const Snapshots = (function() {
             
             // Clear snapshot state
             currentSnapshotId = null;
+            currentSnapshotNodeIds = new Set(); // Clear node IDs
+            nodeIdMapping = new Map(); // Clear node ID mapping
+            cachedEdgesMap = null; // Clear edge cache
+            currentEdgeIds = new Set();
+            edgesWereLoaded = false;
             State.setSnapshotActive(false);
             updateStatusIndicator(false);
             
@@ -926,7 +1620,25 @@ const Snapshots = (function() {
             elements.createContent.style.pointerEvents = showReturn ? 'none' : 'auto';
         }
     }
-    
+
+    /**
+     * Check if edges are currently loaded in the renderer
+     * @returns {boolean} True if edges are loaded
+     */
+    function checkEdgesLoaded() {
+        const rendererType = State.rendererType || 'cytoscape';
+        const renderer = State.renderer;
+        const cy = State.cy;
+
+        if (rendererType === 'cosmos' && renderer) {
+            const stats = renderer.getStats();
+            return stats.edgeCount > 0;
+        } else if (cy) {
+            return cy.edges().length > 0;
+        }
+        return false;
+    }
+
     /**
      * Set loading state
      */
@@ -1985,7 +2697,7 @@ const Snapshots = (function() {
             .forEach(ctrl => { if (ctrl) ctrl.disabled = !enabled; });
         
         // Disable Load Edges button during animation (re-enable when animation ends)
-        const loadEdgesBtn = document.getElementById('load-edges-btn');
+        const loadEdgesBtn = document.getElementById('edges-toggle-btn');
         if (loadEdgesBtn) {
             loadEdgesBtn.disabled = enabled;
             loadEdgesBtn.title = enabled ? 'Disabled during animation' : 'Load edges for this snapshot';
@@ -2009,7 +2721,7 @@ const Snapshots = (function() {
         enableAnimationControls(false);
         
         // Re-enable Load Edges button
-        const loadEdgesBtn = document.getElementById('load-edges-btn');
+        const loadEdgesBtn = document.getElementById('edges-toggle-btn');
         if (loadEdgesBtn) {
             loadEdgesBtn.disabled = false;
             loadEdgesBtn.title = 'Load edges for this snapshot';

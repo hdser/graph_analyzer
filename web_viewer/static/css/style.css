@@ -3362,6 +3362,26 @@ input[type="range"]::-moz-range-thumb:hover {
     color: #000;
 }
 
+/* Edges toggle button states */
+.toolbar-btn.edges-loaded {
+    background: rgba(74, 144, 226, 0.2);
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
+.toolbar-btn.edges-loaded:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+/* Timeline toggle button active state */
+.toolbar-btn.timeline-toggle.active {
+    background: rgba(74, 144, 226, 0.2);
+    border-color: #4A90E2;
+    color: #4A90E2;
+}
+
 /* =============================================================================
    RENDERER SWITCH BUTTON - Toolbar
    ============================================================================= */

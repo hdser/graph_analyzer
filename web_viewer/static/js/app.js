@@ -1042,15 +1042,35 @@ function setupEventListeners() {
     });
     document.getElementById('clear-search-btn')?.addEventListener('click', () => Search.clear());
 
-    // Edge loader - check if snapshot is active first
-    document.getElementById('load-edges-btn')?.addEventListener('click', async () => {
-        // If Snapshots module is available and handles it, we're done
-        if (typeof Snapshots !== 'undefined' && Snapshots.loadEdges) {
-            const handled = await Snapshots.loadEdges();
-            if (handled) return;
+    // Edge toggle button - load/clear edges
+    document.getElementById('edges-toggle-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('edges-toggle-btn');
+        const isLoaded = btn?.classList.contains('edges-loaded');
+
+        if (isLoaded) {
+            // Clear edges
+            if (typeof Snapshots !== 'undefined' && Snapshots.clearEdges) {
+                Snapshots.clearEdges();
+            }
+            btn?.classList.remove('edges-loaded');
+            if (btn) btn.title = 'Load edges';
+        } else {
+            // Load edges
+            if (typeof Snapshots !== 'undefined' && Snapshots.loadEdges) {
+                const handled = await Snapshots.loadEdges();
+                if (handled) {
+                    btn?.classList.add('edges-loaded');
+                    if (btn) btn.title = 'Clear edges';
+                    return;
+                }
+            }
+            // Otherwise use normal graph loader
+            if (State.currentGraph) {
+                GraphLoader.loadEdgesIncrementally(State.currentGraph);
+                btn?.classList.add('edges-loaded');
+                if (btn) btn.title = 'Clear edges';
+            }
         }
-        // Otherwise use normal graph loader
-        if (State.currentGraph) GraphLoader.loadEdgesIncrementally(State.currentGraph);
     });
     
     // Info Panel

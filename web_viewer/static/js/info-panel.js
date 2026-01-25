@@ -258,11 +258,24 @@ const InfoPanel = {
     /**
      * Show node information from raw data object
      * @param {string} id - Node ID
-     * @param {Object} data - Node data object
+     * @param {Object} data - Node data object (can be flat or have nested .data property)
      */
     showNodeFromData(id, data) {
         data = data || {};
-        data.id = id;
+
+        // Handle cosmos.gl node format where metrics are nested in .data property
+        // This happens when nodes are stored as {id, data: {...metrics}, x, y}
+        if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+            // Merge nested data into flat structure for display
+            const flatData = { ...data.data };
+            // Don't overwrite id if it exists in nested data
+            if (!flatData.id) {
+                flatData.id = id;
+            }
+            data = flatData;
+        } else {
+            data.id = id;
+        }
         State.currentNodeData = data;
         State.currentEdgeData = null;
         

@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/static/css/subgraph-tools.css">
     <link rel="stylesheet" href="/static/css/flow-analysis.css">
     <link rel="stylesheet" href="/static/css/embedding-panel.css">
+    <link rel="stylesheet" href="/static/css/time-zoom-bar.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.31.0/cytoscape.min.js"></script>
 </head>
 <body>
@@ -1223,8 +1224,16 @@
                     <button id="toolbar-sim-btn" class="toolbar-btn toolbar-sim-btn paused" title="Resume simulation" style="display: none;">
                         <span id="toolbar-sim-icon" data-icon="play"></span>
                     </button>
-                    <button id="load-edges-btn" title="Incrementally load edges for large graphs">Load edges</button>
-                    <button id="data-explorer-btn" title="Explore all node data">Data Explorer</button>
+                    <button id="edges-toggle-btn" class="toolbar-btn" title="Load edges">
+                        <span data-icon="edges"></span>
+                    </button>
+                    <button id="data-explorer-btn" class="toolbar-btn" title="Explore data">
+                        <span data-icon="table"></span>
+                    </button>
+                    <!-- Timeline toggle button -->
+                    <button id="timeline-toggle-btn" class="toolbar-btn timeline-toggle" title="Toggle timeline" style="display: none;">
+                        <span data-icon="clock"></span>
+                    </button>
                     <!-- Renderer switcher button -->
                     <button id="renderer-switch-btn" class="renderer-switch-btn" title="Switch renderer">
                         <span class="renderer-icon" data-icon="gpu"></span>
@@ -1233,8 +1242,11 @@
                 </div>
             </div>
 
+            <!-- Time Zoom Bar dropdown - appears below toolbar when toggled -->
+            <div id="time-zoom-bar" class="tzb-dropdown"></div>
+
             <div id="cy" class="cy-container"></div>
-            
+
             <div id="status" class="status status-info" style="display:none; position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:100;"></div>
             
             <div id="loading" class="loading-overlay" style="display:none">
@@ -1402,6 +1414,7 @@
     <script src="/static/js/export.js"></script>
     <script src="/static/js/data-explorer.js"></script>
     <script src="/static/js/snapshots.js"></script>
+    <script src="/static/js/time-zoom-bar.js"></script>
     <script src="/static/js/snapshot-analysis.js"></script>
     <script src="/static/js/timeseries.js"></script>
     <script src="/static/js/temporal-composite.js"></script>

@@ -36,6 +36,7 @@ from ..models.snapshot import (
 )
 from .snapshot_storage import SnapshotStorage
 from .snapshot_layout import SnapshotLayout
+from .cache_service import CacheService
 
 # Conditional imports
 try:
@@ -59,18 +60,25 @@ class SnapshotService:
     def __init__(
         self,
         storage: Optional[SnapshotStorage] = None,
-        layout_service: Optional[SnapshotLayout] = None
+        layout_service: Optional[SnapshotLayout] = None,
+        unified_layout: Optional['UnifiedLayoutService'] = None
     ):
         """
         Initialize snapshot service.
-        
+
         Args:
             storage: SnapshotStorage instance (created if None)
             layout_service: SnapshotLayout instance (created if None)
+            unified_layout: UnifiedLayoutService instance (optional)
         """
         self.storage = storage or SnapshotStorage()
         self.layout_service = layout_service or SnapshotLayout()
         self._db_engine = None
+
+        # Unified layout service for integrated position resolution
+        # If provided, will use it to resolve positions from live/cached layouts
+        self.unified_layout = unified_layout
+        self._cache_service = CacheService() if unified_layout is None else None
     
     def _get_db_engine(self):
         """Get or create database engine."""
@@ -151,32 +159,45 @@ class SnapshotService:
         
         # Load or initialize master layout
         report_progress("layout", 40, "Loading master layout...")
-        
-        master_layout = self._get_or_initialize_master_layout(request.base_sql_file)
-        
+
         # Derive layout for snapshot
         report_progress("layout", 50, "Computing node positions...")
-        
-        snapshot_layout, unknown_nodes = self.layout_service.derive_layout(
-            snapshot_nodes=snapshot_nodes,
-            edges=edges_list,
-            master_layout=master_layout
-        )
-        
-        layout_source = LayoutSource.COMPUTED if unknown_nodes else LayoutSource.MASTER
-        
-        # Update master layout with new positions
-        if unknown_nodes:
-            report_progress("layout", 60, f"Updating master layout (+{len(unknown_nodes)} nodes)...")
-            
-            new_positions = {
-                node: snapshot_layout[node]
-                for node in unknown_nodes
-            }
-            master_layout = self.layout_service.merge_into_master(
-                master_layout, new_positions, snapshot_id
+
+        # Use unified layout service if available (integrates live positions from cosmos.gl)
+        if self.unified_layout and settings.UNIFIED_LAYOUT_ENABLED:
+            snapshot_layout, unknown_nodes = self.unified_layout.resolve_positions_for_snapshot(
+                base_sql_file=request.base_sql_file,
+                snapshot_nodes=snapshot_nodes,
+                edges=edges_list,
+                graph_id=request.base_sql_file
             )
-            self.storage.save_master_layout(request.base_sql_file, master_layout)
+        else:
+            # Fallback to direct master layout derivation
+            master_layout = self._get_or_initialize_master_layout(request.base_sql_file)
+
+            snapshot_layout, unknown_nodes = self.layout_service.derive_layout(
+                snapshot_nodes=snapshot_nodes,
+                edges=edges_list,
+                master_layout=master_layout
+            )
+
+            # Update master layout with new positions (only in non-unified mode)
+            if unknown_nodes:
+                report_progress("layout", 60, f"Updating master layout (+{len(unknown_nodes)} nodes)...")
+
+                new_positions = {
+                    node: snapshot_layout[node]
+                    for node in unknown_nodes
+                }
+                master_layout = self.layout_service.merge_into_master(
+                    master_layout, new_positions, snapshot_id
+                )
+                self.storage.save_master_layout(request.base_sql_file, master_layout)
+
+        layout_source = LayoutSource.COMPUTED if unknown_nodes else LayoutSource.MASTER
+
+        if unknown_nodes:
+            report_progress("layout", 60, f"Positioned {len(unknown_nodes)} new nodes")
         
         # Compute metrics
         metrics_df = None

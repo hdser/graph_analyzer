@@ -285,7 +285,48 @@ class Settings:
     ).lower() == "true"
     
     CAPACITY_FLOW_CACHE_TTL: int = int(os.getenv("CAPACITY_FLOW_CACHE_TTL", "3600"))
-    
+
+    # ==========================================================================
+    # COSMOS.GL AUTO-SYNC CONFIGURATION
+    # ==========================================================================
+
+    # Enable automatic position syncing from cosmos.gl to server
+    COSMOS_AUTO_SYNC_ENABLED: bool = os.getenv(
+        "COSMOS_AUTO_SYNC_ENABLED", "true"
+    ).lower() == "true"
+
+    # Debounce delay before syncing (milliseconds)
+    COSMOS_AUTO_SYNC_DEBOUNCE_MS: int = int(os.getenv("COSMOS_AUTO_SYNC_DEBOUNCE_MS", "5000"))
+
+    # Minimum nodes changed to trigger sync (avoid syncing tiny changes)
+    COSMOS_AUTO_SYNC_MIN_NODES: int = int(os.getenv("COSMOS_AUTO_SYNC_MIN_NODES", "10"))
+
+    # ==========================================================================
+    # UNIFIED LAYOUT CONFIGURATION
+    # ==========================================================================
+
+    # Enable unified layout service for consistent positions across live/snapshots
+    UNIFIED_LAYOUT_ENABLED: bool = os.getenv(
+        "UNIFIED_LAYOUT_ENABLED", "true"
+    ).lower() == "true"
+
+    # Persist live positions to cache on sync (reduces data loss on restart)
+    UNIFIED_LAYOUT_PERSIST_ON_SYNC: bool = os.getenv(
+        "UNIFIED_LAYOUT_PERSIST_ON_SYNC", "true"
+    ).lower() == "true"
+
+    # ==========================================================================
+    # DIFF-BASED SNAPSHOTS CONFIGURATION
+    # ==========================================================================
+
+    # Enable diff-based snapshot storage (reduces storage by ~70-90%)
+    SNAPSHOT_DIFF_ENABLED: bool = os.getenv(
+        "SNAPSHOT_DIFF_ENABLED", "false"
+    ).lower() == "true"
+
+    # Create a full anchor snapshot every N snapshots
+    SNAPSHOT_ANCHOR_INTERVAL: int = int(os.getenv("SNAPSHOT_ANCHOR_INTERVAL", "10"))
+
     @property
     def database_url(self) -> str:
         """Construct database URL from components."""
@@ -313,7 +354,10 @@ class Settings:
                     "repulsion": self.COSMOS_SIMULATION_REPULSION,
                     "linkDistance": self.COSMOS_SIMULATION_LINK_DISTANCE,
                     "linkSpring": self.COSMOS_SIMULATION_LINK_SPRING
-                }
+                },
+                "autoSync": self.COSMOS_AUTO_SYNC_ENABLED,
+                "autoSyncDebounceMs": self.COSMOS_AUTO_SYNC_DEBOUNCE_MS,
+                "autoSyncMinNodes": self.COSMOS_AUTO_SYNC_MIN_NODES
             },
             "style": {
                 "nodeSizeMin": self.RENDERER_NODE_SIZE_MIN,

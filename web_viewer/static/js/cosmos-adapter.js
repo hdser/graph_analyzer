@@ -34,6 +34,8 @@ class CosmosAdapter extends GraphRendererInterface {
         this.highlightedIndices = new Set();
         this._currentColorMetric = null;
         this._currentColorScale = null;
+        this._currentSizeMetric = null;
+        this._currentSizeScale = null;
         this._hoveredIndex = null;
         this._performanceMode = true;
         
@@ -119,7 +121,16 @@ class CosmosAdapter extends GraphRendererInterface {
         // ========== Simulation on load behavior ==========
         // If false, simulation is paused on load to preserve pre-computed positions
         this._simulationOnLoad = RendererSettings.getValue('cosmos.simulationOnLoad', false);
-        
+
+        // ========== Auto-sync to server ==========
+        // When enabled, positions are automatically synced to the server
+        this._autoSyncEnabled = RendererSettings.getValue('cosmos.autoSync', true);
+        this._autoSyncDebounceMs = RendererSettings.getValue('cosmos.autoSyncDebounceMs', 5000);
+        this._autoSyncMinNodes = RendererSettings.getValue('cosmos.autoSyncMinNodes', 10);
+        this._autoSyncTimer = null;
+        this._lastSyncedPositions = null;
+        this._syncInProgress = false;
+
         this.initialize();
     }
     
@@ -277,33 +288,39 @@ class CosmosAdapter extends GraphRendererInterface {
         this._simulationRunning = false;
         this._simulationProgress = 1;
         console.log('[CosmosAdapter] Simulation ended');
-        
+
         // Update positions cache
         if (this.graph.getPointPositions) {
             this.positions = this.graph.getPointPositions();
         }
-        
+
+        // Trigger auto-sync when simulation ends
+        this._scheduleAutoSync();
+
         // Call external end callback if registered
         if (this._onSimulationEndCallback) {
             this._onSimulationEndCallback();
         }
-        
+
         this.emit('simulationEnd', {});
     }
-    
+
     _handleSimulationPause() {
         this._simulationRunning = false;
         console.log('[CosmosAdapter] Simulation paused');
-        
+
         // Update positions cache
         if (this.graph.getPointPositions) {
             this.positions = this.graph.getPointPositions();
         }
-        
+
+        // Trigger auto-sync when simulation pauses
+        this._scheduleAutoSync();
+
         if (this._onSimulationPauseCallback) {
             this._onSimulationPauseCallback();
         }
-        
+
         this.emit('simulationPause', {});
     }
     
@@ -370,7 +387,9 @@ class CosmosAdapter extends GraphRendererInterface {
     // DATA METHODS
     // ============================================================================
     
-    setData(nodes, edges) {
+    setData(nodes, edges, options = {}) {
+        const { skipFitView = false } = options;
+
         // Clear existing mappings
         this.nodeIndices.clear();
         this.nodeIds = [];
@@ -477,8 +496,10 @@ class CosmosAdapter extends GraphRendererInterface {
 
         this.graph.render();
 
-        // Fit view after data is set
-        setTimeout(() => this.graph.fitView(), 100);
+        // Fit view after data is set (unless skipFitView is true)
+        if (!skipFitView) {
+            setTimeout(() => this.graph.fitView(), 100);
+        }
 
         // Re-apply edge colors multiple times to ensure they take effect
         // Cosmos.gl v2.0 may not use linkDefaultColor config, only setLinkColors()
@@ -537,30 +558,46 @@ class CosmosAdapter extends GraphRendererInterface {
      */
     setDataWithPositions(nodes, edges, options = {}) {
         const { pauseSimulation = true, fitView = true } = options;
-        
+
         // Check if nodes have meaningful pre-computed positions
-        const hasPositions = nodes.some(n => 
-            n.x !== undefined && n.y !== undefined && 
-            (Math.abs(n.x) > 0.1 || Math.abs(n.y) > 0.1)
-        );
-        
+        // Check both n.x/n.y (preferred) and n.data.x/n.data.y (fallback)
+        const hasPositions = nodes.some(n => {
+            const x = n.x !== undefined ? n.x : n.data?.x;
+            const y = n.y !== undefined ? n.y : n.data?.y;
+            return x !== undefined && y !== undefined &&
+                   (Math.abs(x) > 0.1 || Math.abs(y) > 0.1);
+        });
+
+        // If positions are in data, normalize them to top level
+        if (hasPositions) {
+            nodes.forEach(n => {
+                if (n.x === undefined && n.data?.x !== undefined) {
+                    n.x = n.data.x;
+                }
+                if (n.y === undefined && n.data?.y !== undefined) {
+                    n.y = n.data.y;
+                }
+            });
+        }
+
         if (!hasPositions) {
             console.log('[CosmosAdapter] setDataWithPositions: No pre-computed positions, using regular setData');
-            this.setData(nodes, edges);
+            this.setData(nodes, edges, { skipFitView: !fitView });
             return;
         }
-        
-        console.log('[CosmosAdapter] setDataWithPositions: Using pre-computed positions for', nodes.length, 'nodes');
-        
+
+        console.log('[CosmosAdapter] setDataWithPositions: Using pre-computed positions for', nodes.length, 'nodes, fitView:', fitView);
+
         // Temporarily override simulationOnLoad to ensure simulation is paused
         const originalSimOnLoad = this._simulationOnLoad;
         if (pauseSimulation) {
             this._simulationOnLoad = false;
         }
-        
-        // Set the data normally - this will apply positions and pause if needed
-        this.setData(nodes, edges);
-        
+
+        // Set the data with skipFitView based on fitView option
+        // This prevents the auto-fitView in setData when preserving camera
+        this.setData(nodes, edges, { skipFitView: !fitView });
+
         // Restore original setting
         this._simulationOnLoad = originalSimOnLoad;
         
@@ -579,11 +616,8 @@ class CosmosAdapter extends GraphRendererInterface {
             
             console.log('[CosmosAdapter] Simulation paused - pre-computed positions preserved');
         }
-        
-        // Fit view if requested
-        if (fitView) {
-            setTimeout(() => this.graph.fitView(), 150);
-        }
+
+        // Note: fitView is now handled by setData via skipFitView option
     }
     
     updatePositions(positions) {
@@ -614,7 +648,213 @@ class CosmosAdapter extends GraphRendererInterface {
         const existingEdges = Array.from(this.edgeDataMap.values());
         this.setData([...existingNodes, ...nodes], existingEdges);
     }
-    
+
+    /**
+     * Add nodes while preserving existing node positions
+     * New nodes receive positions from the provided positions map
+     * @param {Array} nodes - New nodes to add
+     * @param {Object} positions - Map of nodeId -> {x, y} for new node positions
+     */
+    addNodesPreserving(nodes, positions = {}) {
+        if (!nodes || nodes.length === 0) return;
+
+        // Step 1: Capture current positions BEFORE any changes
+        const savedPositions = this.capturePositions();
+        const wasSimulationRunning = this._simulationRunning;
+
+        // Step 2: Pause simulation to prevent layout changes
+        this.graph.pause();
+
+        // Step 3: Get existing data
+        const existingNodes = Array.from(this.nodeDataMap.values());
+        const existingEdges = Array.from(this.edgeDataMap.values());
+
+        // Step 4: Build position map for existing nodes
+        const existingPositionsMap = {};
+        if (savedPositions) {
+            existingNodes.forEach((node, i) => {
+                const nodeId = node.data?.id || node.id;
+                existingPositionsMap[nodeId] = {
+                    x: savedPositions[i * 2],
+                    y: savedPositions[i * 2 + 1]
+                };
+            });
+        }
+
+        // Step 5: Merge provided positions for new nodes
+        nodes.forEach(node => {
+            const nodeId = node.data?.id || node.id;
+            if (positions[nodeId]) {
+                existingPositionsMap[nodeId] = positions[nodeId];
+            } else if (node.position) {
+                existingPositionsMap[nodeId] = node.position;
+            } else if (node.data?.x !== undefined && node.data?.y !== undefined) {
+                existingPositionsMap[nodeId] = { x: node.data.x, y: node.data.y };
+            }
+        });
+
+        // Step 6: Combine nodes
+        const allNodes = [...existingNodes, ...nodes];
+
+        // Step 7: Rebuild graph with combined data
+        // Use setData but immediately restore positions
+        this._rebuildForPreservingAdd(allNodes, existingEdges, existingPositionsMap);
+
+        console.log(`[COSMOS] Added ${nodes.length} nodes preserving existing positions`);
+    }
+
+    /**
+     * Internal method to rebuild graph while preserving positions
+     */
+    _rebuildForPreservingAdd(nodes, edges, positionsMap) {
+        // Clear existing data
+        this.nodeDataMap.clear();
+        this.nodeIndices.clear();
+        this.nodeIds = [];
+        this.edgeIndices.clear();
+        this.edgeDataMap.clear();
+        this.incomingEdges.clear();
+        this.outgoingEdges.clear();
+        this._storedEdgeData = [];
+        this._edgeLinkData = null;
+
+        // Clear path highlights
+        this._pathNodeColors.clear();
+        this._pathEdgeColors.clear();
+        this._isPathHighlightActive = false;
+        this._baseNodeColors = null;
+
+        // Rebuild node data
+        nodes.forEach((node, index) => {
+            const nodeData = node.data || node;
+            const nodeId = nodeData.id;
+
+            this.nodeIndices.set(nodeId, index);
+            this.nodeIds[index] = nodeId;
+            this.nodeDataMap.set(nodeId, node);
+            this.incomingEdges.set(nodeId, []);
+            this.outgoingEdges.set(nodeId, []);
+        });
+
+        // Build and apply positions from map
+        const posArray = new Float32Array(nodes.length * 2);
+        nodes.forEach((node, i) => {
+            const nodeData = node.data || node;
+            const nodeId = nodeData.id;
+            const pos = positionsMap[nodeId];
+
+            if (pos) {
+                posArray[i * 2] = pos.x;
+                posArray[i * 2 + 1] = pos.y;
+            } else {
+                // Fallback: random position near center
+                posArray[i * 2] = (Math.random() - 0.5) * 1000;
+                posArray[i * 2 + 1] = (Math.random() - 0.5) * 1000;
+            }
+        });
+
+        this.positions = posArray;
+        this.graph.setPointPositions(posArray, true); // dontRescale = true
+
+        // Rebuild edges
+        this.edgeDataMap.clear();
+
+        edges.forEach(edge => {
+            const edgeId = edge.id || `${edge.source}-${edge.target}`;
+            this.edgeDataMap.set(edgeId, edge);
+            this.incomingEdges.get(edge.target)?.push(edge.source);
+            this.outgoingEdges.get(edge.source)?.push(edge.target);
+            this._storedEdgeData.push({
+                source: edge.source,
+                target: edge.target,
+                id: edgeId,
+                data: edge
+            });
+        });
+
+        // Rebuild links array
+        const linkData = new Float32Array(edges.length * 2);
+        let validCount = 0;
+
+        edges.forEach((edge, i) => {
+            const sourceIndex = this.nodeIndices.get(edge.source);
+            const targetIndex = this.nodeIndices.get(edge.target);
+
+            if (sourceIndex !== undefined && targetIndex !== undefined) {
+                linkData[validCount * 2] = sourceIndex;
+                linkData[validCount * 2 + 1] = targetIndex;
+
+                const edgeId = edge.id || `${edge.source}-${edge.target}`;
+                this.edgeIndices.set(edgeId, validCount);
+                validCount++;
+            }
+        });
+
+        this._edgeLinkData = linkData;
+        this._masterLinkData = new Float32Array(linkData);
+        this._masterEdgeCount = validCount;
+
+        if (this._edgesVisible && validCount > 0) {
+            this.graph.setLinks(linkData);
+            this._applyEdgeColorsForCount(validCount);
+        } else {
+            this.graph.setLinks(new Float32Array(0));
+        }
+
+        // Apply colors
+        this._applyNodeColors();
+
+        this.graph.render();
+    }
+
+    /**
+     * Remove nodes from the graph while preserving remaining node positions
+     * @param {Array<string>} nodeIds - Array of node IDs to remove
+     */
+    removeNodes(nodeIds) {
+        if (!nodeIds || nodeIds.length === 0) return;
+
+        const nodeIdSet = new Set(nodeIds);
+
+        // Step 1: Capture current positions BEFORE any changes
+        const savedPositions = this.capturePositions();
+        const wasSimulationRunning = this._simulationRunning;
+
+        // Step 2: Pause simulation
+        this.graph.pause();
+
+        // Step 3: Build position map for remaining nodes
+        const existingNodes = Array.from(this.nodeDataMap.values());
+        const positionsMap = {};
+
+        if (savedPositions) {
+            existingNodes.forEach((node, i) => {
+                const nodeId = node.data?.id || node.id;
+                if (!nodeIdSet.has(nodeId)) {
+                    positionsMap[nodeId] = {
+                        x: savedPositions[i * 2],
+                        y: savedPositions[i * 2 + 1]
+                    };
+                }
+            });
+        }
+
+        // Step 4: Filter nodes and edges
+        const remainingNodes = existingNodes.filter(node => {
+            const nodeId = node.data?.id || node.id;
+            return !nodeIdSet.has(nodeId);
+        });
+
+        const remainingEdges = Array.from(this.edgeDataMap.values()).filter(edge => {
+            return !nodeIdSet.has(edge.source) && !nodeIdSet.has(edge.target);
+        });
+
+        // Step 5: Rebuild graph with remaining data
+        this._rebuildForPreservingAdd(remainingNodes, remainingEdges, positionsMap);
+
+        console.log(`[COSMOS] Removed ${nodeIds.length} nodes, ${remainingNodes.length} remaining`);
+    }
+
     // ============================================================================
     // EDGE MANAGEMENT WITH POSITION PRESERVATION
     // ============================================================================
@@ -787,15 +1027,60 @@ class CosmosAdapter extends GraphRendererInterface {
     // ============================================================================
     
     /**
+     * Clear all edges from the graph (remove from data structures)
+     * Used when clearing edges in snapshot view
+     */
+    clearAllEdges() {
+        console.log('[CosmosAdapter] clearAllEdges called, current edge count:', this.edgeDataMap.size);
+
+        // Capture positions before changes
+        const savedPositions = this.capturePositions();
+
+        // Pause simulation
+        this.graph.pause();
+
+        // Clear all edge data structures
+        this.edgeDataMap.clear();
+        this.edgeIndices.clear();
+        this._edgeLinkData = new Float32Array(0);
+        this._masterLinkData = null;
+        this._masterEdgeCount = 0;
+        this._storedEdgeData = [];
+
+        // Clear incoming/outgoing tracking
+        for (const [nodeId, _] of this.incomingEdges) {
+            this.incomingEdges.set(nodeId, []);
+        }
+        for (const [nodeId, _] of this.outgoingEdges) {
+            this.outgoingEdges.set(nodeId, []);
+        }
+
+        // Clear edges from graph - use empty Float32Array
+        console.log('[CosmosAdapter] Calling graph.setLinks with empty array');
+        this.graph.setLinks(new Float32Array(0));
+
+        // Restore positions
+        if (savedPositions) {
+            this.graph.setPointPositions(savedPositions, true);
+            this.positions = savedPositions;
+        }
+
+        this.graph.render();
+
+        console.log('[CosmosAdapter] Cleared all edges, new edge count:', this.edgeDataMap.size);
+        this.emit('edgesCleared', {});
+    }
+
+    /**
      * Hide all edges without affecting layout
      */
     hideEdges() {
         if (!this._edgesVisible) return;
-        
+
         this._edgesVisible = false;
         this.graph.setLinks(new Float32Array(0));
         this.graph.render();
-        
+
         console.log('[CosmosAdapter] Edges hidden');
         this.emit('edgesVisibilityChanged', { visible: false });
     }
@@ -1378,10 +1663,252 @@ class CosmosAdapter extends GraphRendererInterface {
         this.positions = posArray;
         this.graph.setPointPositions(posArray, true);
         this.graph.render();
-        
+
         console.log('[CosmosAdapter] Imported', importedCount, 'positions');
     }
-    
+
+    // ============================================================================
+    // AUTO-SYNC METHODS (Phase 5)
+    // ============================================================================
+
+    /**
+     * Enable or disable auto-sync to server
+     * @param {boolean} enabled - Whether auto-sync is enabled
+     */
+    setAutoSync(enabled) {
+        this._autoSyncEnabled = enabled;
+        if (!enabled && this._autoSyncTimer) {
+            clearTimeout(this._autoSyncTimer);
+            this._autoSyncTimer = null;
+        }
+        console.log('[CosmosAdapter] Auto-sync', enabled ? 'enabled' : 'disabled');
+    }
+
+    /**
+     * Get auto-sync status
+     * @returns {Object} - Auto-sync status info
+     */
+    getAutoSyncStatus() {
+        return {
+            enabled: this._autoSyncEnabled,
+            inProgress: this._syncInProgress,
+            hasPendingSync: !!this._autoSyncTimer,
+            lastSyncedCount: this._lastSyncedPositions ? Object.keys(this._lastSyncedPositions).length : 0
+        };
+    }
+
+    /**
+     * Schedule auto-sync (debounced)
+     * Called internally when positions change significantly
+     */
+    _scheduleAutoSync() {
+        if (!this._autoSyncEnabled || this._syncInProgress) return;
+
+        if (this._autoSyncTimer) {
+            clearTimeout(this._autoSyncTimer);
+        }
+
+        this._autoSyncTimer = setTimeout(() => {
+            this._performAutoSync();
+        }, this._autoSyncDebounceMs);
+    }
+
+    /**
+     * Perform auto-sync to server
+     * @returns {Promise<void>}
+     */
+    async _performAutoSync() {
+        if (this._syncInProgress) return;
+
+        const currentPositions = this.exportPositions();
+
+        // Check if positions have actually changed
+        if (this._positionsEqual(currentPositions, this._lastSyncedPositions)) {
+            console.log('[CosmosAdapter] Positions unchanged, skipping sync');
+            return;
+        }
+
+        // Check minimum node count
+        if (Object.keys(currentPositions).length < this._autoSyncMinNodes) {
+            console.log('[CosmosAdapter] Too few nodes, skipping sync');
+            return;
+        }
+
+        this._syncInProgress = true;
+
+        try {
+            // Get graph ID from State if available
+            const graphId = window.State?.currentGraph;
+            if (!graphId) {
+                console.log('[CosmosAdapter] No graph ID, skipping sync');
+                return;
+            }
+
+            // Only sync nodes that changed (for efficiency)
+            const changedPositions = this._getChangedPositions(
+                currentPositions,
+                this._lastSyncedPositions
+            );
+
+            if (Object.keys(changedPositions).length === 0) {
+                console.log('[CosmosAdapter] No position changes detected');
+                return;
+            }
+
+            console.log('[CosmosAdapter] Auto-syncing', Object.keys(changedPositions).length, 'positions');
+
+            const response = await fetch(`/api/layout/sync/${graphId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    positions: changedPositions,
+                    source: 'cosmos_autosync'
+                })
+            });
+
+            if (response.ok) {
+                this._lastSyncedPositions = { ...currentPositions };
+                const result = await response.json();
+                console.log('[CosmosAdapter] Auto-sync completed:', result.synced, 'positions');
+                this.emit('positionsSynced', { count: result.synced, source: 'auto' });
+            } else {
+                console.warn('[CosmosAdapter] Auto-sync failed:', response.status);
+            }
+
+        } catch (error) {
+            console.error('[CosmosAdapter] Auto-sync error:', error);
+        } finally {
+            this._syncInProgress = false;
+        }
+    }
+
+    /**
+     * Force immediate sync to server (manual trigger)
+     * @returns {Promise<Object>} - Sync result
+     */
+    async syncToServer() {
+        if (this._syncInProgress) {
+            return { status: 'already_syncing' };
+        }
+
+        const currentPositions = this.exportPositions();
+        const graphId = window.State?.currentGraph;
+
+        if (!graphId) {
+            return { status: 'no_graph' };
+        }
+
+        this._syncInProgress = true;
+
+        try {
+            const response = await fetch(`/api/layout/sync/${graphId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    positions: currentPositions,
+                    source: 'cosmos_manual'
+                })
+            });
+
+            if (response.ok) {
+                this._lastSyncedPositions = { ...currentPositions };
+                const result = await response.json();
+                console.log('[CosmosAdapter] Manual sync completed:', result.synced, 'positions');
+                this.emit('positionsSynced', { count: result.synced, source: 'manual' });
+                return { status: 'success', synced: result.synced };
+            } else {
+                const error = await response.text();
+                return { status: 'error', error };
+            }
+
+        } catch (error) {
+            console.error('[CosmosAdapter] Manual sync error:', error);
+            return { status: 'error', error: error.message };
+        } finally {
+            this._syncInProgress = false;
+        }
+    }
+
+    /**
+     * Sync current layout to master layout (for snapshots)
+     * @returns {Promise<Object>} - Sync result
+     */
+    async syncToMasterLayout() {
+        const graphId = window.State?.currentGraph;
+        if (!graphId) {
+            return { status: 'no_graph' };
+        }
+
+        try {
+            const response = await fetch(`/api/layout/sync-to-master/${graphId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('[CosmosAdapter] Master sync completed:', result);
+                return result;
+            } else {
+                const error = await response.text();
+                return { status: 'error', error };
+            }
+
+        } catch (error) {
+            console.error('[CosmosAdapter] Master sync error:', error);
+            return { status: 'error', error: error.message };
+        }
+    }
+
+    /**
+     * Check if two position objects are equal (within tolerance)
+     * @param {Object} current - Current positions
+     * @param {Object} last - Last synced positions
+     * @returns {boolean} - True if equal
+     */
+    _positionsEqual(current, last) {
+        if (!last) return false;
+        if (!current) return false;
+
+        const currentKeys = Object.keys(current);
+        const lastKeys = Object.keys(last);
+
+        if (currentKeys.length !== lastKeys.length) return false;
+
+        const tolerance = 0.01;  // Ignore sub-pixel changes
+        for (const key of currentKeys) {
+            if (!last[key]) return false;
+            if (Math.abs(current[key].x - last[key].x) > tolerance) return false;
+            if (Math.abs(current[key].y - last[key].y) > tolerance) return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get positions that changed since last sync
+     * @param {Object} current - Current positions
+     * @param {Object} last - Last synced positions
+     * @returns {Object} - Changed positions only
+     */
+    _getChangedPositions(current, last) {
+        if (!last) return current;
+
+        const changed = {};
+        const tolerance = 0.01;
+
+        for (const [nodeId, pos] of Object.entries(current)) {
+            const lastPos = last[nodeId];
+            if (!lastPos ||
+                Math.abs(pos.x - lastPos.x) > tolerance ||
+                Math.abs(pos.y - lastPos.y) > tolerance) {
+                changed[nodeId] = pos;
+            }
+        }
+
+        return changed;
+    }
+
     // ============================================================================
     // SELECTION METHODS
     // ============================================================================
@@ -1591,13 +2118,7 @@ class CosmosAdapter extends GraphRendererInterface {
         } else if (this._currentColorMetric && this._currentColorScale) {
             // Re-apply metric coloring
             console.log('[CosmosAdapter] Re-applying metric coloring:', this._currentColorMetric);
-            const values = {};
-            this.nodeIds.forEach(id => {
-                const node = this.nodeDataMap.get(id);
-                if (node && node[this._currentColorMetric] !== undefined) {
-                    values[id] = node[this._currentColorMetric];
-                }
-            });
+            const values = this._getMetricValues(this._currentColorMetric);
             this.colorNodesByMetric(this._currentColorMetric, values, this._currentColorScale);
         } else {
             // Apply default colors
@@ -2632,8 +3153,14 @@ class CosmosAdapter extends GraphRendererInterface {
         const values = {};
         this.nodeIds.forEach(id => {
             const nodeData = this.nodeDataMap.get(id);
-            if (nodeData && nodeData[metricName] !== undefined) {
-                values[id] = nodeData[metricName];
+            if (nodeData) {
+                // Check both top-level and nested in .data (snapshot format)
+                const value = nodeData[metricName] !== undefined
+                    ? nodeData[metricName]
+                    : nodeData.data?.[metricName];
+                if (value !== undefined) {
+                    values[id] = value;
+                }
             }
         });
         return values;
@@ -3205,17 +3732,21 @@ class CosmosAdapter extends GraphRendererInterface {
     
     sizeNodesByMetric(metricName, values, minSize = 4, maxSize = 20) {
         if (!values || Object.keys(values).length === 0) return;
-        
+
+        // Store size state for restoration during timeline navigation
+        this._currentSizeMetric = metricName;
+        this._currentSizeScale = { min: minSize, max: maxSize };
+
         const numericValues = Object.values(values).filter(v => typeof v === 'number' && !isNaN(v));
         if (numericValues.length === 0) return;
-        
+
         const min = Math.min(...numericValues);
         const max = Math.max(...numericValues);
         const range = max - min || 1;
-        
+
         const sizeArray = new Float32Array(this.nodeIds.length);
         const defaultSize = (minSize + maxSize) / 2;
-        
+
         this.nodeIds.forEach((id, i) => {
             const value = values[id];
             if (typeof value === 'number' && !isNaN(value)) {
@@ -3225,18 +3756,22 @@ class CosmosAdapter extends GraphRendererInterface {
                 sizeArray[i] = defaultSize;
             }
         });
-        
+
         this.graph.setPointSizes(sizeArray);
         this.graph.render();
     }
     
     resetNodeSizes() {
+        // Clear size state
+        this._currentSizeMetric = null;
+        this._currentSizeScale = null;
+
         const config = RendererSettings.getCosmosConfig();
         const defaultSize = config.pointSize || 6;
-        
+
         const sizeArray = new Float32Array(this.nodeIds.length);
         sizeArray.fill(defaultSize);
-        
+
         this.graph.setPointSizes(sizeArray);
         this.graph.render();
     }
@@ -3460,12 +3995,76 @@ class CosmosAdapter extends GraphRendererInterface {
     
     getZoom() {
         // cosmos.gl doesn't expose zoom directly, estimate from view
+        if (typeof this.graph.getZoomLevel === 'function') {
+            return this.graph.getZoomLevel();
+        }
         return 1;
     }
-    
+
     setZoom(level, duration = 0) {
         if (typeof this.graph.zoom === 'function') {
             this.graph.zoom(level, duration);
+        }
+    }
+
+    /**
+     * Get the current camera state (zoom, pan, etc.)
+     * Used for preserving view during snapshot navigation
+     * @returns {Object} Camera state that can be restored with setCameraState
+     */
+    getCameraState() {
+        const state = {
+            zoom: 1,
+            transform: null
+        };
+
+        try {
+            if (typeof this.graph.getZoomLevel === 'function') {
+                state.zoom = this.graph.getZoomLevel();
+            }
+            // Get the D3 transform which includes x, y, k (scale)
+            if (typeof this.graph.getTransform === 'function') {
+                const transform = this.graph.getTransform();
+                if (transform) {
+                    // D3 transform has x, y, k properties
+                    state.transform = {
+                        x: transform.x,
+                        y: transform.y,
+                        k: transform.k
+                    };
+                }
+            }
+        } catch (e) {
+            console.warn('[CosmosAdapter] getCameraState error:', e);
+        }
+
+        return state;
+    }
+
+    /**
+     * Restore camera state that was saved with getCameraState
+     * @param {Object} state - Camera state from getCameraState
+     */
+    setCameraState(state) {
+        if (!state) return;
+
+        try {
+            // Restore zoom level using setZoomLevel
+            if (state.transform && state.transform.k !== undefined) {
+                if (typeof this.graph.setZoomLevel === 'function') {
+                    this.graph.setZoomLevel(state.transform.k);
+                }
+            } else if (state.zoom && typeof this.graph.setZoomLevel === 'function') {
+                this.graph.setZoomLevel(state.zoom);
+            }
+
+            // Note: cosmos.gl doesn't expose setTransform, so we can only restore zoom level
+            // The pan position cannot be directly restored without setTransform
+            // However, if the node positions are preserved, the view will be close enough
+
+            this.graph.render();
+        } catch (e) {
+            console.warn('[CosmosAdapter] setCameraState error:', e);
         }
     }
     
@@ -3673,16 +4272,7 @@ class CosmosAdapter extends GraphRendererInterface {
      */
     applyNodeColors(metricName, colorScale = {}) {
         const gradient = colorScale.gradient || 'spectral';
-        const values = {};
-        
-        // Build values map from node data
-        this.nodeIds.forEach(id => {
-            const node = this.nodeDataMap.get(id);
-            if (node && node[metricName] !== undefined) {
-                values[id] = node[metricName];
-            }
-        });
-        
+        const values = this._getMetricValues(metricName);
         this.colorNodesByMetric(metricName, values, gradient);
     }
     
@@ -3694,16 +4284,7 @@ class CosmosAdapter extends GraphRendererInterface {
     applyNodeSizes(metricName, sizeScale = {}) {
         const minSize = sizeScale.min || 4;
         const maxSize = sizeScale.max || 20;
-        const values = {};
-        
-        // Build values map from node data
-        this.nodeIds.forEach(id => {
-            const node = this.nodeDataMap.get(id);
-            if (node && node[metricName] !== undefined) {
-                values[id] = node[metricName];
-            }
-        });
-        
+        const values = this._getMetricValues(metricName);
         this.sizeNodesByMetric(metricName, values, minSize, maxSize);
     }
     
