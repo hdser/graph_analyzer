@@ -8,13 +8,17 @@ API endpoints for timeseries analysis including:
 - Trend detection
 - Distribution comparisons
 - Cohort analysis
+- Batch metrics loading for optimized timeline scrubbing
 """
 
 import asyncio
-from typing import Optional, List
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
+
+from ..config import settings
 
 from ..models.timeseries import (
     AggregationType,
@@ -385,6 +389,136 @@ async def compare_cohorts(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cohort comparison failed: {str(e)}")
+
+
+# =============================================================================
+# Batch Loading Endpoints (Optimized for Timeline)
+# =============================================================================
+
+class BatchMetricsRequest(BaseModel):
+    """Request for batch metrics loading."""
+    metrics: List[str] = Field(..., description="List of metric names to fetch")
+    aggregation: AggregationType = Field(
+        default=AggregationType.MEAN,
+        description="Aggregation method for all metrics"
+    )
+    include_trend: bool = Field(default=False, description="Include trend analysis")
+
+
+@router.post("/{base_sql_file}/metrics/batch")
+async def get_metrics_timeseries_batch(
+    base_sql_file: str,
+    request: BatchMetricsRequest,
+    engine: TimeseriesEngine = Depends(get_engine)
+) -> Dict[str, Any]:
+    """
+    Load multiple metrics across all snapshots in one request.
+
+    This is much more efficient than making individual requests when
+    displaying timeline charts with multiple metrics.
+
+    Returns:
+        {
+            "base_sql_file": "...",
+            "metrics": {
+                "metric1": {...timeseries data...},
+                "metric2": {...timeseries data...},
+                ...
+            },
+            "snapshot_count": N,
+            "success": ["metric1", "metric2"],
+            "failed": []
+        }
+    """
+    if len(request.metrics) > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 20 metrics per batch request"
+        )
+
+    results: Dict[str, Any] = {}
+    success = []
+    failed = []
+
+    # Use ThreadPoolExecutor for parallel loading
+    max_workers = min(settings.TIMESERIES_BATCH_SIZE, len(request.metrics))
+
+    async def fetch_metric(metric: str) -> tuple:
+        """Fetch a single metric's timeseries."""
+        try:
+            result = await asyncio.to_thread(
+                engine.get_metric_timeseries,
+                base_sql_file,
+                metric,
+                request.aggregation,
+                None,  # start_block
+                None,  # end_block
+                request.include_trend
+            )
+            return metric, result.model_dump(), None
+        except Exception as e:
+            return metric, None, str(e)
+
+    # Run all metric fetches concurrently
+    tasks = [fetch_metric(metric) for metric in request.metrics]
+    completed = await asyncio.gather(*tasks)
+
+    snapshot_count = 0
+
+    for metric, data, error in completed:
+        if data:
+            results[metric] = data
+            success.append(metric)
+            if 'data_points' in data:
+                snapshot_count = max(snapshot_count, len(data['data_points']))
+        else:
+            results[metric] = {"error": error}
+            failed.append(metric)
+
+    return {
+        "base_sql_file": base_sql_file,
+        "metrics": results,
+        "snapshot_count": snapshot_count,
+        "success": success,
+        "failed": failed,
+        "total_requested": len(request.metrics)
+    }
+
+
+@router.get("/{base_sql_file}/snapshots/list")
+async def list_snapshots_for_timeseries(
+    base_sql_file: str,
+    engine: TimeseriesEngine = Depends(get_engine)
+) -> Dict[str, Any]:
+    """
+    Get list of snapshots available for timeseries analysis.
+
+    Returns basic metadata about each snapshot for timeline display.
+    """
+    from ..services.snapshot_analysis_service import snapshot_analysis_service
+
+    try:
+        snapshots = await asyncio.to_thread(
+            snapshot_analysis_service.list_analyzed_snapshots,
+            base_sql_file
+        )
+
+        return {
+            "base_sql_file": base_sql_file,
+            "snapshot_count": len(snapshots),
+            "snapshots": [
+                {
+                    "snapshot_id": s.snapshot_id,
+                    "block_number": s.block_number,
+                    "timestamp": s.analysis_timestamp,
+                    "node_count": s.node_count,
+                    "metrics_count": len(s.metrics_computed)
+                }
+                for s in snapshots
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =============================================================================

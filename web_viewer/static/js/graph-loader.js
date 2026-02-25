@@ -109,35 +109,44 @@ const GraphLoader = {
             const nodeCount = nodeElements.length;
             
             // Convert from Cytoscape format to unified format
+            // IMPORTANT: Keep undefined for missing positions - don't use || 0 fallback
             const nodes = nodeElements.map(e => ({
                 id: e.data.id,
-                x: e.position?.x || 0,
-                y: e.position?.y || 0,
+                x: e.position?.x,  // undefined if missing (NOT 0)
+                y: e.position?.y,  // undefined if missing (NOT 0)
+                _hasPosition: e.position?.x !== undefined && e.position?.y !== undefined,
                 ...e.data
             }));
-            
+
             // Create or recreate renderer based on graph size
             const renderer = RendererFactory.create(DOMCache.cyContainer, {
                 expectedNodeCount: nodeCount,
                 rendererPreference: State.rendererPreference
             });
-            
+
             // Update state
             State.setRenderer(renderer);
-            
-            // Check if nodes have pre-computed positions
-            const hasPositions = nodes.some(n => 
-                n.x !== undefined && n.y !== undefined && 
-                (Math.abs(n.x) > 0.1 || Math.abs(n.y) > 0.1)
-            );
+
+            // Check if ALL nodes have valid pre-computed positions (not just some)
+            const nodesWithPositions = nodes.filter(n => n._hasPosition);
+            const positionCoverage = nodesWithPositions.length / nodes.length;
+            const hasPositions = positionCoverage > 0.9;  // At least 90% have positions
+
+            console.log(`[GraphLoader] Position stats: ${nodesWithPositions.length}/${nodes.length} nodes have positions (${(positionCoverage * 100).toFixed(1)}%)`);
             
             // Set data - use static mode if positions exist and cosmos renderer
             if (renderer.getType() === 'cosmos' && hasPositions) {
                 // Check if simulation should be paused (from config)
                 const simulationOnLoad = RendererSettings.getValue('cosmos.simulationOnLoad', false);
-                
-                if (!simulationOnLoad && typeof renderer.setDataWithPositions === 'function') {
-                    console.log('[GraphLoader] Using pre-computed positions, simulation will be paused');
+
+                if (!simulationOnLoad && typeof renderer.setDataStatic === 'function') {
+                    // Use new setDataStatic for strict position preservation
+                    console.log('[GraphLoader] Using setDataStatic with pre-computed positions');
+                    renderer.setDataStatic(nodes, [], { fitView: true });
+                    State.cosmosSimulationPaused = true;
+                } else if (!simulationOnLoad && typeof renderer.setDataWithPositions === 'function') {
+                    // Fallback to setDataWithPositions
+                    console.log('[GraphLoader] Using setDataWithPositions with pre-computed positions');
                     renderer.setDataWithPositions(nodes, [], { pauseSimulation: true, fitView: true });
                     State.cosmosSimulationPaused = true;
                 } else {

@@ -847,6 +847,14 @@ class NetworkService:
         self.node_properties_dfs = node_properties
         self.graphs = graphs
         self.layouts = layouts
+
+        # Debug: Log layout state after atomic swap
+        for graph_id, layout in layouts.items():
+            if layout:
+                print(f"[LAYOUT-LOAD] Graph {graph_id}: Loaded {len(layout)} positions into memory")
+            else:
+                print(f"[LAYOUT-LOAD] WARNING: Graph {graph_id} has empty layout dict!")
+
         self._loaded_property_names = property_names
         self._properties_source = properties_source
         self._api_properties_loaded = api_properties_loaded
@@ -917,7 +925,13 @@ class NetworkService:
         
         # Cache new metrics for this version
         self.cache_service.save_metrics_cache(metrics_df, target_version)
-        
+
+        # Invalidate distribution caches for affected graphs
+        # Distribution data is now stale since metrics changed
+        for gid in self.graphs.keys():
+            if self._extract_version(gid) == target_version:
+                self.cache_service.invalidate_distribution_cache(gid)
+
         # Update graph objects in memory (ONLY graphs of this version)
         metrics_dict = metrics_df.set_index('avatar').to_dict('index')
         node_updates = []
@@ -964,12 +978,22 @@ class NetworkService:
         """
         if graph_id not in self.graphs:
             raise ValueError(f"Graph not found: {graph_id}")
-        
+
         G = self.graphs[graph_id]
         layout = self.layouts.get(graph_id, {})
-        
+
+        # Debug: Log layout statistics
+        n_nodes = G.number_of_nodes()
+        n_positions = len(layout)
+        if n_positions > 0:
+            print(f"[LAYOUT-API] Graph {graph_id}: {n_positions}/{n_nodes} nodes have positions ({100*n_positions/n_nodes:.1f}%)")
+        else:
+            print(f"[LAYOUT-API] WARNING: Graph {graph_id} has NO positions in memory (layout dict is empty)")
+
         elements = []
-        
+        nodes_with_pos = 0
+        nodes_without_pos = 0
+
         # Add nodes
         for node in G.nodes():
             node_data = {'id': str(node)}
@@ -998,15 +1022,28 @@ class NetworkService:
                     # Convert other types to string
                     node_data[key] = str(value)
             
-            # Add position
-            pos = layout.get(str(node), {'x': 0, 'y': 0})
-            
-            elements.append({
+            # Add position - IMPORTANT: Don't fallback to (0,0)!
+            # If position is missing, leave it undefined so frontend can handle
+            pos = layout.get(str(node))
+
+            element = {
                 'group': 'nodes',
-                'data': clean_numpy_types(node_data),
-                'position': pos
-            })
-        
+                'data': clean_numpy_types(node_data)
+            }
+
+            # Only include position if we have a valid one
+            if pos is not None:
+                element['position'] = pos
+                nodes_with_pos += 1
+            else:
+                nodes_without_pos += 1
+
+            elements.append(element)
+
+        # Debug: Summary of position extraction
+        if nodes_without_pos > 0:
+            print(f"[LAYOUT-API] Position extraction: {nodes_with_pos} with positions, {nodes_without_pos} without")
+
         # Add edges (if not nodes_only)
         if mode != "nodes_only":
             for u, v in G.edges():
@@ -1138,9 +1175,69 @@ class NetworkService:
         
         if not rows:
             return None
-        
+
         return pd.DataFrame(rows)
-    
+
+    def get_metric_values(
+        self,
+        graph_id: str,
+        metric: str,
+        node_ids: Optional[List[str]] = None
+    ) -> Optional[List[float]]:
+        """
+        Get values for a specific metric from the graph.
+
+        This is optimized for distribution analysis - returns just the
+        numeric values without DataFrame overhead.
+
+        Args:
+            graph_id: Graph identifier
+            metric: Metric name (column in metrics DataFrame or node attribute)
+            node_ids: Optional subset of node IDs to include
+
+        Returns:
+            List of metric values or None if metric not found
+        """
+        # Get target graph
+        if graph_id and graph_id in self.graphs:
+            G = self.graphs[graph_id]
+        elif self.graphs:
+            graph_id = list(self.graphs.keys())[0]
+            G = self.graphs[graph_id]
+        else:
+            return None
+
+        values = []
+
+        # Get nodes to process
+        nodes_to_check = node_ids if node_ids else list(G.nodes())
+
+        # Try getting from node attributes (includes both metrics and properties)
+        for node_id in nodes_to_check:
+            if node_id in G.nodes:
+                value = G.nodes[node_id].get(metric)
+                if value is not None:
+                    try:
+                        values.append(float(value))
+                    except (ValueError, TypeError):
+                        pass  # Skip non-numeric values
+
+        # If we found values in graph attributes, return them
+        if values:
+            return values
+
+        # Fallback: try metrics DataFrame
+        metrics_df = self.get_metrics_dataframe()
+        if metrics_df is not None and metric in metrics_df.columns:
+            if 'avatar' in metrics_df.columns:
+                if node_ids:
+                    df = metrics_df[metrics_df['avatar'].isin(node_ids)]
+                else:
+                    df = metrics_df
+                return df[metric].dropna().tolist()
+
+        return None
+
     def update_node_data(self, node_updates: List[Dict[str, Any]]) -> None:
         """
         Update node attributes in all graphs.

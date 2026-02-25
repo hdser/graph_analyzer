@@ -103,11 +103,11 @@ class IGraphLayoutBackend(LayoutBackend):
     ALGORITHMS = ['auto', 'drl', 'fr', 'kk', 'lgl', 'graphopt', 'circle', 'grid', 'random']
     
     # Thresholds for auto algorithm selection
+    # Note: LGL doesn't support disconnected graphs, so we use DRL for all large graphs
     THRESHOLDS = [
         (500, 'kk'),
         (3000, 'fr'),
-        (50000, 'drl'),
-        (float('inf'), 'lgl')
+        (float('inf'), 'drl')  # DRL works for disconnected graphs
     ]
     
     @property
@@ -219,16 +219,33 @@ class IGraphLayoutBackend(LayoutBackend):
             else:
                 layout = ig_graph.layout_auto()
             
-            # Scale positions
-            layout.scale(scale)
+            # Normalize layout to fit within [-1, 1] first, then scale
+            # This ensures consistent sizing regardless of algorithm output
             coords = layout.coords
-            
-            # Convert to output format
-            positions = {}
-            for idx, (x, y) in enumerate(coords):
-                node_id = str(idx_to_node[idx])
-                positions[node_id] = {'x': float(x), 'y': float(y)}
-            
+            if len(coords) > 0:
+                xs = [c[0] for c in coords]
+                ys = [c[1] for c in coords]
+                max_extent = max(
+                    max(xs) - min(xs) if xs else 1,
+                    max(ys) - min(ys) if ys else 1,
+                    1  # Prevent division by zero
+                )
+                # Normalize to [-0.5, 0.5] then scale
+                center_x = (max(xs) + min(xs)) / 2 if xs else 0
+                center_y = (max(ys) + min(ys)) / 2 if ys else 0
+
+                positions = {}
+                for idx, (x, y) in enumerate(coords):
+                    node_id = str(idx_to_node[idx])
+                    # Normalize and scale
+                    nx = ((x - center_x) / max_extent) * scale
+                    ny = ((y - center_y) / max_extent) * scale
+                    positions[node_id] = {'x': float(nx), 'y': float(ny)}
+
+                print(f"[LAYOUT:igraph] Normalized from extent {max_extent:.1f} to scale {scale}")
+            else:
+                positions = {}
+
             elapsed = time.time() - start
             print(f"[LAYOUT:igraph] Complete: {len(positions)} positions in {elapsed:.2f}s")
             return positions

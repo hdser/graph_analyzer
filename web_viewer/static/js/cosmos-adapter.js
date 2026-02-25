@@ -84,6 +84,10 @@ class CosmosAdapter extends GraphRendererInterface {
         // ========== Position preservation flags ==========
         this._preservePositionsOnEdgeChange = true;
         this._autoFitAfterEdgeChange = false;
+
+        // ========== Static mode state (for pre-computed layouts) ==========
+        this._staticModeActive = false;           // True when physics is disabled for static layout
+        this._savedSimParamsForStatic = null;     // Original sim params to restore
         
         // ========== Current simulation parameters (for tracking) ==========
         this._currentSimParams = {
@@ -619,7 +623,233 @@ class CosmosAdapter extends GraphRendererInterface {
 
         // Note: fitView is now handled by setData via skipFitView option
     }
-    
+
+    /**
+     * Set data with strict static positioning - NO simulation physics.
+     *
+     * This method ensures positions are preserved exactly as provided by:
+     * 1. Pausing simulation FIRST before any data changes
+     * 2. Using circular fallback (not random) for missing positions
+     * 3. Injecting positions directly into the buffer
+     * 4. Rendering without stepping physics
+     *
+     * Use this when loading pre-computed layouts (from Cytoscape Desktop, igraph, etc.)
+     *
+     * @param {Array} nodes - Node array, each with {id, x, y, ...data}
+     * @param {Array} edges - Edge array, each with {source, target, ...data}
+     * @param {Object} options - Options
+     * @param {boolean} options.fitView - If true, fit view after setting data (default: true)
+     * @param {number} options.circularRadius - Radius for circular fallback (default: 500)
+     */
+    setDataStatic(nodes, edges, options = {}) {
+        const { fitView = true, circularRadius = 500 } = options;
+
+        console.log(`[CosmosAdapter] setDataStatic: ${nodes.length} nodes, ${edges.length} edges`);
+
+        // === STEP 1: CRITICAL - Disable ALL physics forces FIRST ===
+        // cosmos.gl v2.0 auto-starts simulation when setPointPositions() is called.
+        // We must disable ALL forces so even if simulation runs, nodes won't move.
+        if (this.graph) {
+            // Save original simulation params for restoration
+            this._savedSimParamsForStatic = {
+                simulationGravity: this._currentSimParams.gravity,
+                simulationRepulsion: this._currentSimParams.repulsion,
+                simulationLinkSpring: this._currentSimParams.linkSpring,
+                simulationCenter: this._currentSimParams.center,
+                simulationFriction: this._currentSimParams.friction,
+                simulationLinkDistance: this._currentSimParams.linkDistance,
+            };
+
+            // Disable ALL physics forces - this is the KEY fix
+            this.graph.setConfig({
+                simulationGravity: 0,
+                simulationRepulsion: 0,
+                simulationLinkSpring: 0,
+                simulationCenter: 0,
+                simulationFriction: 1.0,  // Max friction = no movement
+                simulationLinkDistance: 0,
+            });
+            console.log('[CosmosAdapter] setDataStatic: Physics forces DISABLED');
+
+            // Then pause (belt and suspenders)
+            this.graph.pause();
+        }
+        this._simulationRunning = false;
+        this._staticModeActive = true;
+
+        // === STEP 2: Clear existing data ===
+        this.nodeIndices.clear();
+        this.nodeIds = [];
+        this.edgeIndices.clear();
+        this.edgeDataMap.clear();
+        this.nodeDataMap.clear();
+        this.incomingEdges.clear();
+        this.outgoingEdges.clear();
+        this.selectedIndices.clear();
+        this.highlightedIndices.clear();
+        this._currentColorMetric = null;
+        this._hoveredIndex = null;
+
+        // === STEP 3: Build node index mapping ===
+        nodes.forEach((node, index) => {
+            let nodeId = node.id;
+            if (nodeId === undefined || nodeId === null) {
+                nodeId = node.data?.id || node.address || node.label || `node_${index}`;
+                console.warn(`[CosmosAdapter] Node at index ${index} missing ID, using:`, nodeId);
+            }
+
+            this.nodeIndices.set(nodeId, index);
+            this.nodeIds[index] = nodeId;
+            this.nodeDataMap.set(nodeId, node);
+
+            this.incomingEdges.set(nodeId, []);
+            this.outgoingEdges.set(nodeId, []);
+        });
+
+        // === STEP 4: Build position array with circular fallback ===
+        this.positions = new Float32Array(nodes.length * 2);
+        let nodesWithPositions = 0;
+        let nodesWithCircular = 0;
+
+        nodes.forEach((node, i) => {
+            const hasValidPosition = node.x !== undefined && node.y !== undefined;
+
+            if (hasValidPosition) {
+                // Use pre-computed position exactly
+                this.positions[i * 2] = node.x;
+                this.positions[i * 2 + 1] = node.y;
+                nodesWithPositions++;
+            } else {
+                // Circular fallback (NOT random) - deterministic based on index
+                const angle = (2 * Math.PI * i) / nodes.length;
+                this.positions[i * 2] = Math.cos(angle) * circularRadius;
+                this.positions[i * 2 + 1] = Math.sin(angle) * circularRadius;
+                nodesWithCircular++;
+            }
+        });
+
+        console.log(`[CosmosAdapter] setDataStatic: ${nodesWithPositions} nodes with positions, ${nodesWithCircular} with circular fallback`);
+
+        // === STEP 5: Build links array (indices, not IDs) ===
+        const linkData = new Float32Array(edges.length * 2);
+        let validEdges = 0;
+
+        edges.forEach((edge, i) => {
+            const sourceIndex = this.nodeIndices.get(edge.source);
+            const targetIndex = this.nodeIndices.get(edge.target);
+
+            if (sourceIndex !== undefined && targetIndex !== undefined) {
+                linkData[validEdges * 2] = sourceIndex;
+                linkData[validEdges * 2 + 1] = targetIndex;
+                validEdges++;
+
+                const edgeId = edge.id || `${edge.source}-${edge.target}`;
+                this.edgeIndices.set(edgeId, i);
+                this.edgeDataMap.set(edgeId, edge);
+
+                this.incomingEdges.get(edge.target)?.push(edge.source);
+                this.outgoingEdges.get(edge.source)?.push(edge.target);
+            }
+        });
+
+        // Trim to actual valid edges
+        const trimmedLinkData = linkData.slice(0, validEdges * 2);
+
+        // Store edge data for later
+        this._edgeLinkData = trimmedLinkData;
+        this._masterLinkData = new Float32Array(trimmedLinkData);
+        this._masterEdgeCount = validEdges;
+        this._storedEdgeData = edges.map(edge => ({
+            source: edge.source,
+            target: edge.target,
+            id: edge.id || `${edge.source}-${edge.target}`,
+            data: edge
+        }));
+
+        // === STEP 6: Inject positions directly (with dontRescale=true) ===
+        this.graph.setPointPositions(this.positions, true);  // dontRescale = true
+
+        // === STEP 7: Set links if edges should be visible ===
+        if (this._edgesVisible && trimmedLinkData.length > 0) {
+            this.graph.setLinks(trimmedLinkData);
+            this._applyEdgeColorsForCount(validEdges);
+        } else {
+            this.graph.setLinks(new Float32Array(0));
+        }
+
+        // Apply default colors
+        this.applyDefaultColors();
+        this.applyDefaultEdgeColors();
+
+        // === STEP 8: Render WITHOUT stepping physics ===
+        this.graph.render();
+
+        // === STEP 9: Aggressively ensure simulation stays paused ===
+        // cosmos.gl may try to auto-start simulation multiple times
+        this.graph.pause();
+        this._simulationRunning = false;
+
+        // Schedule multiple pause calls to combat any auto-restart
+        const ensurePaused = () => {
+            if (this.graph && this._staticModeActive) {
+                this.graph.pause();
+                this._simulationRunning = false;
+            }
+        };
+
+        // Pause at multiple intervals to catch any auto-restart
+        setTimeout(ensurePaused, 10);
+        setTimeout(ensurePaused, 50);
+        setTimeout(ensurePaused, 100);
+        setTimeout(ensurePaused, 200);
+
+        // Fit view if requested
+        if (fitView) {
+            setTimeout(() => {
+                this.graph.fitView();
+                ensurePaused();
+                console.log('[CosmosAdapter] setDataStatic: fit complete, simulation paused, static mode active');
+            }, 150);
+        }
+
+        // Re-apply edge colors (cosmos.gl may need multiple applications)
+        setTimeout(() => {
+            this.applyDefaultEdgeColors();
+            this.graph.render();
+            ensurePaused();
+        }, 50);
+
+        console.log('[CosmosAdapter] setDataStatic: Complete. Static mode active, physics disabled.');
+    }
+
+    /**
+     * Restore simulation physics after setDataStatic was used.
+     * Call this when the user wants to run the force-directed layout.
+     */
+    restoreSimulation() {
+        if (!this._staticModeActive) {
+            console.log('[CosmosAdapter] restoreSimulation: Not in static mode, nothing to restore');
+            return;
+        }
+
+        if (this.graph && this._savedSimParamsForStatic) {
+            // Restore original simulation parameters
+            this.graph.setConfig(this._savedSimParamsForStatic);
+            console.log('[CosmosAdapter] restoreSimulation: Physics forces RESTORED');
+        }
+
+        this._staticModeActive = false;
+        this._savedSimParamsForStatic = null;
+    }
+
+    /**
+     * Check if static mode is active (physics disabled)
+     * @returns {boolean}
+     */
+    isStaticMode() {
+        return this._staticModeActive === true;
+    }
+
     updatePositions(positions) {
         const posArray = new Float32Array(this.nodeIds.length * 2);
         const posMap = positions instanceof Map ? positions : new Map(Object.entries(positions));
@@ -1135,6 +1365,13 @@ class CosmosAdapter extends GraphRendererInterface {
     startSimulation(alpha = 1) {
         console.log('[CosmosAdapter] startSimulation called with alpha:', alpha);
         console.log('[CosmosAdapter] graph object:', !!this.graph, typeof this.graph?.start);
+
+        // If we're in static mode, restore physics first
+        if (this._staticModeActive) {
+            console.log('[CosmosAdapter] Exiting static mode before starting simulation');
+            this.restoreSimulation();
+        }
+
         if (this.graph && typeof this.graph.start === 'function') {
             this.graph.start(alpha);
             console.log('[CosmosAdapter] Simulation started');

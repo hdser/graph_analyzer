@@ -12,7 +12,7 @@ from .snapshot_analysis_service import snapshot_analysis_service, SnapshotAnalys
 from .capacity_flow_service import capacity_flow_service, CapacityFlowService
 
 # Services as classes only (no singleton exported at module level)
-from .cache_service import CacheService
+from .cache_service import CacheService, cache_service
 from .layout_service import LayoutService
 from .auto_reload_service import AutoReloadManager
 from .snapshot_storage import SnapshotStorage
@@ -25,6 +25,7 @@ __all__ = [
     "snapshot_service",
     "snapshot_analysis_service",
     "capacity_flow_service",
+    "cache_service",
     # Classes
     "NetworkService",
     "APIPropertiesService",

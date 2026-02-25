@@ -856,19 +856,172 @@ class CacheService:
     def delete_layout(self, filename: str) -> bool:
         """
         Delete a specific layout file.
-        
+
         Args:
             filename: Layout filename (with or without .parquet)
-            
+
         Returns:
             True if deleted, False if not found
         """
         if not filename.endswith('.parquet'):
             filename = f"{filename}.parquet"
-        
+
         cache_file = self.layouts_dir / filename
         if cache_file.exists():
             cache_file.unlink()
             print(f"[CACHE] Deleted layout: {filename}")
             return True
         return False
+
+    # =========================================================================
+    # Distribution Analysis Cache
+    # =========================================================================
+
+    def _get_distribution_cache_key(self, graph_id: str, metric: str, bins: int) -> str:
+        """Generate cache key for distribution data."""
+        return f"{graph_id}_{metric}_{bins}"
+
+    def _get_distribution_cache_file(self, cache_key: str) -> Path:
+        """Get cache file path for distribution data."""
+        dist_dir = self.data_dir / "distributions"
+        dist_dir.mkdir(parents=True, exist_ok=True)
+        return dist_dir / f"{cache_key}.json"
+
+    def get_cached_distribution(
+        self,
+        graph_id: str,
+        metric: str,
+        bins: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get cached distribution data if available and not expired.
+
+        Args:
+            graph_id: Graph identifier
+            metric: Metric name
+            bins: Number of histogram bins
+
+        Returns:
+            Cached distribution data or None if not found/expired
+        """
+        cache_key = self._get_distribution_cache_key(graph_id, metric, bins)
+        cache_file = self._get_distribution_cache_file(cache_key)
+
+        if not cache_file.exists():
+            return None
+
+        try:
+            with open(cache_file, 'r') as f:
+                cached = json.load(f)
+
+            # Check TTL
+            cached_time = cached.get('_cached_at', 0)
+            age = time.time() - cached_time
+            ttl = settings.DISTRIBUTION_CACHE_TTL
+
+            if ttl > 0 and age > ttl:
+                print(f"[CACHE] Distribution cache expired for {metric} "
+                      f"(age: {age:.0f}s, ttl: {ttl}s)")
+                return None
+
+            print(f"[CACHE] Distribution cache hit for {metric} "
+                  f"(age: {age:.0f}s)")
+
+            # Remove internal field before returning
+            cached.pop('_cached_at', None)
+            return cached
+
+        except Exception as e:
+            print(f"[CACHE] Error loading distribution cache: {e}")
+            return None
+
+    def save_distribution_cache(
+        self,
+        graph_id: str,
+        metric: str,
+        bins: int,
+        data: Dict[str, Any]
+    ) -> str:
+        """
+        Save distribution data to cache.
+
+        Args:
+            graph_id: Graph identifier
+            metric: Metric name
+            bins: Number of histogram bins
+            data: Distribution data to cache
+
+        Returns:
+            Cache file path
+        """
+        cache_key = self._get_distribution_cache_key(graph_id, metric, bins)
+        cache_file = self._get_distribution_cache_file(cache_key)
+
+        # Add timestamp
+        data_with_time = dict(data)
+        data_with_time['_cached_at'] = time.time()
+
+        with open(cache_file, 'w') as f:
+            json.dump(data_with_time, f)
+
+        print(f"[CACHE] Saved distribution cache for {metric}")
+        return str(cache_file)
+
+    def invalidate_distribution_cache(self, graph_id: str) -> int:
+        """
+        Invalidate all distribution caches for a graph.
+
+        Called when graph structure changes (nodes added/removed, metrics recomputed).
+
+        Args:
+            graph_id: Graph identifier
+
+        Returns:
+            Number of cache files deleted
+        """
+        dist_dir = self.data_dir / "distributions"
+        if not dist_dir.exists():
+            return 0
+
+        count = 0
+        for cache_file in dist_dir.glob(f"{graph_id}_*.json"):
+            try:
+                cache_file.unlink()
+                count += 1
+            except Exception as e:
+                print(f"[CACHE] Error deleting {cache_file}: {e}")
+
+        if count > 0:
+            print(f"[CACHE] Invalidated {count} distribution cache files for {graph_id}")
+
+        return count
+
+    def invalidate_all_caches(self, graph_id: str) -> Dict[str, int]:
+        """
+        Invalidate all caches for a graph.
+
+        Call this when graph structure changes significantly.
+
+        Args:
+            graph_id: Graph identifier
+
+        Returns:
+            Dict with count of invalidated items per cache type
+        """
+        results = {
+            "layouts": 0,
+            "distributions": 0,
+        }
+
+        # Invalidate distribution cache
+        results["distributions"] = self.invalidate_distribution_cache(graph_id)
+
+        # Note: Layout cache is not invalidated by default as it's usually intentional
+        # Call clear_layout_cache() explicitly if needed
+
+        print(f"[CACHE] Invalidated caches for {graph_id}: {results}")
+        return results
+
+
+# Global singleton instance
+cache_service = CacheService()

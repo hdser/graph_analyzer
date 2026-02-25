@@ -2,13 +2,18 @@
 Metrics Router
 
 API endpoints for metrics computation and discovery.
+Includes distribution analysis with server-side histogram computation.
 """
 
 from typing import Dict, List, Any, Optional
+import numpy as np
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from ..models.requests import MetricsConfig
 from ..services.network_service import network_service
+from ..services.cache_service import cache_service
+from ..config import settings
 from engines.metrics import (
     METRIC_REGISTRY,
     METRIC_CATEGORIES,
@@ -403,4 +408,225 @@ def search_metrics(
         },
         "results": results,
         "count": len(results),
+    }
+
+
+# ==========================================================================
+# DISTRIBUTION ANALYSIS ENDPOINTS
+# ==========================================================================
+
+class DistributionRequest(BaseModel):
+    """Request for batch distribution computation."""
+    metrics: List[str]
+    graph_id: str
+    bins: int = 100
+    node_ids: Optional[List[str]] = None
+
+
+def compute_histogram(values: np.ndarray, bins: int) -> Dict[str, Any]:
+    """
+    Compute histogram from values array.
+
+    Returns:
+        {"bins": [...], "counts": [...], "bin_edges": [...]}
+    """
+    if len(values) == 0:
+        return {"bins": [], "counts": [], "bin_edges": []}
+
+    # Handle constant values
+    if np.allclose(values, values[0]):
+        return {
+            "bins": [float(values[0])],
+            "counts": [len(values)],
+            "bin_edges": [float(values[0]), float(values[0]) + 1e-10]
+        }
+
+    counts, bin_edges = np.histogram(values, bins=bins)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    return {
+        "bins": bin_centers.tolist(),
+        "counts": counts.tolist(),
+        "bin_edges": bin_edges.tolist()
+    }
+
+
+def compute_statistics(values: np.ndarray) -> Dict[str, float]:
+    """Compute basic statistics from values array."""
+    if len(values) == 0:
+        return {
+            "mean": 0.0, "median": 0.0, "std": 0.0,
+            "min": 0.0, "max": 0.0, "count": 0
+        }
+
+    return {
+        "mean": float(np.mean(values)),
+        "median": float(np.median(values)),
+        "std": float(np.std(values)),
+        "min": float(np.min(values)),
+        "max": float(np.max(values)),
+        "count": len(values)
+    }
+
+
+def compute_percentiles(values: np.ndarray) -> Dict[str, float]:
+    """Compute percentiles from values array."""
+    if len(values) == 0:
+        return {f"p{p}": 0.0 for p in [10, 25, 50, 75, 90, 95, 99]}
+
+    return {
+        "p10": float(np.percentile(values, 10)),
+        "p25": float(np.percentile(values, 25)),
+        "p50": float(np.percentile(values, 50)),
+        "p75": float(np.percentile(values, 75)),
+        "p90": float(np.percentile(values, 90)),
+        "p95": float(np.percentile(values, 95)),
+        "p99": float(np.percentile(values, 99))
+    }
+
+
+@router.get("/metrics/{metric}/distribution")
+def get_metric_distribution(
+    metric: str,
+    graph_id: str = Query(..., description="Graph identifier"),
+    bins: int = Query(100, ge=10, le=500, description="Number of histogram bins"),
+    use_cache: bool = Query(True, description="Use cached distribution if available")
+) -> Dict[str, Any]:
+    """
+    Compute histogram and statistics for a single metric server-side.
+
+    This endpoint moves histogram computation from the browser to the server,
+    reducing UI lag for large graphs and enabling caching.
+
+    Returns:
+        {
+            "metric": "...",
+            "graph_id": "...",
+            "histogram": {"bins": [...], "counts": [...], "bin_edges": [...]},
+            "statistics": {"mean": ..., "median": ..., "std": ..., "min": ..., "max": ..., "count": ...},
+            "percentiles": {"p10": ..., "p25": ..., ..., "p99": ...},
+            "cached": true/false
+        }
+    """
+    # Check cache first
+    if use_cache and settings.DISTRIBUTION_CACHE_ENABLED:
+        cached = cache_service.get_cached_distribution(graph_id, metric, bins)
+        if cached is not None:
+            cached["cached"] = True
+            return cached
+
+    # Get metric values from network service
+    try:
+        values = network_service.get_metric_values(graph_id, metric)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Failed to get metric values: {e}")
+
+    if values is None or len(values) == 0:
+        raise HTTPException(status_code=404, detail=f"No data for metric '{metric}' in graph '{graph_id}'")
+
+    # Convert to numpy array and filter NaN/Inf
+    values = np.array(values, dtype=np.float64)
+    values = values[np.isfinite(values)]
+
+    if len(values) == 0:
+        raise HTTPException(status_code=404, detail=f"No valid values for metric '{metric}'")
+
+    # Compute distribution
+    result = {
+        "metric": metric,
+        "graph_id": graph_id,
+        "histogram": compute_histogram(values, bins),
+        "statistics": compute_statistics(values),
+        "percentiles": compute_percentiles(values),
+        "cached": False
+    }
+
+    # Cache result
+    if settings.DISTRIBUTION_CACHE_ENABLED:
+        cache_service.save_distribution_cache(graph_id, metric, bins, result)
+
+    return result
+
+
+@router.post("/metrics/distributions/batch")
+def get_distributions_batch(request: DistributionRequest) -> Dict[str, Any]:
+    """
+    Compute distributions for multiple metrics in one request.
+
+    This is more efficient than multiple individual requests when
+    analyzing several metrics at once.
+
+    Returns:
+        {
+            "graph_id": "...",
+            "distributions": {
+                "metric1": {...distribution data...},
+                "metric2": {...distribution data...},
+                ...
+            },
+            "computed": [...metric names that were computed...],
+            "cached": [...metric names that were from cache...]
+        }
+    """
+    results = {}
+    computed = []
+    cached_metrics = []
+
+    for metric in request.metrics:
+        try:
+            # Check cache first
+            if settings.DISTRIBUTION_CACHE_ENABLED:
+                cached = cache_service.get_cached_distribution(
+                    request.graph_id, metric, request.bins
+                )
+                if cached is not None:
+                    cached["cached"] = True
+                    results[metric] = cached
+                    cached_metrics.append(metric)
+                    continue
+
+            # Get values and compute
+            values = network_service.get_metric_values(
+                request.graph_id, metric, request.node_ids
+            )
+
+            if values is None or len(values) == 0:
+                results[metric] = {"error": f"No data for metric '{metric}'"}
+                continue
+
+            values = np.array(values, dtype=np.float64)
+            values = values[np.isfinite(values)]
+
+            if len(values) == 0:
+                results[metric] = {"error": f"No valid values for metric '{metric}'"}
+                continue
+
+            result = {
+                "metric": metric,
+                "graph_id": request.graph_id,
+                "histogram": compute_histogram(values, request.bins),
+                "statistics": compute_statistics(values),
+                "percentiles": compute_percentiles(values),
+                "cached": False
+            }
+
+            # Cache result
+            if settings.DISTRIBUTION_CACHE_ENABLED:
+                cache_service.save_distribution_cache(
+                    request.graph_id, metric, request.bins, result
+                )
+
+            results[metric] = result
+            computed.append(metric)
+
+        except Exception as e:
+            results[metric] = {"error": str(e)}
+
+    return {
+        "graph_id": request.graph_id,
+        "distributions": results,
+        "computed": computed,
+        "cached": cached_metrics,
+        "total": len(request.metrics),
+        "success": len(computed) + len(cached_metrics)
     }

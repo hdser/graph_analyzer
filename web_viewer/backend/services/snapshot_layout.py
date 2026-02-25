@@ -3,12 +3,23 @@ Snapshot Layout Service
 
 Handles layout derivation and constrained spring layout algorithm for
 positioning unknown nodes in historical snapshots.
+
+Supports two backends:
+- 'spring': Original O(n²) spring layout (slow but compatible)
+- 'igraph': Fast igraph-based layout with strict anchoring (recommended)
 """
 
 import math
 import random
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Any, Optional
+
+try:
+    import igraph as ig
+    IGRAPH_AVAILABLE = True
+except ImportError:
+    IGRAPH_AVAILABLE = False
+    print("[LAYOUT] Warning: igraph not available, using spring backend only")
 
 from ..config import settings
 
@@ -92,13 +103,25 @@ class SnapshotLayout:
             node: {'x': master_layout[node]['x'], 'y': master_layout[node]['y']}
             for node in known_nodes
         }
-        
-        # Position unknown nodes via constrained spring
-        new_positions = self.position_unknown_nodes(
-            edges=edges,
-            fixed_positions=fixed_positions,
-            free_nodes=unknown_nodes
-        )
+
+        # Position unknown nodes using configured backend
+        backend = getattr(settings, 'SNAPSHOT_LAYOUT_BACKEND', 'igraph')
+        algorithm = getattr(settings, 'SNAPSHOT_LAYOUT_ALGORITHM', 'auto')
+
+        if backend == 'igraph' and IGRAPH_AVAILABLE:
+            new_positions = self.position_unknown_nodes_fast(
+                edges=edges,
+                fixed_positions=fixed_positions,
+                free_nodes=unknown_nodes,
+                algorithm=algorithm
+            )
+        else:
+            # Fallback to O(n²) spring layout
+            new_positions = self.position_unknown_nodes(
+                edges=edges,
+                fixed_positions=fixed_positions,
+                free_nodes=unknown_nodes
+            )
         
         # Combine all positions
         layout = {}
@@ -246,7 +269,164 @@ class SnapshotLayout:
         
         # Return only free node positions
         return {node: positions[node] for node in free_nodes}
-    
+
+    def position_unknown_nodes_fast(
+        self,
+        edges: List[Tuple[str, str]],
+        fixed_positions: Dict[str, Dict[str, float]],
+        free_nodes: Set[str],
+        algorithm: str = "auto"
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Position unknown nodes using igraph with strict anchoring.
+
+        This is much faster than the O(n²) spring layout for large node sets.
+        Uses the igraph `fixed` parameter to truly anchor known nodes (not just warm start).
+
+        Algorithm selection (auto mode):
+        - <500 nodes: Kamada-Kawai (kk) - high quality
+        - <5000 nodes: Fruchterman-Reingold (fr) with fixed parameter
+        - >=5000 nodes: DrL (drl) - fast for large graphs
+
+        Args:
+            edges: List of (source, target) tuples
+            fixed_positions: Positions that cannot move {node: {x, y}}
+            free_nodes: Set of nodes that need positions
+            algorithm: 'auto', 'drl', 'fr', 'kk', 'lgl', 'graphopt'
+
+        Returns:
+            Positions for free nodes {node: {x, y}}
+        """
+        if not free_nodes:
+            return {}
+
+        if not IGRAPH_AVAILABLE:
+            print("[LAYOUT] igraph not available, falling back to spring layout")
+            return self.position_unknown_nodes(edges, fixed_positions, free_nodes)
+
+        n_free = len(free_nodes)
+
+        # Build combined node list (fixed first, then free)
+        all_nodes = list(fixed_positions.keys()) + list(free_nodes)
+        node_to_idx = {node: i for i, node in enumerate(all_nodes)}
+        n_total = len(all_nodes)
+
+        # Build igraph graph
+        ig_graph = ig.Graph(directed=False)
+        ig_graph.add_vertices(n_total)
+
+        # Add edges (only those connecting nodes we have)
+        edge_list = []
+        for src, tgt in edges:
+            if src in node_to_idx and tgt in node_to_idx:
+                edge_list.append((node_to_idx[src], node_to_idx[tgt]))
+
+        if edge_list:
+            ig_graph.add_edges(edge_list)
+
+        # Compute scale from fixed positions
+        if fixed_positions:
+            xs = [p['x'] for p in fixed_positions.values()]
+            ys = [p['y'] for p in fixed_positions.values()]
+            scale = max(max(xs) - min(xs), max(ys) - min(ys)) or 1000.0
+            center_x = (max(xs) + min(xs)) / 2
+            center_y = (max(ys) + min(ys)) / 2
+        else:
+            scale = 1000.0
+            center_x, center_y = 0.0, 0.0
+
+        # Build initial positions (seed for warm start)
+        init_coords = []
+        for node in all_nodes:
+            if node in fixed_positions:
+                # Fixed nodes get their exact positions (normalized)
+                init_coords.append([
+                    fixed_positions[node]['x'] / scale,
+                    fixed_positions[node]['y'] / scale
+                ])
+            else:
+                # Free nodes: initialize near connected fixed neighbors if possible
+                neighbors = []
+                node_idx = node_to_idx[node]
+                for neighbor_idx in ig_graph.neighbors(node_idx):
+                    neighbor_node = all_nodes[neighbor_idx]
+                    if neighbor_node in fixed_positions:
+                        neighbors.append(fixed_positions[neighbor_node])
+
+                if neighbors:
+                    # Position near average of fixed neighbors
+                    avg_x = sum(n['x'] for n in neighbors) / len(neighbors) / scale
+                    avg_y = sum(n['y'] for n in neighbors) / len(neighbors) / scale
+                    # Small random offset to avoid overlap
+                    init_coords.append([
+                        avg_x + random.uniform(-0.05, 0.05),
+                        avg_y + random.uniform(-0.05, 0.05)
+                    ])
+                else:
+                    # Random position if no fixed neighbors
+                    init_coords.append([
+                        random.uniform(-0.5, 0.5),
+                        random.uniform(-0.5, 0.5)
+                    ])
+
+        # CRITICAL: Create fixed mask - True = anchored, False = can move
+        # Only fixed_positions nodes are anchored
+        fixed_mask = [node in fixed_positions for node in all_nodes]
+
+        # Select algorithm based on free node count
+        if algorithm == "auto":
+            if n_free < 500:
+                algorithm = "kk"
+            elif n_free < 5000:
+                algorithm = "fr"  # FR supports the fixed parameter
+            else:
+                algorithm = "drl"
+
+        print(f"[LAYOUT] Using igraph {algorithm} for {n_free} unknown nodes ({n_total} total)")
+
+        # Run layout algorithm
+        try:
+            if algorithm == "kk":
+                # Kamada-Kawai - high quality, slower
+                layout = ig_graph.layout_kamada_kawai(seed=init_coords)
+            elif algorithm == "fr":
+                # Fruchterman-Reingold with STRICT anchoring via fixed parameter
+                layout = ig_graph.layout_fruchterman_reingold(
+                    niter=500,
+                    seed=init_coords,
+                    fixed=fixed_mask  # CRITICAL: strict anchor
+                )
+            elif algorithm == "drl":
+                # DrL - very fast for large graphs
+                layout = ig_graph.layout_drl(seed=init_coords)
+            elif algorithm == "lgl":
+                # Large Graph Layout
+                layout = ig_graph.layout_lgl()
+            elif algorithm == "graphopt":
+                layout = ig_graph.layout_graphopt(seed=init_coords)
+            else:
+                # Default to FR
+                layout = ig_graph.layout_fruchterman_reingold(
+                    niter=500,
+                    seed=init_coords,
+                    fixed=fixed_mask
+                )
+        except Exception as e:
+            print(f"[LAYOUT] igraph layout failed: {e}, falling back to spring")
+            return self.position_unknown_nodes(edges, fixed_positions, free_nodes)
+
+        # Extract positions for free nodes only, scale back to original coordinate system
+        result = {}
+        for i, node in enumerate(all_nodes):
+            if node in free_nodes:
+                result[node] = {
+                    'x': layout[i][0] * scale,
+                    'y': layout[i][1] * scale
+                }
+
+        print(f"[LAYOUT] igraph positioned {len(result)} unknown nodes")
+        return result
+
     def compute_bounding_box(
         self, 
         positions: Dict[str, Dict[str, float]]

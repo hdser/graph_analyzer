@@ -93,7 +93,16 @@ class Settings:
     SNAPSHOT_SPRING_REPULSION: float = float(os.getenv("SNAPSHOT_SPRING_REPULSION", "100.0"))
     SNAPSHOT_SPRING_ATTRACTION: float = float(os.getenv("SNAPSHOT_SPRING_ATTRACTION", "0.1"))
     SNAPSHOT_SPRING_DAMPING: float = float(os.getenv("SNAPSHOT_SPRING_DAMPING", "0.9"))
-    
+
+    # Snapshot layout backend for positioning unknown nodes
+    # Options: 'igraph' (fast, recommended) or 'spring' (O(n²), legacy)
+    SNAPSHOT_LAYOUT_BACKEND: str = os.getenv("SNAPSHOT_LAYOUT_BACKEND", "igraph")
+
+    # igraph layout algorithm for snapshots
+    # Options: 'auto', 'drl', 'fr', 'kk', 'lgl', 'graphopt'
+    # auto: kk for <500 nodes, fr for <5000, drl for larger
+    SNAPSHOT_LAYOUT_ALGORITHM: str = os.getenv("SNAPSHOT_LAYOUT_ALGORITHM", "auto")
+
     SNAPSHOT_DEFAULT_METRICS_MODE: str = os.getenv("SNAPSHOT_DEFAULT_METRICS_MODE", "standard")
     
     SNAPSHOT_STANDARD_METRICS: List[str] = [
@@ -103,7 +112,37 @@ class Settings:
     
     SNAPSHOT_MAX_BATCH_SIZE: int = int(os.getenv("SNAPSHOT_MAX_BATCH_SIZE", "30"))
     SNAPSHOT_MAX_SUGGESTIONS: int = int(os.getenv("SNAPSHOT_MAX_SUGGESTIONS", "90"))
-    
+
+    # ==========================================================================
+    # DISTRIBUTION ANALYSIS CONFIGURATION
+    # ==========================================================================
+
+    # Enable caching for distribution (histogram/statistics) computations
+    DISTRIBUTION_CACHE_ENABLED: bool = os.getenv(
+        "DISTRIBUTION_CACHE_ENABLED", "true"
+    ).lower() == "true"
+
+    # Distribution cache TTL in seconds (1 hour default)
+    DISTRIBUTION_CACHE_TTL: int = int(os.getenv("DISTRIBUTION_CACHE_TTL", "3600"))
+
+    # Default number of histogram bins
+    DISTRIBUTION_DEFAULT_BINS: int = int(os.getenv("DISTRIBUTION_DEFAULT_BINS", "100"))
+
+    # ==========================================================================
+    # TIMESERIES CONFIGURATION
+    # ==========================================================================
+
+    # Enable caching for timeseries metric queries
+    TIMESERIES_CACHE_ENABLED: bool = os.getenv(
+        "TIMESERIES_CACHE_ENABLED", "true"
+    ).lower() == "true"
+
+    # Timeseries cache TTL in seconds (5 minutes default)
+    TIMESERIES_CACHE_TTL: int = int(os.getenv("TIMESERIES_CACHE_TTL", "300"))
+
+    # Max concurrent snapshot loads for batch timeseries
+    TIMESERIES_BATCH_SIZE: int = int(os.getenv("TIMESERIES_BATCH_SIZE", "10"))
+
     # ==========================================================================
     # DATABASE CONFIGURATION
     # ==========================================================================
