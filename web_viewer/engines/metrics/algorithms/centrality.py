@@ -47,19 +47,24 @@ class DegreeCentralityAlgorithm(BaseMetricAlgorithm):
 
 
 class ClosenessCentralityAlgorithm(BaseMetricAlgorithm):
-    """Compute closeness centrality."""
-    
+    """Compute closeness centrality. Uses compute backend when available."""
+
     name = "closeness_centrality"
     category = "centrality"
     description = "Closeness centrality (directed and undirected)"
     cost = "medium"
-    
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, backend=None, **kwargs) -> Dict[str, Dict[str, Any]]:
         try:
-            closeness = nx.closeness_centrality(G)
-            closeness_in = nx.closeness_centrality(G.reverse())
-            closeness_undirected = nx.closeness_centrality(U)
-            
+            if backend:
+                closeness = backend.closeness_centrality(G)
+                closeness_in = backend.closeness_centrality(G.reverse())
+                closeness_undirected = backend.closeness_centrality(U)
+            else:
+                closeness = nx.closeness_centrality(G)
+                closeness_in = nx.closeness_centrality(G.reverse())
+                closeness_undirected = nx.closeness_centrality(U)
+
             result = {}
             for node in nodes:
                 result[node] = {
@@ -74,23 +79,26 @@ class ClosenessCentralityAlgorithm(BaseMetricAlgorithm):
 
 
 class BetweennessCentralityAlgorithm(BaseMetricAlgorithm):
-    """Compute betweenness centrality."""
-    
+    """Compute betweenness centrality. Uses compute backend when available."""
+
     name = "betweenness_centrality"
     category = "centrality"
     description = "Betweenness centrality (directed and undirected)"
     cost = "high"
-    
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
-        # Get parameters with defaults
+
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, backend=None, **kwargs) -> Dict[str, Dict[str, Any]]:
         params = parameters or {}
         normalized = params.get('normalized', True)
         endpoints = params.get('endpoints', False)
-        
+
         try:
-            betweenness = nx.betweenness_centrality(G, normalized=normalized, endpoints=endpoints)
-            betweenness_undirected = nx.betweenness_centrality(U, normalized=normalized, endpoints=endpoints)
-            
+            if backend:
+                betweenness = backend.betweenness_centrality(G, normalized=normalized, endpoints=endpoints)
+                betweenness_undirected = backend.betweenness_centrality(U, normalized=normalized, endpoints=endpoints)
+            else:
+                betweenness = nx.betweenness_centrality(G, normalized=normalized, endpoints=endpoints)
+                betweenness_undirected = nx.betweenness_centrality(U, normalized=normalized, endpoints=endpoints)
+
             result = {}
             for node in nodes:
                 result[node] = {
@@ -104,33 +112,38 @@ class BetweennessCentralityAlgorithm(BaseMetricAlgorithm):
 
 
 class EigenvectorCentralityAlgorithm(BaseMetricAlgorithm):
-    """Compute eigenvector centrality."""
-    
+    """Compute eigenvector centrality. Uses compute backend when available."""
+
     name = "eigenvector_centrality"
     category = "centrality"
     description = "Eigenvector centrality (directed and undirected)"
     cost = "medium"
-    
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
-        # Get parameters with defaults
+
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, backend=None, **kwargs) -> Dict[str, Dict[str, Any]]:
         params = parameters or {}
         max_iter = params.get('max_iter', 1000)
         tol = params.get('tol', 1.0e-6)
-        
+
         result = {}
-        
+
         try:
-            eigenvector = nx.eigenvector_centrality(G, max_iter=max_iter, tol=tol)
+            if backend:
+                eigenvector = backend.eigenvector_centrality(G, max_iter=max_iter, tol=tol)
+            else:
+                eigenvector = nx.eigenvector_centrality(G, max_iter=max_iter, tol=tol)
         except Exception as e:
             logger.warning(f"Directed eigenvector centrality failed: {e}")
             eigenvector = {}
-        
+
         try:
-            eigenvector_undirected = nx.eigenvector_centrality(U, max_iter=max_iter, tol=tol)
+            if backend:
+                eigenvector_undirected = backend.eigenvector_centrality(U, max_iter=max_iter, tol=tol)
+            else:
+                eigenvector_undirected = nx.eigenvector_centrality(U, max_iter=max_iter, tol=tol)
         except Exception as e:
             logger.warning(f"Undirected eigenvector centrality failed: {e}")
             eigenvector_undirected = {}
-        
+
         for node in nodes:
             result[node] = {
                 "eigenvector_centrality": eigenvector.get(node, 0),
@@ -195,28 +208,31 @@ class KatzCentralityAlgorithm(BaseMetricAlgorithm):
 
 
 class PageRankAlgorithm(BaseMetricAlgorithm):
-    """Compute PageRank."""
-    
+    """Compute PageRank. Uses compute backend when available."""
+
     name = "pagerank"
     category = "centrality"
     description = "Google PageRank score"
     cost = "low"
-    
+
     def __init__(self, alpha: float = 0.85, **kwargs):
         super().__init__(**kwargs)
         self.alpha = alpha
-    
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, **kwargs) -> Dict[str, Dict[str, Any]]:
-        # Get parameters with defaults
+
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, parameters=None, backend=None, **kwargs) -> Dict[str, Dict[str, Any]]:
         params = parameters or {}
         alpha = params.get('alpha', self.alpha)
         max_iter = params.get('max_iter', 100)
         tol = params.get('tol', 1.0e-6)
-        
+
         try:
-            pagerank = nx.pagerank(G, alpha=alpha, max_iter=max_iter, tol=tol)
-            pagerank_undirected = nx.pagerank(U, alpha=alpha, max_iter=max_iter, tol=tol)
-            
+            if backend:
+                pagerank = backend.pagerank(G, alpha=alpha, max_iter=max_iter, tol=tol)
+                pagerank_undirected = backend.pagerank(U, alpha=alpha, max_iter=max_iter, tol=tol)
+            else:
+                pagerank = nx.pagerank(G, alpha=alpha, max_iter=max_iter, tol=tol)
+                pagerank_undirected = nx.pagerank(U, alpha=alpha, max_iter=max_iter, tol=tol)
+
             result = {}
             for node in nodes:
                 result[node] = {
@@ -254,18 +270,22 @@ class HITSAlgorithm(BaseMetricAlgorithm):
 
 
 class HarmonicCentralityAlgorithm(BaseMetricAlgorithm):
-    """Compute harmonic centrality."""
-    
+    """Compute harmonic centrality. Uses compute backend when available."""
+
     name = "harmonic_centrality"
     category = "centrality"
     description = "Harmonic centrality (sum of inverse distances)"
     cost = "medium"
-    
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, backend=None, **kwargs) -> Dict[str, Dict[str, Any]]:
         try:
-            harmonic = nx.harmonic_centrality(G)
-            harmonic_undirected = nx.harmonic_centrality(U)
-            
+            if backend:
+                harmonic = backend.harmonic_centrality(G)
+                harmonic_undirected = backend.harmonic_centrality(U)
+            else:
+                harmonic = nx.harmonic_centrality(G)
+                harmonic_undirected = nx.harmonic_centrality(U)
+
             result = {}
             for node in nodes:
                 result[node] = {

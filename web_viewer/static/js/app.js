@@ -1246,7 +1246,12 @@ function setupEventListeners() {
             DataExplorer.open();
         }
     });
-    
+
+    // SQL Explorer
+    document.getElementById('sql-explorer-btn')?.addEventListener('click', () => {
+        window.open('/sql-explorer', '_blank');
+    });
+
     // Filter nodes
     document.getElementById('filter-btn')?.addEventListener('click', () => Metrics.filter());
     document.getElementById('reset-filter-btn')?.addEventListener('click', () => Metrics.reset());

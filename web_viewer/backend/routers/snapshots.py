@@ -16,6 +16,7 @@ from ..models.snapshot import (
     SnapshotCreateRequest,
     SnapshotBatchRequest,
     SnapshotSuggestRequest,
+    SnapshotRebuildRequest,
     SnapshotInfo,
     SnapshotData,
     SnapshotListResponse,
@@ -385,6 +386,118 @@ async def create_batch(
             })
         }
     
+    return EventSourceResponse(generate())
+
+
+@router.post("/rebuild")
+async def rebuild_snapshots(
+    request: SnapshotRebuildRequest,
+    service: SnapshotService = Depends(get_snapshot_service)
+):
+    """
+    Rebuild snapshots from scratch.
+
+    If block_numbers is None, rebuilds all existing snapshots for the given
+    base_sql_file. Optionally deletes existing snapshots first.
+
+    Returns SSE progress stream (same event format as create-batch).
+    """
+    # Determine which blocks to rebuild
+    if request.block_numbers:
+        block_numbers = sorted(request.block_numbers)
+    else:
+        # Rebuild all existing snapshots
+        existing = await asyncio.to_thread(
+            service.list_snapshots, request.base_sql_file
+        )
+        block_numbers = sorted([s.block_number for s in existing])
+
+    if not block_numbers:
+        return {"error": "No snapshots found to rebuild", "total": 0}
+
+    # Delete existing if requested
+    if request.delete_existing:
+        for block in block_numbers:
+            try:
+                await asyncio.to_thread(
+                    service.delete_snapshot, request.base_sql_file, block
+                )
+            except Exception:
+                pass  # Continue even if delete fails
+
+    if not HAS_SSE:
+        # Fallback: rebuild all at once
+        batch_req = SnapshotBatchRequest(
+            base_sql_file=request.base_sql_file,
+            block_numbers=block_numbers,
+            metrics_mode=request.metrics_mode,
+        )
+        results = await asyncio.to_thread(service.create_batch, batch_req)
+        return {
+            "snapshots": [s.model_dump() for s in results],
+            "total": len(results),
+        }
+
+    from sse_starlette.sse import EventSourceResponse
+
+    async def generate():
+        total = len(block_numbers)
+        created = []
+        errors = []
+
+        for idx, block_number in enumerate(block_numbers, 1):
+            try:
+                yield {
+                    "event": "progress",
+                    "data": json.dumps({
+                        "current": idx,
+                        "total": total,
+                        "block_number": block_number,
+                        "status": "rebuilding",
+                    }),
+                }
+
+                create_request = SnapshotCreateRequest(
+                    base_sql_file=request.base_sql_file,
+                    block_number=block_number,
+                    metrics_mode=request.metrics_mode,
+                )
+
+                snapshot_info = await asyncio.to_thread(
+                    service.create_snapshot, create_request
+                )
+                created.append(snapshot_info)
+
+                yield {
+                    "event": "complete",
+                    "data": json.dumps({
+                        "current": idx,
+                        "total": total,
+                        "snapshot_id": snapshot_info.snapshot_id,
+                        "node_count": snapshot_info.node_count,
+                        "edge_count": snapshot_info.edge_count,
+                    }),
+                }
+
+            except Exception as e:
+                errors.append({"block_number": block_number, "error": str(e)})
+                yield {
+                    "event": "error",
+                    "data": json.dumps({
+                        "block_number": block_number,
+                        "error": str(e),
+                    }),
+                }
+
+        yield {
+            "event": "done",
+            "data": json.dumps({
+                "total_created": len(created),
+                "total_errors": len(errors),
+                "snapshots": [s.snapshot_id for s in created],
+            }),
+        }
+
     return EventSourceResponse(generate())
 
 

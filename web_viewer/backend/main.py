@@ -29,6 +29,7 @@ from .routers import (
     graph_algorithms_router,
     capacity_flow_router,
     embeddings_router,
+    query_router,
 )
 
 
@@ -154,6 +155,7 @@ app.include_router(temporal_composite_router)
 app.include_router(graph_algorithms_router)
 app.include_router(capacity_flow_router)
 app.include_router(embeddings_router)
+app.include_router(query_router)
 
 
 @app.get("/")
@@ -181,6 +183,15 @@ async def data_explorer():
     if explorer_path.exists():
         return FileResponse(explorer_path)
     return {"error": "data-explorer.html not found"}
+
+
+@app.get("/sql-explorer")
+async def sql_explorer():
+    """Serve the SQL explorer page."""
+    sql_path = STATIC_DIR / "sql-explorer.html"
+    if sql_path.exists():
+        return FileResponse(sql_path)
+    return {"error": "sql-explorer.html not found"}
 
 
 @app.get("/health")

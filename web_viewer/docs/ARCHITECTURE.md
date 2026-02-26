@@ -20,32 +20,34 @@ Graph Analyzer follows a modular architecture with clear separation between:
 │         │                │                │                   │          │
 │         └────────────────┴────────────────┴───────────────────┘          │
 │                                   │                                       │
-│                          Cytoscape.js (WebGL)                            │
+│              ┌────────────────────┼────────────────────┐                 │
+│              │                    │                    │                 │
+│        Cytoscape.js         cosmos.gl          Arrow Reader             │
+│        (< 10K nodes)      (WebGL, 10K+)     (IPC deserializer)         │
 └───────────────────────────────────┬──────────────────────────────────────┘
-                                    │ HTTP/SSE
+                                    │ HTTP/SSE + Arrow IPC (binary)
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────┐
 │                           FastAPI Backend                                  │
 │                                                                            │
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
 │  │                           Routers (API)                              │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │  │
-│  │  │ network  │ │ metrics  │ │ anomaly  │ │composite │ │auto_reload│  │  │
-│  │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬─────┘  │  │
-│  └───────┼────────────┼────────────┼────────────┼─────────────┼────────┘  │
-│          │            │            │            │             │           │
-│  ┌───────┴────────────┴────────────┴────────────┴─────────────┴────────┐  │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐ ┌──────┐  │  │
+│  │  │network │ │metrics │ │anomaly │ │compsite│ │auto_relod│ │snpsts│  │  │
+│  │  │+ Arrow │ │        │ │        │ │        │ │          │ │      │  │  │
+│  │  └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └────┬─────┘ └──┬───┘  │  │
+│  └──────┼──────────┼──────────┼──────────┼──────────┼────────────┼─────┘  │
+│         │          │          │          │          │            │        │
+│  ┌──────┴──────────┴──────────┴──────────┴──────────┴────────────┴─────┐  │
 │  │                          Services                                    │  │
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌────────────────┐  │  │
-│  │  │  network_   │ │   layout_   │ │   cache_    │ │ auto_reload_   │  │  │
-│  │  │   service   │ │   service   │ │   service   │ │    service     │  │  │
-│  │  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └───────┬────────┘  │  │
-│  │         │               │               │                │           │  │
-│  │  ┌──────┴───────────────┴───────────────┴────────────────┴────────┐  │  │
-│  │  │                   api_properties_service                        │  │  │
-│  │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │  │  │
-│  │  │  │ BlacklistProvider│  │  (Future APIs)  │  │  Provider Base  │  │  │  │
-│  │  │  └─────────────────┘  └─────────────────┘  └─────────────────┘  │  │  │
+│  │  ┌───────────┐ ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌───────────┐  │  │
+│  │  │ network_  │ │ layout_  │ │ cache_  │ │ arrow_   │ │ snapshot_ │  │  │
+│  │  │  service  │ │  service │ │ service │ │ service  │ │  service  │  │  │
+│  │  └─────┬─────┘ └────┬────┘ └────┬────┘ └────┬────┘ └─────┬─────┘  │  │
+│  │        │             │           │           │            │         │  │
+│  │  ┌─────┴─────────────┴───────────┴───────────┴────────────┴──────┐  │  │
+│  │  │                     duckdb_service                             │  │  │
+│  │  │     Parquet I/O  │  SQL Explorer  │  postgres_scanner          │  │  │
 │  │  └────────────────────────────────────────────────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                            │
@@ -54,13 +56,13 @@ Graph Analyzer follows a modular architecture with clear separation between:
 │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌────────────────┐  │  │
 │  │  │   graph_    │ │  anomaly_   │ │ composite_  │ │    metric_     │  │  │
 │  │  │   metrics   │ │   engine    │ │   engine    │ │    profiler    │  │  │
-│  │  └─────────────┘ └──────┬──────┘ └─────────────┘ └────────────────┘  │  │
-│  │                         │                                            │  │
-│  │              ┌──────────┴──────────┐                                 │  │
-│  │              │      Algorithms     │                                 │  │
-│  │              │  zscore │ iqr │ if  │                                 │  │
-│  │              │  lof │ dbscan │ mah │                                 │  │
-│  │              └─────────────────────┘                                 │  │
+│  │  └──────┬──────┘ └──────┬──────┘ └─────────────┘ └────────────────┘  │  │
+│  │         │               │                                            │  │
+│  │  ┌──────┴──────┐ ┌─────┴───────────┐                                │  │
+│  │  │  Compute    │ │    Algorithms   │                                 │  │
+│  │  │  Dispatcher │ │ zscore│iqr│ if  │                                 │  │
+│  │  │ NX│ig│cuGr  │ │ lof│dbscan│mah │                                 │  │
+│  │  └─────────────┘ └─────────────────┘                                 │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────────────────┘
          │                    │                        │
@@ -89,17 +91,21 @@ backend/
 │   ├── requests.py          # Pydantic request models
 │   └── responses.py         # Pydantic response models
 ├── routers/
-│   ├── network.py           # Network/graph endpoints
+│   ├── network.py           # Network/graph endpoints + Arrow IPC
 │   ├── metrics.py           # Metrics endpoints
 │   ├── anomaly.py           # Anomaly detection endpoints
 │   ├── composite.py         # Composite metrics endpoints
-│   └── auto_reload.py       # Auto-reload SSE endpoints
+│   ├── auto_reload.py       # Auto-reload SSE endpoints
+│   └── snapshots.py         # Historical snapshot API
 ├── services/
 │   ├── network_service.py       # Main network management
 │   ├── layout_service.py        # Layout computation
 │   ├── cache_service.py         # Caching logic
 │   ├── auto_reload_service.py   # Background reload
-│   └── api_properties_service.py# External API properties
+│   ├── api_properties_service.py# External API properties
+│   ├── duckdb_service.py        # DuckDB data engine (Parquet, SQL)
+│   ├── arrow_service.py         # Arrow IPC serialization
+│   └── snapshot_service.py      # Historical snapshot management
 └── utils/
     └── helpers.py           # Utility functions
 ```
@@ -319,10 +325,13 @@ Input Metrics → Preprocessing → Algorithm → Scoring → Thresholding
 static/
 ├── js/
 │   ├── app.js              # Main application logic
-│   ├── api.js              # Backend API communication
+│   ├── api.js              # Backend API communication (JSON + binary)
 │   ├── state.js            # Global state management
+│   ├── graph-loader.js     # Network loading (Arrow-first, JSON fallback)
+│   ├── arrow-reader.js     # Arrow IPC deserialization & typed arrays
+│   ├── cosmos-adapter.js   # cosmos.gl WebGL renderer adapter
+│   ├── cytoscape-adapter.js# Cytoscape.js renderer adapter
 │   ├── cytoscape-manager.js# Cytoscape.js wrapper
-│   ├── graph-loader.js     # Network loading UI
 │   ├── info-panel.js       # Node details sidebar
 │   ├── metrics.js          # Metrics display
 │   ├── search.js           # Node search/filter
@@ -467,26 +476,51 @@ app.post('/layout', async (req, res) => {
 
 ### Large Graph Handling
 
-| Graph Size | Strategy |
-|------------|----------|
-| < 10K nodes | Full rendering, all features |
-| 10K - 50K | Progressive edge loading |
-| 50K - 100K | Performance mode recommended |
-| > 100K | Sampling or filtering required |
+| Graph Size | Transport | Renderer | Compute Backend |
+|------------|-----------|----------|-----------------|
+| < 10K nodes | Arrow IPC | Cytoscape.js | NetworkX |
+| 10K – 50K | Arrow IPC | cosmos.gl (WebGL) | NetworkX |
+| 50K – 200K | Arrow IPC (batched) | cosmos.gl (WebGL) | igraph |
+| 200K – 5M | Arrow IPC (batched) | cosmos.gl (WebGL) | igraph |
+| > 5M | Arrow IPC (batched) | cosmos.gl (WebGL) | cuGraph (GPU) |
 
-### Memory Management
+### Data Transport
 
-- Edge data streamed in chunks (50K default)
-- Layouts computed incrementally
-- Metrics parallelized with joblib
-- API properties cached to disk
+- **Arrow IPC**: Binary serialization ~10× smaller than JSON for numeric data
+- Zero-copy deserialization on the frontend via Apache Arrow JS
+- Automatic JSON fallback if Arrow JS is unavailable
+- Edge data streamed in batches of 50K via paginated Arrow endpoints
+- Pre-computed integer link indices sent alongside edges for cosmos.gl
+
+### Data Engine — DuckDB
+
+- All Parquet I/O routed through DuckDB (replaces Pandas read/write)
+- `postgres_scanner` extension for direct SQL queries without ETL
+- SQL Explorer: sandboxed SELECT queries against in-memory graph tables
+- Stateless `:memory:` connections — no file locking under concurrent requests
+- Column-selective reads and fast row-count metadata queries
+
+### Compute Dispatcher
+
+- Auto-selects graph analysis backend by node count:
+  - **< 50K** → NetworkX (pure Python, always available)
+  - **50K – 5M** → igraph (C core, ~10–100× faster)
+  - **> 5M** → cuGraph (GPU, ~100–1000× faster, requires CUDA)
+- Graceful fallback chain if preferred backend is unavailable
+
+### Rendering
+
+- cosmos.gl (WebGL) for graphs > 10K nodes — GPU-accelerated
+- Static mode for pre-computed layouts (physics disabled)
+- Position injection via Float32Array directly from Arrow IPC
+- Cytoscape.js retained for smaller graphs with full interactive features
 
 ### Computation Optimization
 
 - NumPy vectorization for metrics
-- Parallel processing (N_JOBS config)
+- Parallel processing (N_JOBS config) via joblib
 - Incremental layout updates
-- WebGL rendering in frontend
+- API properties cached to disk with TTL
 
 ---
 
@@ -556,3 +590,68 @@ class NewProvider(ExternalPropertyProvider):
         # Must return DataFrame with 'avatar' column
         return pd.DataFrame(response_data['items'])
 ```
+
+---
+
+## Scaling Stack
+
+The system uses a 4-layer scaling architecture for graphs from 1K to 5M+ nodes:
+
+```
+Client (Arrow JS) ←── Arrow IPC ──→ FastAPI ←── DuckDB ──→ Parquet / PostgreSQL
+       │                                │
+   cosmos.gl                    Compute Dispatcher
+   (WebGL)                   NX │ igraph │ cuGraph
+```
+
+### Layer 1: DuckDB Data Engine (`backend/services/duckdb_service.py`)
+
+Central data layer replacing Pandas for all Parquet I/O:
+
+- **Parquet reads/writes** with Snappy compression, column-selective reads, metadata-only row counts
+- **postgres_scanner** for direct PostgreSQL queries inside DuckDB (no ETL step)
+- **SQL Explorer** — user-facing sandboxed queries (SELECT-only, memory/thread limits)
+- **Parquet joins** — faster than Pandas merge for multi-file operations
+- Stateless `:memory:` connections per operation — no file locking
+
+### Layer 2: Compute Dispatcher (`engines/metrics/backends/dispatcher.py`)
+
+Automatic backend selection based on graph size:
+
+| Node Count | Backend | Speed vs NetworkX |
+|------------|---------|-------------------|
+| < 50K | NetworkX | 1× (baseline) |
+| 50K – 5M | igraph | ~10–100× |
+| > 5M | cuGraph (GPU) | ~100–1000× |
+
+Falls back gracefully if a preferred backend is not installed.
+
+### Layer 3: Arrow IPC Transport (`backend/services/arrow_service.py`)
+
+Binary serialization for frontend ↔ backend data transfer:
+
+- `graph_elements_to_arrow()` — nodes + positions → Arrow IPC bytes
+- `edges_to_arrow()` — edges with pre-computed cosmos.gl link indices
+- `metrics_to_arrow()` — metrics DataFrame → Arrow IPC bytes
+- Frontend: `arrow-reader.js` deserializes to typed arrays (Float32Array, Int32Array)
+- graph-loader.js uses Arrow-first loading with automatic JSON fallback
+
+### Layer 4: Historical Snapshots (`backend/services/snapshot_service.py`)
+
+Block-based graph snapshots for time-series analysis:
+
+- Create snapshots at specific blockchain block numbers
+- Master layout with incremental position derivation across snapshots
+- Configurable metrics modes: NONE, BASIC, STANDARD, FULL
+- Batch creation with progress callbacks (SSE streaming)
+- Snapshot comparison: diff added/removed nodes and edges
+- Animation data endpoint for time-lapse visualization
+
+### Frontend Renderers
+
+| Renderer | Graph Size | Technology | Features |
+|----------|-----------|------------|----------|
+| Cytoscape.js | < 10K | Canvas/WebGL | Full interactivity, multiple layouts |
+| cosmos.gl | 10K+ | WebGL/GPU | Static mode, position injection, edge toggle |
+
+`cosmos-adapter.js` and `cytoscape-adapter.js` implement a shared interface (`setDataFromArrow`, `addEdgesFromArrow`) so `graph-loader.js` can drive either renderer identically.

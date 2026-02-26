@@ -23,6 +23,7 @@ from .registry import (
 )
 from .resolver import MetricResolver
 from .algorithms import ALGORITHM_CLASSES, get_algorithm_class
+from .backends import ComputeDispatcher, get_backend_info
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +39,13 @@ class MetricComputer:
     def __init__(self, n_jobs: int = None):
         """
         Initialize metric computer.
-        
+
         Args:
             n_jobs: Number of parallel workers (None = auto)
         """
         self.n_jobs = n_jobs or max(1, multiprocessing.cpu_count() - 1)
         self._algorithm_cache: Dict[str, Any] = {}
+        self._dispatcher = ComputeDispatcher()
     
     def compute(
         self,
@@ -77,11 +79,16 @@ class MetricComputer:
         U = G.to_undirected()
         is_connected = nx.is_connected(U)
         
+        # Select compute backend based on graph size
+        backend = self._dispatcher.select(n)
+
         print(f"[COMPUTER] ╔{'═'*60}╗")
         print(f"[COMPUTER] ║ STARTING METRIC COMPUTATION")
         print(f"[COMPUTER] ╠{'═'*60}╣")
         print(f"[COMPUTER] ║ Graph: {n:,} nodes, {G.number_of_edges():,} edges")
         print(f"[COMPUTER] ║ Connected: {is_connected}")
+        print(f"[COMPUTER] ║ Compute backend: {backend.name}")
+        print(f"[COMPUTER] ║ Available: {', '.join(self._dispatcher.available_backends())}")
         print(f"[COMPUTER] ║ Definitions to compute: {len(definitions)}")
         print(f"[COMPUTER] ╚{'═'*60}╝")
         
@@ -151,6 +158,7 @@ class MetricComputer:
                     converters=converters,
                     computed_metrics=metrics,
                     parameters=params,
+                    backend=backend,
                     **kwargs
                 )
                 
@@ -290,6 +298,9 @@ class MetricEngine:
             print(f"[ENGINE] Density: {density:.6f}")
         print(f"[ENGINE] Connected: {nx.is_connected(self.U)}")
         print(f"[ENGINE] Workers: {self.n_jobs} (CPUs: {multiprocessing.cpu_count()})")
+        for info in get_backend_info():
+            status = "Y" if info["available"] else "N"
+            print(f"[ENGINE] Backend {info['name']}: {status} ({info['note']})")
         print(f"[ENGINE] ══════════════════════════════════════════════════════")
     
     def compute(

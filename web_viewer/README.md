@@ -15,6 +15,11 @@ A powerful web dashboard for large-scale graph visualization and analysis, built
 - **Multiple Layout Algorithms**: Force-directed, hierarchical, circular
 - **Cytoscape Desktop Integration**: Professional layouts via py4cytoscape
 - **Export Options**: PNG, JSON, CSV
+- **DuckDB Data Engine**: Parquet I/O, SQL Explorer, postgres_scanner for direct DB queries
+- **Arrow IPC Streaming**: Binary transport ~10× smaller than JSON, zero-copy on frontend
+- **Multi-Backend Compute**: Auto-selects NetworkX (<50K), igraph (50K–5M), or cuGraph (>5M nodes)
+- **Historical Snapshots**: Block-based graph snapshots with layout persistence and diff comparison
+- **WebGL Rendering**: GPU-accelerated visualization via cosmos.gl for 100K+ node graphs
 
 ## Quick Start
 
@@ -105,20 +110,30 @@ graph-analyzer/
 ├── web_viewer/                # Main web application
 │   ├── backend/               # FastAPI backend
 │   │   ├── routers/           # API endpoints
+│   │   │   ├── network.py     # Graph data & Arrow IPC endpoints
+│   │   │   └── snapshots.py   # Historical snapshot API
 │   │   ├── services/          # Business logic
 │   │   │   ├── network_service.py
 │   │   │   ├── cache_service.py
 │   │   │   ├── layout_service.py
 │   │   │   ├── auto_reload_service.py
-│   │   │   └── api_properties_service.py  # External API integration
+│   │   │   ├── api_properties_service.py  # External API integration
+│   │   │   ├── duckdb_service.py          # DuckDB data engine
+│   │   │   ├── arrow_service.py           # Arrow IPC serialization
+│   │   │   └── snapshot_service.py        # Snapshot management
 │   │   └── models/            # Pydantic models
 │   ├── engines/               # Computation engines
 │   │   ├── algorithms/        # Anomaly detection algorithms
 │   │   ├── anomaly_engine.py  # Main anomaly orchestrator
 │   │   ├── composite_engine.py# Composite metrics
-│   │   └── graph_metrics.py   # NetworkX metrics
+│   │   ├── graph_metrics.py   # NetworkX metrics
+│   │   └── metrics/backends/
+│   │       └── dispatcher.py  # Auto-select NX/igraph/cuGraph
 │   ├── static/                # Frontend assets
 │   │   ├── js/                # JavaScript modules
+│   │   │   ├── arrow-reader.js    # Arrow IPC client reader
+│   │   │   ├── cosmos-adapter.js  # cosmos.gl WebGL renderer
+│   │   │   └── ...
 │   │   └── css/               # Stylesheets
 │   ├── layout_service/        # Node.js layout service
 │   └── cache/                 # Cached data and layouts
@@ -194,8 +209,57 @@ POST /api/auto-reload/start
 | `/api/api-properties/providers` | GET | List API property providers |
 | `/api/api-properties/refresh` | POST | Refresh API properties |
 | `/api/auto-reload/start` | POST | Start auto-reload |
+| `/api/graphs/{id}/elements/arrow` | GET | Nodes + positions as Arrow IPC |
+| `/api/graphs/{id}/edges/arrow` | GET | Paginated edges as Arrow IPC |
+| `/api/graphs/{id}/metrics/arrow` | GET | Metrics as Arrow IPC |
+| `/api/sql/query` | GET | SQL Explorer (DuckDB-sandboxed) |
+| `/api/snapshots/create` | POST | Create historical snapshot |
+| `/api/snapshots/batch` | POST | Batch snapshot creation |
+| `/api/snapshots/{id}/data` | GET | Full snapshot data |
 
 See [API Reference](docs/API.md) for complete documentation.
+
+## Scaling Architecture
+
+The application uses a 4-layer scaling stack for graphs from 1K to 5M+ nodes:
+
+```
+Client (Arrow JS) ←── Arrow IPC ──→ FastAPI ←── DuckDB ──→ Parquet / PostgreSQL
+       │                                │
+   cosmos.gl                    Compute Dispatcher
+   (WebGL)                   NX │ igraph │ cuGraph
+```
+
+### Data Engine — DuckDB
+
+- Replaces Pandas for all Parquet I/O and joins
+- SQL Explorer: run sandboxed SELECT queries against in-memory graph data
+- `postgres_scanner` extension for direct PostgreSQL queries without ETL
+- Stateless `:memory:` connections — no file locking under concurrency
+
+### Compute Dispatcher
+
+- Auto-selects graph analysis backend by node count:
+  - **< 50K nodes** → NetworkX (pure Python, always available)
+  - **50K – 5M** → igraph (C core, ~10–100× faster)
+  - **> 5M** → cuGraph (GPU, ~100–1000× faster, requires CUDA)
+- Graceful fallback if preferred backend is unavailable
+
+### Arrow IPC Transport
+
+- Binary serialization replacing JSON for graph data transfer
+- ~10× smaller payloads for numeric data (positions, metrics)
+- Zero-copy deserialization via Apache Arrow JS
+- Automatic fallback to JSON if Arrow JS library is unavailable
+- Edge pagination with pre-computed cosmos.gl link indices
+
+### Historical Snapshots
+
+- Block-based snapshots of graph state at specific blockchain blocks
+- Layout persistence across snapshots (master layout + incremental derivation)
+- Configurable metrics computation (NONE / BASIC / STANDARD / FULL)
+- Snapshot comparison (diff added/removed nodes and edges)
+- Animation data endpoint for time-lapse visualization
 
 ## Screenshots
 
@@ -207,12 +271,12 @@ See [API Reference](docs/API.md) for complete documentation.
 
 ## Performance
 
-| Graph Size | Load Time | Recommended Mode |
-|------------|-----------|------------------|
-| < 10K nodes | < 5s | Full features |
-| 10K - 50K | 5-30s | Essential metrics |
-| 50K - 100K | 30s-2m | Performance mode |
-| > 100K | 2m+ | Sampling required |
+| Graph Size | Load Time | Transport | Renderer |
+|------------|-----------|-----------|----------|
+| < 10K nodes | < 3s | Arrow IPC | Cytoscape.js |
+| 10K – 50K | 3–15s | Arrow IPC | cosmos.gl (WebGL) |
+| 50K – 200K | 10–30s | Arrow IPC | cosmos.gl (WebGL) |
+| > 200K | 30s+ | Arrow IPC (batched edges) | cosmos.gl (WebGL) |
 
 ## Contributing
 

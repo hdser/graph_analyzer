@@ -204,6 +204,18 @@ class Settings:
     MAX_NODES_FOR_LOCAL_SPRING: int = int(os.getenv("MAX_NODES_FOR_LOCAL_SPRING", "10000"))
     EDGE_CHUNK_SIZE: int = int(os.getenv("EDGE_CHUNK_SIZE", "50000"))
     
+    # ==========================================================================
+    # DUCKDB CONFIGURATION
+    # ==========================================================================
+
+    # Internal operations memory limit (parquet I/O, joins, postgres reads)
+    DUCKDB_MEMORY_LIMIT: str = os.getenv("DUCKDB_MEMORY_LIMIT", "4GB")
+
+    # User-facing query limits (sandboxed SQL explorer)
+    DUCKDB_USER_MEMORY_LIMIT: str = os.getenv("DUCKDB_USER_MEMORY_LIMIT", "256MB")
+    DUCKDB_USER_THREADS: int = int(os.getenv("DUCKDB_USER_THREADS", "2"))
+    DUCKDB_MAX_ROWS: int = int(os.getenv("DUCKDB_MAX_ROWS", "100000"))
+
     # Auto-reload interval (seconds)
     AUTO_RELOAD_MIN_INTERVAL: int = 60
     AUTO_RELOAD_MAX_INTERVAL: int = 3600
@@ -483,6 +495,12 @@ def print_startup_banner():
     print(f"  SQL Dir:  {settings.SQL_DIR}")
     print(f"  Properties Dir: {settings.NODE_PROPERTIES_DIR}")
     print(f"  Cache:    {settings.CACHE_DIR}")
+    print("-" * 60)
+    print("  DuckDB Engine:")
+    print(f"    Internal Memory: {settings.DUCKDB_MEMORY_LIMIT}")
+    print(f"    User Query Memory: {settings.DUCKDB_USER_MEMORY_LIMIT}")
+    print(f"    User Threads: {settings.DUCKDB_USER_THREADS}")
+    print(f"    Max Result Rows: {settings.DUCKDB_MAX_ROWS}")
     print("-" * 60)
     print("  Core Features:")
     print(f"    SSE Support:        {'Y' if HAS_SSE else 'N'}")

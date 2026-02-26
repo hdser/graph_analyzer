@@ -258,15 +258,70 @@ class CytoscapeAdapter extends GraphRendererInterface {
                 data: { id: edgeId, source: edge.source, target: edge.target, ...edge }
             };
         });
-        
+
         this.cy.batch(() => {
             this.cy.add(elements);
         });
-        
+
         edges.forEach(edge => {
             const edgeId = edge.id || `${edge.source}-${edge.target}`;
             this.edgeDataMap.set(edgeId, edge);
         });
+    }
+
+    /**
+     * Set data from pre-parsed Arrow arrays (from ArrowReader).
+     *
+     * @param {Object} nodeArrays - From ArrowReader.arrowToNodeArrays()
+     *   {ids: string[], positions: Float32Array, metrics: Object, nodeObjects: Object[]}
+     * @param {Object} edgeArrays - From ArrowReader.arrowToEdgeArrays()
+     *   {edges: {source,target,id}[], linkIndices: Float32Array|null}
+     */
+    setDataFromArrow(nodeArrays, edgeArrays) {
+        this.cy.elements().remove();
+        this.nodeDataMap.clear();
+        this.edgeDataMap.clear();
+
+        const { ids, positions, nodeObjects } = nodeArrays;
+        const { edges } = edgeArrays;
+        const elements = [];
+
+        // Build node elements directly from Arrow arrays
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i];
+            const x = positions[i * 2] || 0;
+            const y = positions[i * 2 + 1] || 0;
+            const node = nodeObjects[i];
+
+            elements.push({
+                group: 'nodes',
+                data: { id, ...node },
+                position: { x, y }
+            });
+            this.nodeDataMap.set(id, node);
+        }
+
+        // Build edge elements
+        edges.forEach(edge => {
+            const edgeId = edge.id || `${edge.source}-${edge.target}`;
+            elements.push({
+                group: 'edges',
+                data: { id: edgeId, source: edge.source, target: edge.target, ...edge }
+            });
+            this.edgeDataMap.set(edgeId, edge);
+        });
+
+        this.cy.add(elements);
+        this.cy.fit();
+    }
+
+    /**
+     * Add edges from pre-parsed Arrow arrays (for incremental loading).
+     *
+     * @param {Object} edgeArrays - From ArrowReader.arrowToEdgeArrays()
+     */
+    addEdgesFromArrow(edgeArrays) {
+        this.addEdges(edgeArrays.edges);
     }
     
     removeElements(nodeIds = [], edgeIds = []) {

@@ -20,6 +20,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from ..config import settings
+from .duckdb_service import DuckDBService
+
+_db = DuckDBService()
 from ..models.snapshot import (
     SnapshotInfo,
     SnapshotData,
@@ -200,13 +203,13 @@ class SnapshotStorage:
             return {}
         
         try:
-            df = pd.read_parquet(path)
+            df = _db.read_parquet(path)
             layout = {}
-            for _, row in df.iterrows():
-                layout[str(row['node_id'])] = {
-                    'x': float(row['x']),
-                    'y': float(row['y']),
-                    'first_seen': str(row.get('first_seen', 'initial'))
+            for record in df.to_dict(orient='records'):
+                layout[str(record['node_id'])] = {
+                    'x': float(record['x']),
+                    'y': float(record['y']),
+                    'first_seen': str(record.get('first_seen', 'initial'))
                 }
             return layout
         except Exception as e:
@@ -232,10 +235,10 @@ class SnapshotStorage:
                 'y': float(pos['y']),
                 'first_seen': str(pos.get('first_seen', 'initial'))
             })
-        
+
         df = pd.DataFrame(rows)
-        df.to_parquet(path, index=False, **self.PARQUET_CONFIG)
-        
+        _db.write_parquet(df, path)
+
         print(f"[SNAPSHOT] Saved master layout: {len(layout)} nodes to {path.name}")
     
     def master_layout_exists(self, base_sql_file: str) -> bool:
@@ -334,24 +337,22 @@ class SnapshotStorage:
         
         # Save edges
         edges_path = snapshot_dir / "edges.parquet"
-        edges_df[['source', 'target']].to_parquet(
-            edges_path, index=False, **self.PARQUET_CONFIG
-        )
+        _db.write_parquet(edges_df[['source', 'target']], edges_path)
         checksums['edges'] = self._compute_checksum(edges_path)
-        
+
         # Save layout
         layout_path = snapshot_dir / "layout.parquet"
         layout_df = pd.DataFrame([
             {'node_id': str(k), 'x': float(v['x']), 'y': float(v['y'])}
             for k, v in layout.items()
         ])
-        layout_df.to_parquet(layout_path, index=False, **self.PARQUET_CONFIG)
+        _db.write_parquet(layout_df, layout_path)
         checksums['layout'] = self._compute_checksum(layout_path)
-        
+
         # Save metrics (if provided)
         if metrics_df is not None and len(metrics_df) > 0:
             metrics_path = snapshot_dir / "metrics.parquet"
-            metrics_df.to_parquet(metrics_path, index=False, **self.PARQUET_CONFIG)
+            _db.write_parquet(metrics_df, metrics_path)
             checksums['metrics'] = self._compute_checksum(metrics_path)
         
         # Update metadata with checksums
@@ -404,28 +405,21 @@ class SnapshotStorage:
         
         # Load edges - vectorized conversion
         edges_path = snapshot_dir / "edges.parquet"
-        edges_df = pd.read_parquet(edges_path)
+        edges_df = _db.read_parquet(edges_path)
         edges_df['source'] = edges_df['source'].astype(str)
         edges_df['target'] = edges_df['target'].astype(str)
         edges = edges_df[['source', 'target']].to_dict(orient='records')
-        
-        # Load layout - vectorized conversion
+
+        # Load layout
         layout_path = snapshot_dir / "layout.parquet"
-        layout_df = pd.read_parquet(layout_path)
-        layout_df['node_id'] = layout_df['node_id'].astype(str)
-        layout_df['x'] = layout_df['x'].astype(float)
-        layout_df['y'] = layout_df['y'].astype(float)
-        layout = {
-            row['node_id']: {'x': row['x'], 'y': row['y']}
-            for row in layout_df[['node_id', 'x', 'y']].to_dict(orient='records')
-        }
-        
+        layout = _db.read_positions(layout_path)
+
         # Load metrics (if exists) - vectorized conversion
         metrics = {}
         metrics_path = snapshot_dir / "metrics.parquet"
         if metrics_path.exists():
             try:
-                metrics_df = pd.read_parquet(metrics_path)
+                metrics_df = _db.read_parquet(metrics_path)
                 id_col = 'avatar' if 'avatar' in metrics_df.columns else metrics_df.columns[0]
                 metrics_df[id_col] = metrics_df[id_col].astype(str)
                 
@@ -509,24 +503,23 @@ class SnapshotStorage:
         if not snapshot_dir.exists():
             raise ValueError(f"Snapshot not found: {base_sql_file}_block_{block_number}")
         
-        # Load layout - vectorized
+        # Load layout
         layout_path = snapshot_dir / "layout.parquet"
-        layout_df = pd.read_parquet(layout_path)
-        layout_df['node_id'] = layout_df['node_id'].astype(str)
-        
+        layout = _db.read_positions(layout_path)
+
         # Load metrics if exists
         metrics_dict = {}
         metrics_path = snapshot_dir / "metrics.parquet"
         if metrics_path.exists():
             try:
-                metrics_df = pd.read_parquet(metrics_path)
+                metrics_df = _db.read_parquet(metrics_path)
                 id_col = 'avatar' if 'avatar' in metrics_df.columns else metrics_df.columns[0]
                 metrics_df[id_col] = metrics_df[id_col].astype(str)
-                
+
                 # Replace NaN/Inf
                 metrics_df = metrics_df.replace([float('inf'), float('-inf')], None)
                 metrics_df = metrics_df.where(pd.notnull(metrics_df), None)
-                
+
                 metric_cols = [col for col in metrics_df.columns if col != id_col]
                 for record in metrics_df.to_dict(orient='records'):
                     node_id = record[id_col]
@@ -536,13 +529,12 @@ class SnapshotStorage:
                     }
             except Exception as e:
                 print(f"[SNAPSHOT] Warning: Failed to load metrics for nodes: {e}")
-        
+
         # Build Cytoscape elements
         elements = []
-        for _, row in layout_df.iterrows():
-            node_id = row['node_id']
+        for node_id, pos in layout.items():
             node_metrics = metrics_dict.get(node_id, {})
-            
+
             elements.append({
                 "group": "nodes",
                 "data": {
@@ -550,11 +542,11 @@ class SnapshotStorage:
                     **node_metrics
                 },
                 "position": {
-                    "x": float(row['x']),
-                    "y": float(row['y'])
+                    "x": pos['x'],
+                    "y": pos['y']
                 }
             })
-        
+
         return {"elements": elements}
     
     def load_snapshot_edges(
@@ -582,8 +574,8 @@ class SnapshotStorage:
             raise ValueError(f"Snapshot not found: {base_sql_file}_block_{block_number}")
         
         edges_path = snapshot_dir / "edges.parquet"
-        edges_df = pd.read_parquet(edges_path)
-        
+        edges_df = _db.read_parquet(edges_path)
+
         total = len(edges_df)
         
         # Slice for pagination - use .copy() to avoid SettingWithCopyWarning
@@ -640,7 +632,7 @@ class SnapshotStorage:
         edges_path = snapshot_dir / "edges.parquet"
         
         # Load only source/target columns - much faster
-        edges_df = pd.read_parquet(edges_path, columns=['source', 'target'])
+        edges_df = _db.read_parquet_columns(edges_path, ['source', 'target'])
         
         # Convert to strings
         edges_df['source'] = edges_df['source'].astype(str)
@@ -810,7 +802,7 @@ class SnapshotStorage:
         if not layout_path.exists():
             raise ValueError(f"Snapshot not found: {base_sql_file}_block_{block_number}")
         
-        layout_df = pd.read_parquet(layout_path, columns=['node_id'])
+        layout_df = _db.read_parquet_columns(layout_path, ['node_id'])
         return set(layout_df['node_id'].astype(str).tolist())
     
     def load_snapshot_edge_set(self, base_sql_file: str, block_number: int) -> Set[Tuple[str, str]]:
@@ -830,10 +822,10 @@ class SnapshotStorage:
         if not edges_path.exists():
             raise ValueError(f"Snapshot not found: {base_sql_file}_block_{block_number}")
         
-        edges_df = pd.read_parquet(edges_path)
+        edges_df = _db.read_parquet(edges_path)
         edges_df['source'] = edges_df['source'].astype(str)
         edges_df['target'] = edges_df['target'].astype(str)
-        
+
         return set(zip(edges_df['source'].tolist(), edges_df['target'].tolist()))
     
     def load_snapshot_layout_dict(self, base_sql_file: str, block_number: int) -> Dict[str, Dict[str, float]]:
@@ -853,13 +845,7 @@ class SnapshotStorage:
         if not layout_path.exists():
             raise ValueError(f"Snapshot not found: {base_sql_file}_block_{block_number}")
 
-        layout_df = pd.read_parquet(layout_path)
-        layout_df['node_id'] = layout_df['node_id'].astype(str)
-
-        return {
-            row['node_id']: {'x': float(row['x']), 'y': float(row['y'])}
-            for row in layout_df.to_dict(orient='records')
-        }
+        return _db.read_positions(layout_path)
 
     # =========================================================================
     # Diff-Based Storage Integration
@@ -993,11 +979,7 @@ class SnapshotStorage:
             snapshot_dir.mkdir(parents=True, exist_ok=True)
 
             layout_path = snapshot_dir / "layout.parquet"
-            layout_df = pd.DataFrame([
-                {'node_id': str(k), 'x': float(v['x']), 'y': float(v['y'])}
-                for k, v in layout.items()
-            ])
-            layout_df.to_parquet(layout_path, index=False, **self.PARQUET_CONFIG)
+            _db.write_positions(layout, layout_path)
 
             # Save minimal metadata
             metadata_path = snapshot_dir / "metadata.json"

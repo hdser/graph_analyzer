@@ -9,19 +9,36 @@ const API = {
      */
     async fetch(url, options = {}) {
         const response = await fetch(url, {
-            headers: { 
-                'Content-Type': 'application/json', 
-                ...options.headers 
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
             },
             ...options
         });
-        
+
         if (!response.ok) {
             const error = await response.json().catch(() => ({ detail: response.statusText }));
             throw new Error(error.detail || `HTTP ${response.status}`);
         }
-        
+
         return response.json();
+    },
+
+    /**
+     * Fetch binary data (for Arrow IPC endpoints).
+     * Returns an ArrayBuffer, or null on error/404.
+     * @param {string} url - API endpoint URL
+     * @returns {Promise<ArrayBuffer|null>}
+     */
+    async fetchBinary(url) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) return null;
+            return await response.arrayBuffer();
+        } catch (err) {
+            console.warn('[API] fetchBinary failed:', err);
+            return null;
+        }
     },
 
     // =========================================================================

@@ -16,7 +16,9 @@ from typing import Dict, List, Optional, Any, Tuple, Callable, Set
 import pandas as pd
 import numpy as np
 import networkx as nx
-from sqlalchemy import create_engine, text
+from .duckdb_service import DuckDBService
+
+_db = DuckDBService()
 
 from ..config import settings, HAS_ANOMALY
 from ..models.snapshot import (
@@ -81,10 +83,8 @@ class SnapshotService:
         self._cache_service = CacheService() if unified_layout is None else None
     
     def _get_db_engine(self):
-        """Get or create database engine."""
-        if self._db_engine is None:
-            self._db_engine = create_engine(settings.database_url)
-        return self._db_engine
+        """Legacy stub — DuckDB handles database connections now."""
+        return None
     
     # =========================================================================
     # Snapshot CRUD
@@ -386,13 +386,11 @@ class SnapshotService:
         Returns:
             List of BlockSuggestion objects
         """
-        engine = self._get_db_engine()
-        
         # Build date range
         end_date = request.end_date or datetime.utcnow().date()
         start_date = request.start_date or (end_date - timedelta(days=30))
         count = min(request.count or 30, settings.SNAPSHOT_MAX_SUGGESTIONS)
-        
+
         # Map interval to PostgreSQL date_trunc argument
         interval_map = {
             'daily': 'day',
@@ -400,46 +398,37 @@ class SnapshotService:
             'monthly': 'month'
         }
         trunc_interval = interval_map.get(request.interval, 'day')
-        
+
         # Convert dates to Unix timestamps for comparison
         start_dt = datetime(start_date.year, start_date.month, start_date.day)
         end_dt = datetime(end_date.year, end_date.month, end_date.day) + timedelta(days=1)
         start_timestamp = int(start_dt.timestamp())
         end_timestamp = int(end_dt.timestamp())
-        
-        # Query for block numbers
-        # Note: "timestamp" column is bigint (Unix seconds)
+
+        # Query for block numbers via DuckDB postgres_scanner
         sql = f"""
-        SELECT 
+        SELECT
             date_trunc('{trunc_interval}', to_timestamp("timestamp")) as period,
             MIN("blockNumber") as block_number,
             MIN("timestamp") as timestamp
         FROM "System_Block"
-        WHERE "timestamp" >= :start_timestamp
-          AND "timestamp" < :end_timestamp
+        WHERE "timestamp" >= {start_timestamp}
+          AND "timestamp" < {end_timestamp}
         GROUP BY period
         ORDER BY period DESC
-        LIMIT :count
+        LIMIT {count}
         """
-        
+
         try:
-            with engine.connect() as conn:
-                result = conn.execute(
-                    text(sql),
-                    {
-                        'start_timestamp': start_timestamp,
-                        'end_timestamp': end_timestamp,
-                        'count': count
-                    }
-                )
-                rows = result.fetchall()
+            df = _db.execute_postgres_sql(sql)
+            rows = df.to_dict(orient='records')
         except Exception as e:
             print(f"[SNAPSHOT] Error querying block suggestions: {e}")
             return SnapshotSuggestResponse(suggestions=[])
-        
+
         suggestions = []
         for row in rows:
-            timestamp = row.timestamp
+            timestamp = row['timestamp']
             # Handle bigint Unix timestamp
             if isinstance(timestamp, (int, float)):
                 timestamp = datetime.utcfromtimestamp(timestamp)
@@ -455,7 +444,7 @@ class SnapshotService:
             label = f"{date_str} ({day_name})"
             
             suggestions.append(BlockSuggestion(
-                block_number=int(row.block_number),
+                block_number=int(row['block_number']),
                 timestamp=timestamp,
                 label=label
             ))
@@ -492,23 +481,20 @@ class SnapshotService:
         sql = sql_template.replace("{block_number}", str(block_number))
         
         print(f"[SNAPSHOT] Executing SQL with block filter: blockNumber <= {block_number}")
-        
-        engine = self._get_db_engine()
-        
+
         try:
-            with engine.connect() as conn:
-                df = pd.read_sql(text(sql), conn)
-            
+            df = _db.execute_postgres_sql(sql)
+
             # Ensure source/target columns exist
             if 'source' not in df.columns or 'target' not in df.columns:
                 raise ValueError("SQL must return 'source' and 'target' columns")
-            
+
             # Convert to strings and lowercase
             df['source'] = df['source'].astype(str).str.lower()
             df['target'] = df['target'].astype(str).str.lower()
-            
+
             return df
-            
+
         except Exception as e:
             print(f"[SNAPSHOT] SQL execution error: {e}")
             raise
@@ -529,23 +515,19 @@ class SnapshotService:
         Returns:
             Timestamp or None if not found
         """
-        engine = self._get_db_engine()
-        
         # Note: "timestamp" column is bigint (Unix seconds)
-        sql = """
+        sql = f"""
         SELECT "timestamp"
         FROM "System_Block"
-        WHERE "blockNumber" = :block_number
+        WHERE "blockNumber" = {int(block_number)}
         LIMIT 1
         """
-        
+
         try:
-            with engine.connect() as conn:
-                result = conn.execute(text(sql), {'block_number': block_number})
-                row = result.fetchone()
-                
-            if row:
-                timestamp = row.timestamp
+            df = _db.execute_postgres_sql(sql)
+
+            if len(df) > 0:
+                timestamp = df.iloc[0]['timestamp']
                 # Handle bigint Unix timestamp
                 if isinstance(timestamp, (int, float)):
                     return datetime.utcfromtimestamp(timestamp)

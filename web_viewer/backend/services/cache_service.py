@@ -22,6 +22,9 @@ from typing import Dict, List, Optional, Any
 import pandas as pd
 
 from ..config import settings
+from .duckdb_service import DuckDBService
+
+_db = DuckDBService()
 
 
 class CacheService:
@@ -84,19 +87,17 @@ class CacheService:
         current_file = self.layouts_dir / f"{graph_id}.parquet"
         if current_file.exists():
             try:
-                df = pd.read_parquet(current_file)
-                positions = self._df_to_positions(df)
+                positions = _db.read_positions(current_file)
                 print(f"[CACHE] Loaded layout: {current_file.name} ({len(positions)} nodes)")
                 return positions
             except Exception as e:
                 print(f"[CACHE] Error loading layout: {e}")
-        
+
         # Try base layout
         base_file = self.layouts_dir / f"{graph_id}_base.parquet"
         if base_file.exists():
             try:
-                df = pd.read_parquet(base_file)
-                positions = self._df_to_positions(df)
+                positions = _db.read_positions(base_file)
                 print(f"[CACHE] Loaded base layout: {base_file.name} ({len(positions)} nodes)")
                 return positions
             except Exception as e:
@@ -132,29 +133,27 @@ class CacheService:
             Cache file path
         """
         cache_file = self.layouts_dir / f"{graph_id}.parquet"
-        df = self._positions_to_df(positions)
-        df.to_parquet(cache_file, index=False)
+        _db.write_positions(positions, cache_file)
         print(f"[CACHE] Saved layout: {cache_file.name} ({len(positions)} nodes)")
         return str(cache_file)
-    
+
     def save_base_layout(
-        self, 
-        graph_id: str, 
+        self,
+        graph_id: str,
         positions: Dict[str, Dict[str, float]]
     ) -> str:
         """
         Save layout as base (protected, from Cytoscape Desktop).
-        
+
         Args:
             graph_id: Graph identifier
             positions: Layout positions {node_id: {x, y}}
-            
+
         Returns:
             Cache file path
         """
         cache_file = self.layouts_dir / f"{graph_id}_base.parquet"
-        df = self._positions_to_df(positions)
-        df.to_parquet(cache_file, index=False)
+        _db.write_positions(positions, cache_file)
         print(f"[CACHE] Saved base layout: {cache_file.name} ({len(positions)} nodes)")
         return str(cache_file)
     
@@ -174,11 +173,11 @@ class CacheService:
                 if is_base:
                     graph_id = graph_id[:-5]  # Remove '_base' suffix
                 
-                df = pd.read_parquet(cache_file)
+                row_count = _db.read_parquet_row_count(cache_file)
                 layouts.append({
                     'filename': cache_file.name,
                     'graph_id': graph_id,
-                    'node_count': len(df),
+                    'node_count': row_count,
                     'is_base': is_base,
                     'size_mb': cache_file.stat().st_size / (1024 * 1024)
                 })
@@ -246,7 +245,7 @@ class CacheService:
             Cache file path
         """
         cache_file = self.data_dir / f"{graph_id}_edges.parquet"
-        edges_df.to_parquet(cache_file, index=False)
+        _db.write_parquet(edges_df, cache_file)
         print(f"[CACHE] Saved data: {cache_file.name} ({len(edges_df)} edges)")
         return str(cache_file)
     
@@ -264,12 +263,12 @@ class CacheService:
         
         if cache_file.exists():
             try:
-                df = pd.read_parquet(cache_file)
+                df = _db.read_parquet(cache_file)
                 print(f"[CACHE] Loaded data: {cache_file.name} ({len(df)} edges)")
                 return df
             except Exception as e:
                 print(f"[CACHE] Error loading data: {e}")
-        
+
         return None
     
     # =========================================================================
@@ -292,7 +291,7 @@ class CacheService:
             Cache file path
         """
         cache_file = self.data_dir / f"node_metrics_{version}.parquet"
-        metrics_df.to_parquet(cache_file, index=False)
+        _db.write_parquet(metrics_df, cache_file)
         print(f"[CACHE] Saved metrics: {cache_file.name} ({len(metrics_df)} nodes)")
         return str(cache_file)
     
@@ -310,7 +309,7 @@ class CacheService:
         
         if cache_file.exists():
             try:
-                df = pd.read_parquet(cache_file)
+                df = _db.read_parquet(cache_file)
                 print(f"[CACHE] Loaded metrics: {cache_file.name} ({len(df)} nodes)")
                 return df
             except Exception as e:
@@ -343,7 +342,7 @@ class CacheService:
             Cache file path
         """
         cache_file = self.data_dir / f"node_properties_{version}.parquet"
-        properties_df.to_parquet(cache_file, index=False)
+        _db.write_parquet(properties_df, cache_file)
         print(f"[CACHE] Saved properties: {cache_file.name} ({len(properties_df)} nodes)")
         return str(cache_file)
     
@@ -361,7 +360,7 @@ class CacheService:
         
         if cache_file.exists():
             try:
-                df = pd.read_parquet(cache_file)
+                df = _db.read_parquet(cache_file)
                 print(f"[CACHE] Loaded properties: {cache_file.name} ({len(df)} nodes)")
                 return df
             except Exception as e:
@@ -402,7 +401,7 @@ class CacheService:
         meta_file = self._get_api_meta_file(provider, version)
         
         # Save data
-        properties_df.to_parquet(cache_file, index=False)
+        _db.write_parquet(properties_df, cache_file)
         
         # Save metadata with timestamp
         meta = {
@@ -466,7 +465,7 @@ class CacheService:
                 # Continue to try loading data without TTL check
         
         try:
-            df = pd.read_parquet(cache_file)
+            df = _db.read_parquet(cache_file)
             print(f"[CACHE] Loaded API properties: {cache_file.name} ({len(df)} rows)")
             return df
         except Exception as e:
@@ -561,7 +560,7 @@ class CacheService:
                     with open(meta_file, 'r') as f:
                         meta = json.load(f)
                 
-                df = pd.read_parquet(cache_file)
+                df = _db.read_parquet(cache_file)
                 caches.append({
                     'filename': cache_file.name,
                     'provider': provider,
@@ -700,10 +699,9 @@ class CacheService:
         """
         layout_name = self._make_layout_name(graph_id, backend, algorithm)
         cache_file = self.layouts_dir / f"{layout_name}.parquet"
-        
-        df = self._positions_to_df(positions)
-        df.to_parquet(cache_file, index=False)
-        
+
+        _db.write_positions(positions, cache_file)
+
         print(f"[CACHE] Saved named layout: {cache_file.name} ({len(positions)} nodes)")
         return str(cache_file)
     
@@ -729,13 +727,12 @@ class CacheService:
         
         if cache_file.exists():
             try:
-                df = pd.read_parquet(cache_file)
-                positions = self._df_to_positions(df)
+                positions = _db.read_positions(cache_file)
                 print(f"[CACHE] Loaded named layout: {cache_file.name} ({len(positions)} nodes)")
                 return positions
             except Exception as e:
                 print(f"[CACHE] Error loading named layout: {e}")
-        
+
         return None
     
     def get_layout_by_filename(self, filename: str) -> Optional[Dict[str, Dict[str, float]]]:
@@ -755,15 +752,14 @@ class CacheService:
         
         if cache_file.exists():
             try:
-                df = pd.read_parquet(cache_file)
-                positions = self._df_to_positions(df)
+                positions = _db.read_positions(cache_file)
                 print(f"[CACHE] Loaded layout: {cache_file.name} ({len(positions)} nodes)")
                 return positions
             except Exception as e:
                 print(f"[CACHE] Error loading layout: {e}")
-        
+
         return None
-    
+
     def list_layouts_for_graph(self, graph_id: str) -> List[Dict[str, Any]]:
         """
         List all saved layouts for a specific graph.
@@ -793,9 +789,9 @@ class CacheService:
                 print(f"[CACHE] Parsed {cache_file.name}: {parsed}")
                 
                 if parsed:
-                    df = pd.read_parquet(cache_file)
+                    row_count = _db.read_parquet_row_count(cache_file)
                     stat = cache_file.stat()
-                    
+
                     layout_info = {
                         'filename': cache_file.name,
                         'graph_id': graph_id,
@@ -803,7 +799,7 @@ class CacheService:
                         'algorithm': parsed['algorithm'],
                         'display_name': parsed['display_name'],
                         'is_base': parsed['is_base'],
-                        'node_count': len(df),
+                        'node_count': row_count,
                         'size_mb': round(stat.st_size / (1024 * 1024), 3),
                         'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
                     }

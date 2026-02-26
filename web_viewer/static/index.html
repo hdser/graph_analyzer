@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/static/css/embedding-panel.css">
     <link rel="stylesheet" href="/static/css/time-zoom-bar.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.31.0/cytoscape.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apache-arrow@17/Arrow.es2015.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -1230,6 +1231,9 @@
                     <button id="data-explorer-btn" class="toolbar-btn" title="Explore data">
                         <span data-icon="table"></span>
                     </button>
+                    <button id="sql-explorer-btn" class="toolbar-btn" title="SQL Explorer" onclick="window.open('/sql-explorer', '_blank')">
+                        <span data-icon="database"></span>
+                    </button>
                     <!-- Timeline toggle button -->
                     <button id="timeline-toggle-btn" class="toolbar-btn timeline-toggle" title="Toggle timeline" style="display: none;">
                         <span data-icon="clock"></span>
@@ -1425,6 +1429,7 @@
     <script src="/static/js/capacity-flow.js"></script>
     <script src="/static/js/embeddings.js"></script>
     <script src="/static/js/embedding-panel.js"></script>
+    <script src="/static/js/arrow-reader.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

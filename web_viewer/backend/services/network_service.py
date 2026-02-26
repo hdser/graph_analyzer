@@ -17,7 +17,9 @@ from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 import numpy as np
 import networkx as nx
-from sqlalchemy import create_engine, text
+from .duckdb_service import DuckDBService
+
+_db = DuckDBService()
 
 from ..config import settings, HAS_ANOMALY, HAS_SSE
 from ..models.requests import LoadConfig, MetricsConfig
@@ -125,10 +127,8 @@ class NetworkService:
         return self.layout_service.cytoscape_available
     
     def _get_db_engine(self):
-        """Get or create database engine."""
-        if self._db_engine is None:
-            self._db_engine = create_engine(settings.database_url)
-        return self._db_engine
+        """Legacy stub — DuckDB handles database connections now."""
+        return None
     
     def _extract_version(self, graph_id: str) -> str:
         """Extract version from graph_id (e.g., 'crc_v2_trusts' -> 'v2')."""
@@ -148,34 +148,32 @@ class NetworkService:
         Returns:
             Dictionary of DataFrames keyed by file name (without extension)
         """
-        engine = self._get_db_engine()
         edge_layers = {}
-        
+
         for sql_file in sql_files:
             sql_path = settings.SQL_DIR / sql_file
             if not sql_path.exists():
                 print(f"[SQL] File not found: {sql_path}")
                 continue
-            
+
             print(f"[SQL] Executing: {sql_file}")
             start_time = time.time()
-            
+
             try:
                 with open(sql_path, 'r') as f:
                     sql_query = f.read()
-                
-                with engine.connect() as conn:
-                    df = pd.read_sql(text(sql_query), conn)
-                
+
+                df = _db.execute_postgres_sql(sql_query)
+
                 # Use filename (without extension) as key
                 layer_id = sql_path.stem
                 edge_layers[layer_id] = df
-                
+
                 print(f"[SQL] Loaded {len(df)} rows from {sql_file} in {time.time() - start_time:.2f}s")
-                
+
             except Exception as e:
                 print(f"[SQL] Error executing {sql_file}: {e}")
-        
+
         return edge_layers
 
     def load_node_properties_from_sql(
@@ -219,13 +217,10 @@ class NetworkService:
             start_time = time.time()
             
             try:
-                engine = self._get_db_engine()
-                
                 with open(sql_path, 'r', encoding='utf-8') as f:
                     sql_query = f.read()
-                
-                with engine.connect() as conn:
-                    df = pd.read_sql(text(sql_query), conn)
+
+                df = _db.execute_postgres_sql(sql_query)
                 
                 # Ensure avatar column exists
                 if 'avatar' not in df.columns:

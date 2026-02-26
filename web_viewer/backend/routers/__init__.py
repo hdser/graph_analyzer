@@ -16,6 +16,7 @@ from .temporal_composite import router as temporal_composite_router
 from .graph_algorithms import router as graph_algorithms_router
 from .capacity_flow import router as capacity_flow_router
 from .embeddings import router as embeddings_router
+from .query import router as query_router
 
 __all__ = [
     "network_router",
@@ -30,4 +31,5 @@ __all__ = [
     "graph_algorithms_router",
     "capacity_flow_router",
     "embeddings_router",
+    "query_router",
 ]

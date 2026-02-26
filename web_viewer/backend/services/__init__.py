@@ -4,6 +4,11 @@ Services Package
 Business logic services for the Graph Analyzer.
 """
 
+# DuckDB engine (must be imported first - other services depend on it)
+from .duckdb_service import DuckDBService
+
+duckdb_service = DuckDBService()
+
 # Services with singleton instances
 from .network_service import network_service, NetworkService
 from .api_properties_service import api_properties_service, APIPropertiesService
@@ -20,6 +25,7 @@ from .snapshot_layout import SnapshotLayout
 
 __all__ = [
     # Singletons
+    "duckdb_service",
     "network_service",
     "api_properties_service",
     "snapshot_service",
@@ -27,6 +33,7 @@ __all__ = [
     "capacity_flow_service",
     "cache_service",
     # Classes
+    "DuckDBService",
     "NetworkService",
     "APIPropertiesService",
     "SnapshotService",

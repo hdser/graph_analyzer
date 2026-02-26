@@ -90,136 +90,229 @@ const GraphLoader = {
     },
 
     /**
-     * Display a specific graph using the appropriate renderer
+     * Display a specific graph using the appropriate renderer.
+     * Attempts Arrow IPC loading first for performance, falls back to JSON.
      */
     async displayGraph(graphId) {
         State.currentGraph = graphId;
         State.edgesLoading = false;
-        
+
         if (DOMCache.edgesProgress) {
             DOMCache.edgesProgress.textContent = '';
         }
-        
+
         try {
-            // Load nodes first (fast)
-            const nodesData = await API.getGraphElements(graphId, 'nodes_only');
-            
-            // Count nodes to determine renderer
-            const nodeElements = nodesData.elements.filter(e => e.group === 'nodes');
-            const nodeCount = nodeElements.length;
-            
-            // Convert from Cytoscape format to unified format
-            // IMPORTANT: Keep undefined for missing positions - don't use || 0 fallback
-            const nodes = nodeElements.map(e => ({
-                id: e.data.id,
-                x: e.position?.x,  // undefined if missing (NOT 0)
-                y: e.position?.y,  // undefined if missing (NOT 0)
-                _hasPosition: e.position?.x !== undefined && e.position?.y !== undefined,
-                ...e.data
-            }));
+            // ============================================================
+            // Try Arrow IPC first (binary, much faster for large graphs)
+            // ============================================================
+            let arrowLoaded = false;
+            let nodeCount = 0;
 
-            // Create or recreate renderer based on graph size
-            const renderer = RendererFactory.create(DOMCache.cyContainer, {
-                expectedNodeCount: nodeCount,
-                rendererPreference: State.rendererPreference
-            });
+            if (typeof ArrowReader !== 'undefined' && ArrowReader.isAvailable()) {
+                const arrowResult = await this._tryLoadNodesArrow(graphId);
+                if (arrowResult) {
+                    arrowLoaded = true;
+                    nodeCount = arrowResult.nodeCount;
 
-            // Update state
-            State.setRenderer(renderer);
+                    // Create renderer based on node count
+                    const renderer = RendererFactory.create(DOMCache.cyContainer, {
+                        expectedNodeCount: nodeCount,
+                        rendererPreference: State.rendererPreference
+                    });
+                    State.setRenderer(renderer);
 
-            // Check if ALL nodes have valid pre-computed positions (not just some)
-            const nodesWithPositions = nodes.filter(n => n._hasPosition);
-            const positionCoverage = nodesWithPositions.length / nodes.length;
-            const hasPositions = positionCoverage > 0.9;  // At least 90% have positions
+                    // Check position coverage
+                    const { nodeArrays, edgeArrays } = arrowResult;
+                    const withPos = nodeArrays.nodeObjects.filter(n => n._hasPosition).length;
+                    const positionCoverage = withPos / nodeCount;
+                    const hasPositions = positionCoverage > 0.9;
 
-            console.log(`[GraphLoader] Position stats: ${nodesWithPositions.length}/${nodes.length} nodes have positions (${(positionCoverage * 100).toFixed(1)}%)`);
-            
-            // Set data - use static mode if positions exist and cosmos renderer
-            if (renderer.getType() === 'cosmos' && hasPositions) {
-                // Check if simulation should be paused (from config)
-                const simulationOnLoad = RendererSettings.getValue('cosmos.simulationOnLoad', false);
+                    console.log(`[GraphLoader] Arrow position stats: ${withPos}/${nodeCount} (${(positionCoverage * 100).toFixed(1)}%)`);
 
-                if (!simulationOnLoad && typeof renderer.setDataStatic === 'function') {
-                    // Use new setDataStatic for strict position preservation
-                    console.log('[GraphLoader] Using setDataStatic with pre-computed positions');
-                    renderer.setDataStatic(nodes, [], { fitView: true });
-                    State.cosmosSimulationPaused = true;
-                } else if (!simulationOnLoad && typeof renderer.setDataWithPositions === 'function') {
-                    // Fallback to setDataWithPositions
-                    console.log('[GraphLoader] Using setDataWithPositions with pre-computed positions');
-                    renderer.setDataWithPositions(nodes, [], { pauseSimulation: true, fitView: true });
-                    State.cosmosSimulationPaused = true;
-                } else {
-                    renderer.setData(nodes, []);
-                    State.cosmosSimulationPaused = false;
-                }
-            } else {
-                renderer.setData(nodes, []);
-                if (renderer.getType() === 'cosmos') {
-                    State.cosmosSimulationPaused = false;
+                    // Use setDataFromArrow if the renderer supports it
+                    if (typeof renderer.setDataFromArrow === 'function') {
+                        const staticMode = renderer.getType() === 'cosmos' && hasPositions &&
+                            !RendererSettings.getValue('cosmos.simulationOnLoad', false);
+                        renderer.setDataFromArrow(nodeArrays, edgeArrays, {
+                            fitView: true,
+                            staticMode: staticMode
+                        });
+                        if (staticMode) State.cosmosSimulationPaused = true;
+                        else if (renderer.getType() === 'cosmos') State.cosmosSimulationPaused = false;
+                    } else {
+                        // Renderer doesn't have Arrow method, fall back to object arrays
+                        const nodes = nodeArrays.nodeObjects;
+                        const edges = edgeArrays.edges;
+                        if (renderer.getType() === 'cosmos' && hasPositions) {
+                            const simulationOnLoad = RendererSettings.getValue('cosmos.simulationOnLoad', false);
+                            if (!simulationOnLoad && typeof renderer.setDataStatic === 'function') {
+                                renderer.setDataStatic(nodes, edges, { fitView: true });
+                                State.cosmosSimulationPaused = true;
+                            } else {
+                                renderer.setData(nodes, edges);
+                                State.cosmosSimulationPaused = false;
+                            }
+                        } else {
+                            renderer.setData(nodes, edges);
+                            if (renderer.getType() === 'cosmos') State.cosmosSimulationPaused = false;
+                        }
+                    }
+
+                    // Build Cytoscape-format elements for metric dropdowns
+                    arrowResult._elements = nodeArrays.nodeObjects.map(n => ({
+                        group: 'nodes',
+                        data: { id: n.id, ...n },
+                        position: { x: n.x || 0, y: n.y || 0 }
+                    }));
+
+                    console.log(`[GraphLoader] Arrow load complete: ${nodeCount} nodes`);
                 }
             }
-            
-            // Setup event handlers based on renderer type
-            // Cytoscape events are handled by cytoscape-manager.js
-            // Cosmos events need explicit handling here
+
+            // ============================================================
+            // JSON fallback (original path)
+            // ============================================================
+            let nodesDataElements = null;
+
+            if (!arrowLoaded) {
+                const nodesData = await API.getGraphElements(graphId, 'nodes_only');
+                const nodeElements = nodesData.elements.filter(e => e.group === 'nodes');
+                nodeCount = nodeElements.length;
+                nodesDataElements = nodesData.elements;
+
+                const nodes = nodeElements.map(e => ({
+                    id: e.data.id,
+                    x: e.position?.x,
+                    y: e.position?.y,
+                    _hasPosition: e.position?.x !== undefined && e.position?.y !== undefined,
+                    ...e.data
+                }));
+
+                const renderer = RendererFactory.create(DOMCache.cyContainer, {
+                    expectedNodeCount: nodeCount,
+                    rendererPreference: State.rendererPreference
+                });
+                State.setRenderer(renderer);
+
+                const nodesWithPositions = nodes.filter(n => n._hasPosition);
+                const positionCoverage = nodesWithPositions.length / nodes.length;
+                const hasPositions = positionCoverage > 0.9;
+
+                console.log(`[GraphLoader] JSON position stats: ${nodesWithPositions.length}/${nodes.length} (${(positionCoverage * 100).toFixed(1)}%)`);
+
+                if (renderer.getType() === 'cosmos' && hasPositions) {
+                    const simulationOnLoad = RendererSettings.getValue('cosmos.simulationOnLoad', false);
+                    if (!simulationOnLoad && typeof renderer.setDataStatic === 'function') {
+                        renderer.setDataStatic(nodes, [], { fitView: true });
+                        State.cosmosSimulationPaused = true;
+                    } else if (!simulationOnLoad && typeof renderer.setDataWithPositions === 'function') {
+                        renderer.setDataWithPositions(nodes, [], { pauseSimulation: true, fitView: true });
+                        State.cosmosSimulationPaused = true;
+                    } else {
+                        renderer.setData(nodes, []);
+                        State.cosmosSimulationPaused = false;
+                    }
+                } else {
+                    renderer.setData(nodes, []);
+                    if (renderer.getType() === 'cosmos') State.cosmosSimulationPaused = false;
+                }
+            }
+
+            // ============================================================
+            // Common post-load setup
+            // ============================================================
+            const renderer = State.renderer;
+
             if (renderer.getType() === 'cosmos') {
                 this.setupCosmosEventHandlers(renderer);
-                
-                // Handle simulation state based on configuration
+
                 if (State.cosmosSimulationPaused) {
-                    // Simulation is paused (pre-computed positions mode)
-                    // Just fit view to show the layout
                     setTimeout(() => {
                         renderer.fitView();
                         console.log('[GraphLoader] cosmos.gl fit complete, simulation paused (static mode)');
                     }, 300);
                 } else {
-                    // Simulation runs continuously - user controls via toolbar button
-                    // Fit view after initial layout starts settling
                     setTimeout(() => {
                         renderer.fitView();
                         console.log('[GraphLoader] cosmos.gl initial fit complete, simulation running');
                     }, 1500);
                 }
-                
-                // Update simulation button to reflect state
+
                 this.updateSimulationButtonState();
             }
-            
-            // Update renderer indicator in UI
+
             this.updateRendererIndicator();
-            
-            // Update counts
+
             DOMCache.nodeCount.textContent = `${nodeCount} nodes`;
             DOMCache.edgeCount.textContent = '0 edges';
-            
-            // Update load edges button
+
             if (DOMCache.loadEdgesBtn) {
                 DOMCache.loadEdgesBtn.textContent = 'Load Edges';
                 DOMCache.loadEdgesBtn.disabled = false;
             }
-            
-            // Populate metric dropdowns
-            Metrics.populateDropdowns(nodesData.elements, null);
-            
-            // Send data to distributions window
+
+            // Populate metric dropdowns from whichever source loaded
+            const elementsForDropdowns = arrowLoaded
+                ? (nodesDataElements || [])  // Arrow doesn't produce full elements, use cached if available
+                : nodesDataElements;
+            if (elementsForDropdowns && elementsForDropdowns.length > 0) {
+                Metrics.populateDropdowns(elementsForDropdowns, null);
+            } else if (arrowLoaded) {
+                // Build minimal elements for dropdown population from Arrow nodeObjects
+                const arrowElements = State.renderer?.nodeDataMap
+                    ? Array.from(State.renderer.nodeDataMap.values()).map(n => ({
+                        group: 'nodes',
+                        data: { id: n.id, ...n }
+                    }))
+                    : [];
+                if (arrowElements.length > 0) {
+                    Metrics.populateDropdowns(arrowElements, null);
+                }
+            }
+
             DistributionsComm.sendData();
-            
-            // Dispatch event for other modules (like Snapshots)
-            document.dispatchEvent(new CustomEvent('graphLoaded', { 
-                detail: { graphId: graphId } 
+
+            document.dispatchEvent(new CustomEvent('graphLoaded', {
+                detail: { graphId: graphId }
             }));
-            
+
             const rendererType = renderer.getType();
+            const loadMethod = arrowLoaded ? 'Arrow' : 'JSON';
             updateStatus(
-                `Graph displayed: ${nodeCount} nodes (edges not loaded) [${rendererType}]`, 
+                `Graph displayed: ${nodeCount} nodes (edges not loaded) [${rendererType}, ${loadMethod}]`,
                 'success'
             );
-            
+
         } catch (error) {
             console.error('Display error:', error);
             updateStatus('Failed to display graph: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * Try to load node data via Arrow IPC endpoint.
+     * Returns parsed arrays or null if Arrow is unavailable / endpoint returns error.
+     * @private
+     */
+    async _tryLoadNodesArrow(graphId) {
+        try {
+            const table = await ArrowReader.fetchTable(
+                `/api/graphs/${encodeURIComponent(graphId)}/elements/arrow`
+            );
+            if (!table) return null;
+
+            const nodeArrays = ArrowReader.arrowToNodeArrays(table);
+            // No edges in the elements/arrow endpoint (nodes-only for initial load)
+            const edgeArrays = { edges: [], linkIndices: null };
+
+            return {
+                nodeCount: nodeArrays.ids.length,
+                nodeArrays,
+                edgeArrays
+            };
+        } catch (err) {
+            console.warn('[GraphLoader] Arrow node load failed, will use JSON:', err);
+            return null;
         }
     },
     
@@ -417,87 +510,133 @@ const GraphLoader = {
     },
 
     /**
-     * Load edges incrementally in batches
+     * Load edges incrementally in batches.
+     * Tries Arrow IPC first for each batch, falls back to JSON.
      */
     async loadEdgesIncrementally(graphId) {
         const renderer = State.renderer;
         if (!renderer) return;
-        
+
         // Get current edge count from renderer
         const currentStats = renderer.getStats();
-        
+
         // If edges already loaded, clear them instead
         if (currentStats.edgeCount > 0) {
             this.clearEdges();
             return;
         }
-        
+
         if (State.edgesLoading) return;
-        
+
         State.edgesLoading = true;
         const BATCH_SIZE = 50000;
         let offset = 0;
         let totalLoaded = 0;
         let hasMore = true;
-        
+        const useArrow = typeof ArrowReader !== 'undefined' && ArrowReader.isAvailable();
+
         if (DOMCache.loadEdgesBtn) {
             DOMCache.loadEdgesBtn.disabled = true;
             DOMCache.loadEdgesBtn.textContent = 'Loading...';
         }
-        
+
         // CRITICAL: Disable pointer events during bulk add
         DOMCache.cyContainer.style.pointerEvents = 'none';
-        
+
         try {
             while (hasMore && State.edgesLoading) {
-                const result = await API.getGraphEdges(graphId, offset, BATCH_SIZE);
-                
-                if (result.edges && result.edges.length > 0) {
-                    // Convert from Cytoscape format to unified format
-                    const edges = result.edges.map(e => ({
-                        source: e.data.source,
-                        target: e.data.target,
-                        id: e.data.id,
-                        ...e.data
-                    }));
-                    
-                    // Add edges to renderer
-                    renderer.addEdges(edges);
-                    
-                    totalLoaded += result.edges.length;
+                let batchEdgeCount = 0;
+                let totalEdges = 0;
+                let arrowUsed = false;
+
+                // --- Try Arrow IPC first ---
+                if (useArrow) {
+                    try {
+                        const url = `/api/graphs/${encodeURIComponent(graphId)}/edges/arrow?offset=${offset}&limit=${BATCH_SIZE}`;
+                        const table = await ArrowReader.fetchTable(url);
+                        if (table && table.numRows > 0) {
+                            const edgeArrays = ArrowReader.arrowToEdgeArrays(table);
+
+                            if (typeof renderer.addEdgesFromArrow === 'function') {
+                                renderer.addEdgesFromArrow(edgeArrays);
+                            } else {
+                                renderer.addEdges(edgeArrays.edges);
+                            }
+
+                            batchEdgeCount = edgeArrays.edges.length;
+                            // Read total from table metadata or header if available
+                            // The Arrow endpoint returns headers but fetch() doesn't expose them
+                            // via Arrow table, so we estimate: if we got a full batch, there may be more
+                            totalEdges = 0; // unknown, will check via batch size
+                            arrowUsed = true;
+                        }
+                    } catch (arrowErr) {
+                        console.warn('[GraphLoader] Arrow edge batch failed, falling back to JSON:', arrowErr);
+                    }
+                }
+
+                // --- JSON fallback ---
+                if (!arrowUsed) {
+                    const result = await API.getGraphEdges(graphId, offset, BATCH_SIZE);
+
+                    if (result.edges && result.edges.length > 0) {
+                        const edges = result.edges.map(e => ({
+                            source: e.data.source,
+                            target: e.data.target,
+                            id: e.data.id,
+                            ...e.data
+                        }));
+
+                        renderer.addEdges(edges);
+                        batchEdgeCount = result.edges.length;
+                        totalEdges = result.total;
+                    }
+
+                    hasMore = result.has_more;
+                }
+
+                if (batchEdgeCount > 0) {
+                    totalLoaded += batchEdgeCount;
                     offset = totalLoaded;
-                    
+
                     // Update progress
                     if (DOMCache.edgesProgress) {
-                        DOMCache.edgesProgress.textContent = 
-                            `${totalLoaded.toLocaleString()} / ${result.total.toLocaleString()}`;
+                        const totalStr = totalEdges > 0
+                            ? totalEdges.toLocaleString()
+                            : '...';
+                        DOMCache.edgesProgress.textContent =
+                            `${totalLoaded.toLocaleString()} / ${totalStr}`;
                     }
                     DOMCache.edgeCount.textContent = `${totalLoaded.toLocaleString()} edges`;
-                    
-                    hasMore = result.has_more;
+
+                    // For Arrow, check if batch was smaller than requested → no more
+                    if (arrowUsed) {
+                        hasMore = batchEdgeCount >= BATCH_SIZE;
+                    }
                 } else {
                     hasMore = false;
                 }
             }
-            
+
             DOMCache.edgeCount.textContent = `${totalLoaded.toLocaleString()} edges`;
             if (DOMCache.edgesProgress) {
                 DOMCache.edgesProgress.textContent = '';
             }
-            
-            updateStatus(`Loaded ${totalLoaded.toLocaleString()} edges`, 'success');
-            
+
+            const method = useArrow ? 'Arrow' : 'JSON';
+            updateStatus(`Loaded ${totalLoaded.toLocaleString()} edges [${method}]`, 'success');
+
         } catch (error) {
             console.error('Edge loading error:', error);
             updateStatus('Edge loading failed: ' + error.message, 'error');
         } finally {
             State.edgesLoading = false;
-            
+
             // Re-enable pointer events after renderer settles
             setTimeout(() => {
                 DOMCache.cyContainer.style.pointerEvents = 'auto';
             }, 500);
-            
+
             if (DOMCache.loadEdgesBtn) {
                 DOMCache.loadEdgesBtn.disabled = false;
                 const stats = renderer.getStats();

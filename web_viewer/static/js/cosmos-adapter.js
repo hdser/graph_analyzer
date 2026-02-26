@@ -850,6 +850,173 @@ class CosmosAdapter extends GraphRendererInterface {
         return this._staticModeActive === true;
     }
 
+    /**
+     * Set data from pre-parsed Arrow arrays (from ArrowReader).
+     *
+     * Skips the per-node object iteration that setData() does, using
+     * the typed arrays produced by ArrowReader.arrowToNodeArrays() and
+     * ArrowReader.arrowToEdgeArrays() directly.
+     *
+     * @param {Object} nodeArrays - From ArrowReader.arrowToNodeArrays()
+     *   {ids: string[], positions: Float32Array, metrics: Object, nodeObjects: Object[]}
+     * @param {Object} edgeArrays - From ArrowReader.arrowToEdgeArrays()
+     *   {edges: {source,target,id}[], linkIndices: Float32Array|null}
+     * @param {Object} options
+     * @param {boolean} options.fitView - Fit view after render (default: true)
+     * @param {boolean} options.staticMode - Use static mode / disable physics (default: true)
+     */
+    setDataFromArrow(nodeArrays, edgeArrays, options = {}) {
+        const { fitView = true, staticMode = true } = options;
+        const { ids, positions, metrics, nodeObjects } = nodeArrays;
+        const { edges, linkIndices } = edgeArrays;
+        const n = ids.length;
+
+        console.log(`[CosmosAdapter] setDataFromArrow: ${n} nodes, ${edges.length} edges`);
+
+        // === Disable physics if static mode ===
+        if (staticMode && this.graph) {
+            this._savedSimParamsForStatic = {
+                simulationGravity: this._currentSimParams.gravity,
+                simulationRepulsion: this._currentSimParams.repulsion,
+                simulationLinkSpring: this._currentSimParams.linkSpring,
+                simulationCenter: this._currentSimParams.center,
+                simulationFriction: this._currentSimParams.friction,
+                simulationLinkDistance: this._currentSimParams.linkDistance,
+            };
+            this.graph.setConfig({
+                simulationGravity: 0,
+                simulationRepulsion: 0,
+                simulationLinkSpring: 0,
+                simulationCenter: 0,
+                simulationFriction: 1.0,
+                simulationLinkDistance: 0,
+            });
+            this.graph.pause();
+            this._simulationRunning = false;
+            this._staticModeActive = true;
+        }
+
+        // === Clear existing data ===
+        this.nodeIndices.clear();
+        this.nodeIds = [];
+        this.nodeDataMap.clear();
+        this.edgeIndices.clear();
+        this.edgeDataMap.clear();
+        this.selectedIndices.clear();
+        this.highlightedIndices.clear();
+        this.incomingEdges.clear();
+        this.outgoingEdges.clear();
+        this._pathNodeColors.clear();
+        this._pathEdgeColors.clear();
+        this._isPathHighlightActive = false;
+        this._baseNodeColors = null;
+        this._storedEdgeData = [];
+        this._edgeLinkData = null;
+        this._currentColorMetric = null;
+        this._hoveredIndex = null;
+
+        // === Build node index mapping directly from ids array ===
+        for (let i = 0; i < n; i++) {
+            const id = ids[i];
+            this.nodeIndices.set(id, i);
+            this.nodeIds[i] = id;
+            this.nodeDataMap.set(id, nodeObjects[i]);
+            this.incomingEdges.set(id, []);
+            this.outgoingEdges.set(id, []);
+        }
+
+        // === Use positions directly (already a Float32Array from Arrow) ===
+        this.positions = positions;
+
+        // === Build or reuse link data ===
+        let linkData;
+        if (linkIndices) {
+            // Arrow already provided pre-computed source/target indices
+            linkData = linkIndices;
+        } else {
+            // Build from edge objects (fallback)
+            linkData = new Float32Array(edges.length * 2);
+            edges.forEach((edge, i) => {
+                const si = this.nodeIndices.get(edge.source);
+                const ti = this.nodeIndices.get(edge.target);
+                if (si !== undefined && ti !== undefined) {
+                    linkData[i * 2] = si;
+                    linkData[i * 2 + 1] = ti;
+                }
+            });
+        }
+
+        // Track edges
+        let validEdgeCount = 0;
+        edges.forEach((edge, i) => {
+            const edgeId = edge.id || `${edge.source}-${edge.target}`;
+            this.edgeIndices.set(edgeId, i);
+            this.edgeDataMap.set(edgeId, edge);
+            this.incomingEdges.get(edge.target)?.push(edge.source);
+            this.outgoingEdges.get(edge.source)?.push(edge.target);
+            validEdgeCount++;
+        });
+
+        // Store master edge data
+        this._edgeLinkData = linkData;
+        this._masterLinkData = new Float32Array(linkData);
+        this._masterEdgeCount = validEdgeCount;
+        this._storedEdgeData = edges.map(edge => ({
+            source: edge.source,
+            target: edge.target,
+            id: edge.id || `${edge.source}-${edge.target}`,
+            data: edge
+        }));
+
+        // === Set data to cosmos ===
+        this.graph.setPointPositions(this.positions, true);
+
+        if (this._edgesVisible && linkData.length > 0) {
+            this.graph.setLinks(linkData);
+            this._applyEdgeColorsForCount(validEdgeCount);
+        } else {
+            this.graph.setLinks(new Float32Array(0));
+        }
+
+        this.applyDefaultColors();
+        this.applyDefaultEdgeColors();
+        this.graph.render();
+
+        if (staticMode) {
+            this.graph.pause();
+            this._simulationRunning = false;
+        }
+
+        // Fit view
+        if (fitView) {
+            setTimeout(() => {
+                this.graph.fitView();
+                if (staticMode) this.graph.pause();
+            }, 150);
+        }
+
+        // Re-apply edge colors
+        setTimeout(() => {
+            this.applyDefaultEdgeColors();
+            this.graph.render();
+            if (staticMode) this.graph.pause();
+        }, 50);
+
+        console.log(`[CosmosAdapter] setDataFromArrow: Complete.`);
+    }
+
+    /**
+     * Add edges from pre-parsed Arrow arrays (for incremental edge loading).
+     *
+     * @param {Object} edgeArrays - From ArrowReader.arrowToEdgeArrays()
+     *   {edges: {source,target,id}[], linkIndices: Float32Array|null}
+     */
+    addEdgesFromArrow(edgeArrays) {
+        const { edges } = edgeArrays;
+        // Delegate to existing addEdges which handles position preservation
+        this.addEdges(edges);
+    }
+
     updatePositions(positions) {
         const posArray = new Float32Array(this.nodeIds.length * 2);
         const posMap = positions instanceof Map ? positions : new Map(Object.entries(positions));

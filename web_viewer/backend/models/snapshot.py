@@ -96,6 +96,25 @@ class SnapshotSuggestRequest(BaseModel):
     )
 
 
+class SnapshotRebuildRequest(BaseModel):
+    """Request to rebuild snapshots from scratch."""
+    base_sql_file: str = Field(
+        description="Base SQL file name (e.g., 'crc_v2_trusts')"
+    )
+    block_numbers: Optional[List[int]] = Field(
+        default=None,
+        description="Specific blocks to rebuild. If None, rebuild all existing."
+    )
+    metrics_mode: MetricsMode = Field(
+        default=MetricsMode.STANDARD,
+        description="Which metrics to compute"
+    )
+    delete_existing: bool = Field(
+        default=True,
+        description="Delete existing snapshots before rebuilding"
+    )
+
+
 # =============================================================================
 # Response Models
 # =============================================================================

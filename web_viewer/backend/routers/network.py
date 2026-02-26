@@ -16,11 +16,13 @@ from typing import Optional, List
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from ..models.requests import LoadConfig
 from ..services.network_service import network_service
 from ..services.api_properties_service import api_properties_service
+from ..services.arrow_service import arrow_service
 from ..config import settings, HAS_ANOMALY, HAS_SSE
 
 from engines.metrics import METRIC_CATEGORIES, METRIC_PRESETS
@@ -187,6 +189,114 @@ def get_graph_edges(
     """Return a chunk of edges for the given graph."""
     try:
         return network_service.get_graph_edges_chunk(graph_id, offset, limit)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graphs/{graph_id}/elements/arrow")
+def get_graph_elements_arrow(
+    graph_id: str,
+    mode: str = Query("full", pattern="^(full|nodes_only)$"),
+):
+    """Return graph elements as Arrow IPC binary stream."""
+    try:
+        if graph_id not in network_service.graphs:
+            raise ValueError(f"Graph '{graph_id}' not loaded")
+
+        G = network_service.graphs[graph_id]
+        positions = network_service.layouts.get(graph_id, {})
+
+        # Build node data list from graph attributes
+        nodes = []
+        for node in G.nodes():
+            node_data = {"id": str(node)}
+            node_data.update(G.nodes[node])
+            nodes.append(node_data)
+
+        # Convert to Arrow IPC
+        arrow_bytes = arrow_service.graph_elements_to_arrow(
+            nodes=nodes,
+            positions=positions,
+        )
+
+        return Response(
+            content=arrow_bytes,
+            media_type="application/vnd.apache.arrow.stream",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graphs/{graph_id}/edges/arrow")
+def get_graph_edges_arrow(
+    graph_id: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50000, ge=1, le=200000),
+):
+    """Return a chunk of edges as Arrow IPC binary stream."""
+    try:
+        if graph_id not in network_service.graphs:
+            raise ValueError(f"Graph '{graph_id}' not loaded")
+
+        G = network_service.graphs[graph_id]
+        edges = list(G.edges())
+
+        # Build node index for pre-computed cosmos.gl link indices
+        node_list = list(G.nodes())
+        node_index = {str(n): i for i, n in enumerate(node_list)}
+
+        arrow_bytes = arrow_service.edges_to_arrow(
+            edges=edges,
+            node_index=node_index,
+            offset=offset,
+            limit=limit,
+        )
+
+        total = len(edges)
+        returned = min(limit, max(0, total - offset))
+
+        return Response(
+            content=arrow_bytes,
+            media_type="application/vnd.apache.arrow.stream",
+            headers={
+                "X-Arrow-Offset": str(offset),
+                "X-Arrow-Limit": str(limit),
+                "X-Arrow-Returned": str(returned),
+                "X-Arrow-Total": str(total),
+                "X-Arrow-Has-More": str(offset + limit < total).lower(),
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graphs/{graph_id}/metrics/arrow")
+def get_graph_metrics_arrow(graph_id: str):
+    """Return metrics-only Arrow IPC stream for a loaded graph."""
+    try:
+        # Find the version key for this graph
+        version = None
+        for v, df in network_service.metrics_dfs.items():
+            if graph_id.startswith(v) or v in graph_id:
+                version = v
+                break
+
+        if version is None:
+            raise ValueError(f"No metrics found for graph '{graph_id}'")
+
+        metrics_df = network_service.metrics_dfs[version]
+        arrow_bytes = arrow_service.metrics_to_arrow(metrics_df)
+
+        return Response(
+            content=arrow_bytes,
+            media_type="application/vnd.apache.arrow.stream",
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

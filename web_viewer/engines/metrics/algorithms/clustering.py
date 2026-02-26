@@ -16,18 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 class ClusteringCoefficientAlgorithm(BaseMetricAlgorithm):
-    """Compute local clustering coefficient."""
-    
+    """Compute local clustering coefficient. Uses compute backend when available."""
+
     name = "clustering_coefficient"
     category = "clustering"
     description = "Local clustering coefficient"
     cost = "medium"
-    
-    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, **kwargs) -> Dict[str, Dict[str, Any]]:
+
+    def compute(self, G: nx.DiGraph, U: nx.Graph, nodes: list, backend=None, **kwargs) -> Dict[str, Dict[str, Any]]:
         try:
-            clustering = nx.clustering(U)
+            if backend:
+                clustering = backend.clustering_coefficient(U)
+            else:
+                clustering = nx.clustering(U)
             clustering_dir = nx.clustering(G)
-            
+
             result = {}
             for node in nodes:
                 result[node] = {
