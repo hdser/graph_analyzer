@@ -93,7 +93,8 @@ const ArrowReader = {
                     if (metrics[name]) {
                         metrics[name][i] = Number(val) || 0;
                     }
-                    obj[name] = val;
+                    // Arrow Int64 returns BigInt which fails typeof === 'number' checks downstream
+                    obj[name] = (typeof val === 'bigint') ? Number(val) : val;
                 }
             }
 

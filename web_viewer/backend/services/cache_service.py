@@ -60,13 +60,51 @@ class CacheService:
             for node_id, pos in positions.items()
         ]
         return pd.DataFrame(rows)
+
+    def _current_layout_path(self, graph_id: str) -> Path:
+        return self.layouts_dir / f"{graph_id}.parquet"
+
+    def _base_layout_path(self, graph_id: str) -> Path:
+        return self.layouts_dir / f"{graph_id}_base.parquet"
+
+    def _cosmos_live_path(self, graph_id: str) -> Path:
+        return self.layouts_dir / f"{graph_id}_cosmos_live.parquet"
     
     def _df_to_positions(self, df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
         """Convert DataFrame to positions dict."""
+        if df.empty:
+            return {}
+        node_ids = df['node_id'].astype(str).tolist()
+        xs = df['x'].astype(float).tolist()
+        ys = df['y'].astype(float).tolist()
         return {
-            str(row['node_id']): {'x': float(row['x']), 'y': float(row['y'])}
-            for _, row in df.iterrows()
+            node_id: {'x': x, 'y': y}
+            for node_id, x, y in zip(node_ids, xs, ys)
         }
+
+    def get_cosmos_live_layout(self, graph_id: str) -> Optional[Dict[str, Dict[str, float]]]:
+        """Load persisted cosmos positions for static restore."""
+        cosmos_file = self._cosmos_live_path(graph_id)
+        if not cosmos_file.exists():
+            return None
+        try:
+            positions = _db.read_positions(cosmos_file)
+            print(f"[CACHE] Loaded cosmos live layout: {cosmos_file.name} ({len(positions)} nodes)")
+            return positions
+        except Exception as e:
+            print(f"[CACHE] Error loading cosmos live layout: {e}")
+            return None
+
+    def get_resume_layout(self, graph_id: str) -> Optional[Dict[str, Dict[str, float]]]:
+        """Resolve the best layout to restore for a graph load."""
+        for loader in (
+            self.get_cosmos_live_layout,
+            self.get_cached_layout,
+        ):
+            positions = loader(graph_id)
+            if positions:
+                return positions
+        return None
     
     def get_cached_layout(self, graph_id: str) -> Optional[Dict[str, Dict[str, float]]]:
         """
@@ -84,7 +122,7 @@ class CacheService:
             Layout dictionary {node_id: {x, y}} or None if not cached
         """
         # Try current layout first
-        current_file = self.layouts_dir / f"{graph_id}.parquet"
+        current_file = self._current_layout_path(graph_id)
         if current_file.exists():
             try:
                 positions = _db.read_positions(current_file)
@@ -94,7 +132,7 @@ class CacheService:
                 print(f"[CACHE] Error loading layout: {e}")
 
         # Try base layout
-        base_file = self.layouts_dir / f"{graph_id}_base.parquet"
+        base_file = self._base_layout_path(graph_id)
         if base_file.exists():
             try:
                 positions = _db.read_positions(base_file)
@@ -132,9 +170,20 @@ class CacheService:
         Returns:
             Cache file path
         """
-        cache_file = self.layouts_dir / f"{graph_id}.parquet"
+        cache_file = self._current_layout_path(graph_id)
         _db.write_positions(positions, cache_file)
         print(f"[CACHE] Saved layout: {cache_file.name} ({len(positions)} nodes)")
+        return str(cache_file)
+
+    def save_cosmos_live_layout(
+        self,
+        graph_id: str,
+        positions: Dict[str, Dict[str, float]]
+    ) -> str:
+        """Persist the live cosmos layout using an atomic parquet write."""
+        cache_file = self._cosmos_live_path(graph_id)
+        _db.write_positions_atomic(positions, cache_file)
+        print(f"[CACHE] Saved cosmos live layout: {cache_file.name} ({len(positions)} nodes)")
         return str(cache_file)
 
     def save_base_layout(
@@ -152,14 +201,14 @@ class CacheService:
         Returns:
             Cache file path
         """
-        cache_file = self.layouts_dir / f"{graph_id}_base.parquet"
+        cache_file = self._base_layout_path(graph_id)
         _db.write_positions(positions, cache_file)
         print(f"[CACHE] Saved base layout: {cache_file.name} ({len(positions)} nodes)")
         return str(cache_file)
     
     def has_base_layout(self, graph_id: str) -> bool:
         """Check if a base layout exists for the graph."""
-        return (self.layouts_dir / f"{graph_id}_base.parquet").exists()
+        return self._base_layout_path(graph_id).exists()
     
     def list_cached_layouts(self) -> List[Dict[str, Any]]:
         """List all cached layouts with metadata."""
@@ -196,14 +245,19 @@ class CacheService:
         """
         if graph_id:
             # Delete current layout
-            current_file = self.layouts_dir / f"{graph_id}.parquet"
+            current_file = self._current_layout_path(graph_id)
             if current_file.exists():
                 current_file.unlink()
                 print(f"[CACHE] Deleted: {current_file.name}")
+
+            cosmos_file = self._cosmos_live_path(graph_id)
+            if cosmos_file.exists():
+                cosmos_file.unlink()
+                print(f"[CACHE] Deleted: {cosmos_file.name}")
             
             # Delete base layout only if requested
             if include_base:
-                base_file = self.layouts_dir / f"{graph_id}_base.parquet"
+                base_file = self._base_layout_path(graph_id)
                 if base_file.exists():
                     base_file.unlink()
                     print(f"[CACHE] Deleted: {base_file.name}")

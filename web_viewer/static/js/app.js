@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDropdownLogic();
     setupPanelNavigation();  // Setup button-based panel system
     setupSubsectionCollapsibles();
+    AnalysisPanel.init();    // IDE-style bottom panel (Snapshots, Metrics, Embeddings, Query)
     setupRendererPreferenceControls();
     
     // Initialize features
@@ -1238,18 +1239,6 @@ function setupEventListeners() {
         if (valueDisplay) {
             valueDisplay.textContent = `${e.target.value}%`;
         }
-    });
-
-    // Data Explorer
-    document.getElementById('data-explorer-btn')?.addEventListener('click', () => {
-        if (typeof DataExplorer !== 'undefined') {
-            DataExplorer.open();
-        }
-    });
-
-    // SQL Explorer
-    document.getElementById('sql-explorer-btn')?.addEventListener('click', () => {
-        window.open('/sql-explorer', '_blank');
     });
 
     // Filter nodes

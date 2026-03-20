@@ -69,24 +69,24 @@
    ========================================================================== */
 
 #panel-flow .flow-tabs {
-    display: flex;
+    display: inline-flex;
     margin-bottom: 12px;
     background: #1a1a1a;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 3px;
 }
 
 #panel-flow .flow-tab {
-    flex: 1;
-    padding: 8px 12px;
+    padding: 6px 18px;
     background: transparent;
     border: none;
     color: #888;
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
 
 #panel-flow .flow-tab:hover {
@@ -117,25 +117,28 @@
 
 #panel-flow .flow-options .option-row,
 #panel-flow .cf-options-content .option-row {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
+    margin-right: 16px;
+    vertical-align: top;
 }
 
 #panel-flow .flow-options .option-row label,
 #panel-flow .cf-options-content .option-row label {
     font-size: 12px;
     color: #aaa;
-    min-width: 70px;
+    min-width: 60px;
+    flex-shrink: 0;
 }
 
 #panel-flow .flow-options .option-row select,
 #panel-flow .cf-options-content .option-row select {
-    flex: 1;
+    min-width: 180px;
     background: #0f0f0f;
     border: 1px solid #2a2a2a;
-    border-radius: 4px;
+    border-radius: 6px;
     color: #e0e0e0;
     padding: 6px 10px;
     font-size: 12px;
@@ -931,64 +934,8 @@
 }
 
 /* ==========================================================================
-   BUTTON GROUP - EQUAL SIZE (Match path-analysis.css)
+   BUTTON GROUP — now handled by style.css to avoid specificity conflicts
    ========================================================================== */
-
-#panel-flow .button-group {
-    display: flex !important;
-    gap: 8px !important;
-    margin: 12px 0 0 0 !important;
-    padding: 0 !important;
-    width: 100% !important;
-}
-
-#panel-flow .button-group button,
-#panel-flow .button-group .primary-btn,
-#panel-flow .button-group .secondary-btn {
-    flex: 1 1 0 !important;
-    width: auto !important;
-    min-width: 0 !important;
-    height: 42px !important;
-    margin: 0 !important;
-    padding: 8px 12px !important;
-    font-size: 13px !important;
-    font-weight: 600 !important;
-    border-radius: 6px !important;
-    cursor: pointer !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    box-sizing: border-box !important;
-    transform: none !important;
-}
-
-#panel-flow .button-group .primary-btn {
-    background: #4A90E2 !important;
-    border: none !important;
-    color: #fff !important;
-}
-
-#panel-flow .button-group .primary-btn:hover:not(:disabled) {
-    background: #357ABD !important;
-}
-
-#panel-flow .button-group .primary-btn:disabled {
-    background: #3a5a7a !important;
-    color: #aaa !important;
-    cursor: wait !important;
-}
-
-#panel-flow .button-group .secondary-btn {
-    background: #2a2a2a !important;
-    border: 1px solid #444 !important;
-    color: #ccc !important;
-}
-
-#panel-flow .button-group .secondary-btn:hover {
-    background: #333 !important;
-    border-color: #555 !important;
-    color: #fff !important;
-}
 
 /* ==========================================================================
    CAPACITY FLOW BUILD SECTION

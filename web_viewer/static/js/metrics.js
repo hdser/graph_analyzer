@@ -367,7 +367,7 @@ const Metrics = {
             
             // Reload current graph to fetch updated node data with new metrics
             // Note: This clears edges - user will need to click "Load Edges" again if needed
-            if (State.cy && State.currentGraph && typeof GraphLoader !== 'undefined') {
+            if (State.renderer && State.currentGraph && typeof GraphLoader !== 'undefined') {
                 await GraphLoader.displayGraph(State.currentGraph);
             }
         } catch (error) {
@@ -845,19 +845,23 @@ const Metrics = {
     populateMetricDropdowns() {
         if (!State.cy) return;
         
-        // Get all node properties (metrics) from first node
+        // Scan a sample of nodes for all numeric properties
+        // (not just the first — some nodes may lack certain metrics)
         const nodes = State.cy.nodes();
         if (nodes.length === 0) return;
-        
-        const firstNode = nodes[0].data();
-        const metrics = [];
-        
-        // Collect all numeric properties
-        for (const key in firstNode) {
-            if (typeof firstNode[key] === 'number' && key !== 'id') {
-                metrics.push(key);
+
+        const metricKeys = new Set();
+        const sampleSize = Math.min(nodes.length, 200);
+        for (let i = 0; i < sampleSize; i++) {
+            const data = nodes[i].data();
+            for (const key in data) {
+                if (key === 'id' || metricKeys.has(key)) continue;
+                if (typeof data[key] === 'number') {
+                    metricKeys.add(key);
+                }
             }
         }
+        const metrics = Array.from(metricKeys).sort();
         
         // Populate size dropdown
         const sizeSelect = document.getElementById('node-size-metric');

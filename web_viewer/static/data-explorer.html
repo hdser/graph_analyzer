@@ -825,17 +825,168 @@
             },
 
             /**
-             * Locate node in main window
+             * Resolve host window that owns graph State
+             * Priority: parent -> parent.opener -> opener
+             */
+            resolveHostWindow() {
+                const seen = new Set();
+                const candidates = [];
+
+                const addCandidate = (win, label) => {
+                    if (!win || seen.has(win)) return;
+                    seen.add(win);
+                    try {
+                        if (win.closed) return;
+                        candidates.push({ win, label });
+                    } catch (e) {
+                        console.warn(`[DataExplorer] Cannot access ${label}:`, e);
+                    }
+                };
+
+                try {
+                    if (window.parent && window.parent !== window) {
+                        addCandidate(window.parent, 'parent');
+                    }
+                } catch (e) {
+                    console.warn('[DataExplorer] Failed to inspect parent window:', e);
+                }
+
+                try {
+                    if (window.parent && window.parent !== window && window.parent.opener) {
+                        addCandidate(window.parent.opener, 'parent.opener');
+                    }
+                } catch (e) {
+                    console.warn('[DataExplorer] Failed to inspect parent.opener window:', e);
+                }
+
+                try {
+                    if (window.opener) {
+                        addCandidate(window.opener, 'opener');
+                    }
+                } catch (e) {
+                    console.warn('[DataExplorer] Failed to inspect opener window:', e);
+                }
+
+                for (const candidate of candidates) {
+                    try {
+                        if (candidate.win.State) {
+                            console.log('[DataExplorer] Resolved host window via', candidate.label);
+                            return candidate.win;
+                        }
+                    } catch (e) {
+                        console.warn(`[DataExplorer] Cannot inspect ${candidate.label}.State:`, e);
+                    }
+                }
+
+                return null;
+            },
+
+            /**
+             * Locate node using graph state in host window
+             */
+            locateInHostState(hostWindow, nodeId) {
+                const shortId = String(nodeId).substring(0, 20);
+
+                try {
+                    const state = hostWindow && hostWindow.State;
+                    if (!state) return false;
+
+                    const renderer = state.renderer;
+                    const cy = state.cy;
+                    console.log('[DataExplorer] locateInHostState renderer:', !!renderer, 'cy:', !!cy);
+
+                    if (renderer && typeof renderer.zoomToNode === 'function') {
+                        // Use findNodeId for flexible ID matching (prefixes, case variations)
+                        const actualId = (typeof renderer.findNodeId === 'function')
+                            ? renderer.findNodeId(nodeId) : nodeId;
+                        console.log('[DataExplorer] findNodeId result:', actualId, '(input:', nodeId, ')');
+
+                        if (!actualId) {
+                            this.showToast(`Node not found: ${shortId}`, 'error');
+                            return false;
+                        }
+
+                        renderer.zoomToNode(actualId, 2, 500);
+                        if (typeof renderer.selectNodes === 'function') {
+                            renderer.selectNodes([actualId]);
+                        }
+
+                        if (hostWindow.InfoPanel && typeof hostWindow.InfoPanel.show === 'function') {
+                            hostWindow.InfoPanel.show(actualId);
+                        }
+
+                        this.showToast(`Located: ${String(actualId).substring(0, 20)}`, 'success');
+                        return true;
+                    }
+
+                    if (cy) {
+                        const node = cy.getElementById(nodeId);
+                        if (!node || node.empty()) {
+                            this.showToast(`Node not found: ${shortId}`, 'error');
+                            return false;
+                        }
+
+                        cy.elements().unselect();
+                        node.select();
+                        cy.animate({ fit: { eles: node, padding: 150 }, duration: 500 });
+                        this.showToast(`Located: ${shortId}`, 'success');
+                        return true;
+                    }
+
+                    console.warn('[DataExplorer] No graph renderer available in host window');
+                    this.showToast('No graph renderer available', 'error');
+                    return false;
+                } catch (e) {
+                    console.error('[DataExplorer] locateInHostState error:', e);
+                    this.showToast('Locate failed: ' + e.message, 'error');
+                    return false;
+                }
+            },
+
+            /**
+             * Send LOCATE_NODE to reachable parent/opener window
+             */
+            postLocateNodeMessage(nodeId) {
+                const message = { type: 'LOCATE_NODE', nodeId };
+
+                try {
+                    if (window.parent && window.parent !== window) {
+                        window.parent.postMessage(message, '*');
+                        console.log('[DataExplorer] Sent LOCATE_NODE to parent');
+                        return true;
+                    }
+                } catch (e) {
+                    console.warn('[DataExplorer] Failed to post LOCATE_NODE to parent:', e);
+                }
+
+                try {
+                    if (window.opener && !window.opener.closed) {
+                        window.opener.postMessage(message, '*');
+                        console.log('[DataExplorer] Sent LOCATE_NODE to opener');
+                        return true;
+                    }
+                } catch (e) {
+                    console.warn('[DataExplorer] Failed to post LOCATE_NODE to opener:', e);
+                }
+
+                return false;
+            },
+
+            /**
+             * Locate node in connected graph window
              */
             locateNode(nodeId) {
-                if (window.opener && !window.opener.closed) {
-                    window.opener.postMessage({
-                        type: 'LOCATE_NODE',
-                        nodeId: nodeId
-                    }, '*');
-                    this.showToast(`Locating: ${nodeId.substring(0, 12)}...`, 'success');
-                } else {
-                    this.showToast('Main window not available', 'error');
+                console.log('[DataExplorer] locateNode called with:', nodeId);
+
+                const hostWindow = this.resolveHostWindow();
+                if (hostWindow) {
+                    this.locateInHostState(hostWindow, nodeId);
+                    return;
+                }
+
+                const relayed = this.postLocateNodeMessage(nodeId);
+                if (!relayed) {
+                    this.showToast('No connected graph window. Open Data Explorer from Graph Viewer.', 'error');
                 }
             },
 

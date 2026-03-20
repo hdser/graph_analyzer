@@ -43,7 +43,7 @@ tx AS (
     SELECT
         LOWER("from") AS account,
         LOWER("tokenAddress") AS "tokenAddress",
-        - value AS delta
+        - amount AS delta
     FROM "CrcV1_Transfer"
 
     UNION ALL
@@ -51,7 +51,7 @@ tx AS (
     SELECT
         LOWER("to") AS account,
         LOWER("tokenAddress") AS "tokenAddress",
-        value AS delta
+        amount AS delta
     FROM "CrcV1_Transfer"
 ),
 

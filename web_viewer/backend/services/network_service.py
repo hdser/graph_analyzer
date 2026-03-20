@@ -10,6 +10,8 @@ Main service for managing network/graph data including:
 """
 
 import time
+import threading
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
@@ -17,6 +19,7 @@ from typing import Dict, List, Optional, Any, Tuple
 import pandas as pd
 import numpy as np
 import networkx as nx
+from sqlalchemy.exc import ProgrammingError
 from .duckdb_service import DuckDBService
 
 _db = DuckDBService()
@@ -87,6 +90,81 @@ class NetworkService:
         
         # Database engine (lazy init)
         self._db_engine = None
+
+        # Graph-scoped layout mutation protection and debounced cosmos persistence
+        self._layout_locks: Dict[str, threading.RLock] = defaultdict(threading.RLock)
+        self._cosmos_dirty_count: Dict[str, int] = defaultdict(int)
+        self._cosmos_flush_timer: Dict[str, threading.Timer] = {}
+
+    def _get_graph_lock(self, graph_id: str) -> threading.RLock:
+        """Get the re-entrant lock guarding mutable layout state for a graph."""
+        return self._layout_locks[graph_id]
+
+    def _cancel_cosmos_timer(self, graph_id: str) -> None:
+        """Cancel any pending debounced cosmos flush for the graph."""
+        with self._get_graph_lock(graph_id):
+            timer = self._cosmos_flush_timer.pop(graph_id, None)
+            if timer is not None:
+                timer.cancel()
+
+    def _schedule_cosmos_flush(self, graph_id: str) -> None:
+        """Debounce live cosmos layout persistence onto a worker thread."""
+        self._cancel_cosmos_timer(graph_id)
+        timer = threading.Timer(
+            settings.COSMOS_PERSIST_DEBOUNCE_S,
+            self._flush_cosmos_positions,
+            args=[graph_id],
+        )
+        timer.daemon = True
+        self._cosmos_flush_timer[graph_id] = timer
+        timer.start()
+
+    def _flush_cosmos_positions(self, graph_id: str) -> None:
+        """Persist a snapshot of the current live cosmos positions."""
+        with self._get_graph_lock(graph_id):
+            dirty = self._cosmos_dirty_count.get(graph_id, 0)
+            if dirty < settings.COSMOS_PERSIST_MIN_DIRTY:
+                return
+
+            layout = self.layouts.get(graph_id)
+            if not layout:
+                return
+
+            snapshot = {
+                node_id: {'x': pos['x'], 'y': pos['y']}
+                for node_id, pos in layout.items()
+            }
+            self._cosmos_dirty_count[graph_id] = 0
+            self._cosmos_flush_timer.pop(graph_id, None)
+
+        self.cache_service.save_cosmos_live_layout(graph_id, snapshot)
+        print(f"[NETWORK] Persisted {len(snapshot)} live cosmos positions for {graph_id}")
+
+    def flush_all_cosmos_positions(self) -> None:
+        """Flush all dirty cosmos layouts during graceful shutdown."""
+        graph_ids = list(self._cosmos_dirty_count.keys())
+
+        for graph_id in graph_ids:
+            self._cancel_cosmos_timer(graph_id)
+
+        for graph_id in graph_ids:
+            with self._get_graph_lock(graph_id):
+                dirty = self._cosmos_dirty_count.get(graph_id, 0)
+                if dirty <= 0:
+                    continue
+
+                layout = self.layouts.get(graph_id)
+                if not layout:
+                    self._cosmos_dirty_count[graph_id] = 0
+                    continue
+
+                snapshot = {
+                    node_id: {'x': pos['x'], 'y': pos['y']}
+                    for node_id, pos in layout.items()
+                }
+                self._cosmos_dirty_count[graph_id] = 0
+
+            self.cache_service.save_cosmos_live_layout(graph_id, snapshot)
     
     @property
     def available_sql_files(self) -> List[Dict[str, str]]:
@@ -137,6 +215,120 @@ class NetworkService:
             if part.startswith('v') and part[1:].isdigit():
                 return part
         return "default"
+
+    @staticmethod
+    def _should_fallback_to_native_postgres(error: Exception) -> bool:
+        """Detect DuckDB parser/binder failures for Postgres-specific SQL."""
+        message = str(error)
+        fallback_markers = (
+            "Scalar Function with name",
+            "Catalog Error",
+            "Parser Error",
+            "Binder Error",
+        )
+        return any(marker in message for marker in fallback_markers)
+
+    @staticmethod
+    def _is_missing_v1_transfer_value_column(error: Exception) -> bool:
+        """Detect the known legacy `value` column mismatch in crc_v1 avatar SQL."""
+        message = str(error)
+        return (
+            "column \"value\" does not exist" in message
+            and 'FROM "CrcV1_Transfer"' in message
+        )
+
+    @staticmethod
+    def _is_too_many_connections_error(error: Exception) -> bool:
+        """Detect transient PostgreSQL connection saturation errors."""
+        message = str(error).lower()
+        return "too many connections" in message
+
+    @staticmethod
+    def _close_duckdb_postgres_session(session_state: Dict[str, Any]) -> None:
+        """Close a reusable DuckDB session state if it is open."""
+        session_cm = session_state.get("cm")
+        if session_cm is None:
+            return
+        try:
+            session_cm.__exit__(None, None, None)
+        finally:
+            session_state["cm"] = None
+            session_state["session"] = None
+
+    def _open_duckdb_postgres_session(
+        self,
+        session_state: Dict[str, Any],
+        threads: Optional[int] = None
+    ) -> None:
+        """Open a reusable DuckDB session attached to PostgreSQL."""
+        session_cm = _db.session()
+        session = session_cm.__enter__()
+        try:
+            if threads is not None and threads > 0:
+                session.execute(f"SET threads = {int(threads)}")
+            session.attach_postgres()
+        except Exception:
+            session_cm.__exit__(None, None, None)
+            raise
+        session_state["cm"] = session_cm
+        session_state["session"] = session
+
+    def _execute_duckdb_sql_with_retry(
+        self,
+        sql_query: str,
+        label: str,
+        log_prefix: str,
+        session_state: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """Execute DuckDB/Postgres SQL with bounded retry on connection saturation."""
+        max_attempts = max(1, settings.POSTGRES_RETRY_ATTEMPTS)
+
+        for attempt in range(max_attempts):
+            try:
+                if session_state.get("session") is None:
+                    self._open_duckdb_postgres_session(
+                        session_state,
+                        threads=settings.POSTGRES_LOAD_DUCKDB_THREADS,
+                    )
+                return session_state["session"].execute(sql_query).fetchdf()
+            except Exception as e:
+                if not self._is_too_many_connections_error(e) or attempt == max_attempts - 1:
+                    raise
+
+                self._close_duckdb_postgres_session(session_state)
+                delay = settings.POSTGRES_RETRY_BASE_DELAY_S * (2 ** attempt)
+                print(
+                    f"[{log_prefix}] PostgreSQL connection saturated for {label}; "
+                    f"retrying in {delay:.1f}s ({attempt + 1}/{max_attempts})"
+                )
+                time.sleep(delay)
+
+        raise RuntimeError(f"Unreachable retry exhaustion for {label}")
+
+    def _execute_native_postgres_sql_with_retry(
+        self,
+        sql_query: str,
+        label: str,
+        log_prefix: str,
+    ) -> pd.DataFrame:
+        """Execute direct PostgreSQL SQL with bounded retry on connection saturation."""
+        max_attempts = max(1, settings.POSTGRES_RETRY_ATTEMPTS)
+
+        for attempt in range(max_attempts):
+            try:
+                return _db.execute_postgres_sql_native(sql_query)
+            except Exception as e:
+                if not self._is_too_many_connections_error(e) or attempt == max_attempts - 1:
+                    raise
+
+                delay = settings.POSTGRES_RETRY_BASE_DELAY_S * (2 ** attempt)
+                print(
+                    f"[{log_prefix}] PostgreSQL connection saturated for {label}; "
+                    f"retrying in {delay:.1f}s ({attempt + 1}/{max_attempts})"
+                )
+                time.sleep(delay)
+
+        raise RuntimeError(f"Unreachable retry exhaustion for {label}")
     
     def load_edge_layers_from_sql(self, sql_files: List[str]) -> Dict[str, pd.DataFrame]:
         """
@@ -150,29 +342,41 @@ class NetworkService:
         """
         edge_layers = {}
 
-        for sql_file in sql_files:
-            sql_path = settings.SQL_DIR / sql_file
-            if not sql_path.exists():
-                print(f"[SQL] File not found: {sql_path}")
-                continue
+        session_state: Dict[str, Any] = {"cm": None, "session": None}
+        try:
+            for sql_file in sql_files:
+                sql_path = settings.SQL_DIR / sql_file
+                if not sql_path.exists():
+                    print(f"[SQL] File not found: {sql_path}")
+                    continue
 
-            print(f"[SQL] Executing: {sql_file}")
-            start_time = time.time()
+                print(f"[SQL] Executing: {sql_file}")
+                start_time = time.time()
 
-            try:
-                with open(sql_path, 'r') as f:
-                    sql_query = f.read()
+                try:
+                    with open(sql_path, 'r') as f:
+                        sql_query = f.read()
 
-                df = _db.execute_postgres_sql(sql_query)
+                    df = self._execute_duckdb_sql_with_retry(
+                        sql_query=sql_query,
+                        label=sql_file,
+                        log_prefix="SQL",
+                        session_state=session_state,
+                    )
 
-                # Use filename (without extension) as key
-                layer_id = sql_path.stem
-                edge_layers[layer_id] = df
+                    # Use filename (without extension) as key
+                    layer_id = sql_path.stem
+                    edge_layers[layer_id] = df
 
-                print(f"[SQL] Loaded {len(df)} rows from {sql_file} in {time.time() - start_time:.2f}s")
+                    print(
+                        f"[SQL] Loaded {len(df)} rows from {sql_file} "
+                        f"in {time.time() - start_time:.2f}s"
+                    )
 
-            except Exception as e:
-                print(f"[SQL] Error executing {sql_file}: {e}")
+                except Exception as e:
+                    print(f"[SQL] Error executing {sql_file}: {e}")
+        finally:
+            self._close_duckdb_postgres_session(session_state)
 
         return edge_layers
 
@@ -196,65 +400,103 @@ class NetworkService:
         """
         properties_by_version: Dict[str, pd.DataFrame] = {}
         
-        for sql_file in properties_files:
-            sql_path = settings.NODE_PROPERTIES_DIR / sql_file
-            version = self._extract_version(sql_path.stem)
-            
-            # Try loading from cache if skip_sql
-            if skip_sql:
-                cached_df = self.cache_service.load_properties_cache(version)
-                if cached_df is not None:
-                    properties_by_version[version] = cached_df
+        session_state: Dict[str, Any] = {"cm": None, "session": None}
+        try:
+            for sql_file in properties_files:
+                sql_path = settings.NODE_PROPERTIES_DIR / sql_file
+                version = self._extract_version(sql_path.stem)
+                
+                # Try loading from cache if skip_sql
+                if skip_sql:
+                    cached_df = self.cache_service.load_properties_cache(version)
+                    if cached_df is not None:
+                        properties_by_version[version] = cached_df
+                        continue
+                    else:
+                        print(f"[PROPERTIES] No cache found for {version}, will query SQL")
+                
+                if not sql_path.exists():
+                    print(f"[PROPERTIES] File not found: {sql_path}")
                     continue
-                else:
-                    print(f"[PROPERTIES] No cache found for {version}, will query SQL")
-            
-            if not sql_path.exists():
-                print(f"[PROPERTIES] File not found: {sql_path}")
-                continue
-            
-            print(f"[PROPERTIES] Executing: {sql_file}")
-            start_time = time.time()
-            
-            try:
-                with open(sql_path, 'r', encoding='utf-8') as f:
-                    sql_query = f.read()
+                
+                print(f"[PROPERTIES] Executing: {sql_file}")
+                start_time = time.time()
+                
+                try:
+                    with open(sql_path, 'r', encoding='utf-8') as f:
+                        sql_query = f.read()
 
-                df = _db.execute_postgres_sql(sql_query)
-                
-                # Ensure avatar column exists
-                if 'avatar' not in df.columns:
-                    print(f"[PROPERTIES] Warning: No 'avatar' column in {sql_file}")
-                    continue
-                
-                # Filter out NULL/None avatars before normalization
-                null_count = df['avatar'].isna().sum()
-                if null_count > 0:
-                    print(f"[PROPERTIES] Filtering out {null_count} rows with NULL avatar")
-                    df = df[df['avatar'].notna()]
-                
-                # Normalize avatar column to lowercase
-                df['avatar'] = df['avatar'].astype(str).str.lower()
-                
-                # Merge if version already exists
-                if version in properties_by_version:
-                    existing_df = properties_by_version[version]
-                    df = existing_df.merge(df, on='avatar', how='outer')
-                
-                properties_by_version[version] = df
-                
-                # Save to cache
-                self.cache_service.save_properties_cache(df, version)
-                
-                print(f"[PROPERTIES] Loaded {len(df)} rows with "
-                      f"{len(df.columns)-1} properties from {sql_file} "
-                      f"in {time.time() - start_time:.2f}s")
-                print(f"[PROPERTIES] Unique avatars: {df['avatar'].nunique()}, Total: {len(df)}")
-                
-            except Exception as e:
-                print(f"[PROPERTIES] Error executing {sql_file}: {e}")
-                import traceback
-                traceback.print_exc()
+                    try:
+                        df = self._execute_duckdb_sql_with_retry(
+                            sql_query=sql_query,
+                            label=sql_file,
+                            log_prefix="PROPERTIES",
+                            session_state=session_state,
+                        )
+                    except Exception as e:
+                        if not self._should_fallback_to_native_postgres(e):
+                            raise
+                        print(
+                            f"[PROPERTIES] DuckDB SQL execution failed for {sql_file}; "
+                            "retrying via direct PostgreSQL"
+                        )
+                        try:
+                            df = self._execute_native_postgres_sql_with_retry(
+                                sql_query=sql_query,
+                                label=sql_file,
+                                log_prefix="PROPERTIES",
+                            )
+                        except ProgrammingError as native_error:
+                            if not self._is_missing_v1_transfer_value_column(native_error):
+                                raise
+                            rewritten_query = _db.rewrite_crc_v1_transfer_value_column(sql_query)
+                            if not rewritten_query or rewritten_query == sql_query:
+                                raise
+                            print(
+                                f"[PROPERTIES] Rewriting legacy CrcV1_Transfer value column in {sql_file} "
+                                "for current PostgreSQL schema"
+                            )
+                            df = self._execute_native_postgres_sql_with_retry(
+                                sql_query=rewritten_query,
+                                label=sql_file,
+                                log_prefix="PROPERTIES",
+                            )
+                    
+                    # Ensure avatar column exists
+                    if 'avatar' not in df.columns:
+                        print(f"[PROPERTIES] Warning: No 'avatar' column in {sql_file}")
+                        continue
+                    
+                    # Filter out NULL/None avatars before normalization
+                    null_count = df['avatar'].isna().sum()
+                    if null_count > 0:
+                        print(f"[PROPERTIES] Filtering out {null_count} rows with NULL avatar")
+                        df = df[df['avatar'].notna()]
+                    
+                    # Normalize avatar column to lowercase
+                    df['avatar'] = df['avatar'].astype(str).str.lower()
+                    
+                    # Merge if version already exists
+                    if version in properties_by_version:
+                        existing_df = properties_by_version[version]
+                        df = existing_df.merge(df, on='avatar', how='outer')
+                    
+                    properties_by_version[version] = df
+                    
+                    # Save to cache
+                    self.cache_service.save_properties_cache(df, version)
+                    
+                    print(f"[PROPERTIES] Loaded {len(df)} rows with "
+                          f"{len(df.columns)-1} properties from {sql_file} "
+                          f"in {time.time() - start_time:.2f}s")
+                    print(f"[PROPERTIES] Unique avatars: {df['avatar'].nunique()}, Total: {len(df)}")
+                    
+                except Exception as e:
+                    print(f"[PROPERTIES] Error executing {sql_file}: {e}")
+                    import traceback
+                    traceback.print_exc()
+        finally:
+            self._close_duckdb_postgres_session(session_state)
         
         return properties_by_version
     
@@ -796,7 +1038,7 @@ class NetworkService:
             positions = None
             
             if config.use_cached_layout:
-                cached_layout = self.cache_service.get_cached_layout(layer_id)
+                cached_layout = self.cache_service.get_resume_layout(layer_id)
                 
                 if cached_layout:
                     # Check for new nodes not in cached layout
@@ -824,24 +1066,40 @@ class NetworkService:
             
             # If no cached layout or cache disabled, compute full layout
             if positions is None:
-                positions, algorithm, comp_time = self.layout_service.compute_layout(
-                    G, layer_id, cached_layout
-                )
-                layout_time += comp_time
-                layout_algorithm = algorithm
-                
-                # Save layout to cache
-                if algorithm != "cached":
-                    self.cache_service.save_layout_cache(layer_id, positions)
+                if settings.BACKEND_LAYOUT_ON_LOAD:
+                    positions, algorithm, comp_time = self.layout_service.compute_layout(
+                        G, layer_id, cached_layout
+                    )
+                    layout_time += comp_time
+                    layout_algorithm = algorithm
+
+                    # Save layout to cache
+                    if algorithm != "cached":
+                        self.cache_service.save_layout_cache(layer_id, positions)
+                else:
+                    positions = {}
+                    layout_algorithm = "frontend_deferred"
+                    print(
+                        f"[LAYOUT] Backend layout disabled on load for {layer_id}; "
+                        "deferring initial layout to frontend renderer"
+                    )
             
             layouts[layer_id] = positions
         
         # Phase 5: Atomic state swap
-        self.edge_layers = edge_layers
-        self.metrics_dfs = metrics_dfs
-        self.node_properties_dfs = node_properties
-        self.graphs = graphs
-        self.layouts = layouts
+        graph_ids_to_lock = sorted(set(self.layouts.keys()) | set(layouts.keys()))
+        acquired_locks = [self._get_graph_lock(graph_id) for graph_id in graph_ids_to_lock]
+        try:
+            for lock in acquired_locks:
+                lock.acquire()
+            self.edge_layers = edge_layers
+            self.metrics_dfs = metrics_dfs
+            self.node_properties_dfs = node_properties
+            self.graphs = graphs
+            self.layouts = layouts
+        finally:
+            for lock in reversed(acquired_locks):
+                lock.release()
 
         # Debug: Log layout state after atomic swap
         for graph_id, layout in layouts.items():
@@ -1345,27 +1603,23 @@ class NetworkService:
         if not positions:
             return 0
 
-        # Update unified layout service
-        count = self.unified_layout.update_live_positions(
-            graph_id=graph_id,
-            positions=positions,
-            source=source
-        )
+        with self._get_graph_lock(graph_id):
+            count = self.unified_layout.update_live_positions(
+                graph_id=graph_id,
+                positions=positions,
+                source=source
+            )
 
-        # Update in-memory layout
-        if graph_id not in self.layouts:
-            self.layouts[graph_id] = {}
+            layout = self.layouts.setdefault(graph_id, {})
+            for node_id, pos in positions.items():
+                layout[node_id] = {
+                    'x': float(pos['x']),
+                    'y': float(pos['y'])
+                }
 
-        for node_id, pos in positions.items():
-            self.layouts[graph_id][node_id] = {
-                'x': float(pos['x']),
-                'y': float(pos['y'])
-            }
-
-        # Persist to cache if configured
-        if settings.UNIFIED_LAYOUT_PERSIST_ON_SYNC and len(positions) >= 100:
-            self.cache_service.save_layout_cache(graph_id, self.layouts[graph_id])
-            print(f"[NETWORK] Persisted {len(self.layouts[graph_id])} positions to cache")
+            if settings.UNIFIED_LAYOUT_PERSIST_ON_SYNC:
+                self._cosmos_dirty_count[graph_id] += len(positions)
+                self._schedule_cosmos_flush(graph_id)
 
         return count
 
@@ -1425,11 +1679,12 @@ class NetworkService:
         current_edges_set = set()
         current_layout = {}
 
-        if graph_id in self.graphs:
-            G = self.graphs[graph_id]
-            current_nodes = set(str(n) for n in G.nodes())
-            current_edges_set = set((str(u), str(v)) for u, v in G.edges())
-            current_layout = self.layouts.get(graph_id, {})
+        with self._get_graph_lock(graph_id):
+            if graph_id in self.graphs:
+                G = self.graphs[graph_id]
+                current_nodes = set(str(n) for n in G.nodes())
+                current_edges_set = set((str(u), str(v)) for u, v in G.edges())
+                current_layout = dict(self.layouts.get(graph_id, {}))
 
         # Load new data
         new_edge_layers = self.load_edge_layers_from_sql(sql_files)
@@ -1446,7 +1701,10 @@ class NetworkService:
             }
 
         new_edges_df = new_edge_layers[graph_id]
-        new_nodes = set(new_edges_df['source'].astype(str).unique()) | set(new_edges_df['target'].astype(str).unique())
+        df = new_edges_df[['source', 'target']].copy()
+        df['source'] = df['source'].astype(str)
+        df['target'] = df['target'].astype(str)
+        new_nodes = set(df['source'].unique()) | set(df['target'].unique())
 
         # Compute diff
         added_nodes = new_nodes - current_nodes
@@ -1455,12 +1713,11 @@ class NetworkService:
         # Get positions for new nodes
         new_positions = {}
         if added_nodes and preserve_layout:
-            # Get edges involving new nodes
-            new_edges = [
-                (str(row['source']), str(row['target']))
-                for _, row in new_edges_df.iterrows()
-                if str(row['source']) in added_nodes or str(row['target']) in added_nodes
-            ]
+            mask = df['source'].isin(added_nodes) | df['target'].isin(added_nodes)
+            new_edges = list(zip(
+                df.loc[mask, 'source'].tolist(),
+                df.loc[mask, 'target'].tolist(),
+            ))
 
             new_positions = self.unified_layout.resolve_new_nodes(
                 graph_id=graph_id,
@@ -1469,12 +1726,12 @@ class NetworkService:
                 existing_positions=current_layout
             )
 
-        # Update graph
-        G = nx.DiGraph()
-        for _, row in new_edges_df.iterrows():
-            source = str(row['source'])
-            target = str(row['target'])
-            G.add_edge(source, target)
+        G = nx.from_pandas_edgelist(
+            df,
+            source='source',
+            target='target',
+            create_using=nx.DiGraph,
+        )
 
         # Update layout with new positions
         updated_layout = dict(current_layout)
@@ -1485,9 +1742,10 @@ class NetworkService:
             updated_layout.pop(node_id, None)
 
         # Update state
-        self.graphs[graph_id] = G
-        self.edge_layers[graph_id] = new_edges_df
-        self.layouts[graph_id] = updated_layout
+        with self._get_graph_lock(graph_id):
+            self.graphs[graph_id] = G
+            self.edge_layers[graph_id] = new_edges_df
+            self.layouts[graph_id] = updated_layout
 
         # Save updated layout to cache
         if new_positions or removed_nodes:

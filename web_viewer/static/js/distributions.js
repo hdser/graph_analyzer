@@ -68,11 +68,15 @@ const DistributionsComm = {
             console.log('[DistributionsComm] clearGraphSelection called directly');
             self.clearSelection(); 
         };
-        window.clearGraphHighlights = function() { 
+        window.clearGraphHighlights = function() {
             console.log('[DistributionsComm] clearGraphHighlights called directly');
-            self.clearHighlights(); 
+            self.clearHighlights();
         };
-        
+        window.locateNode = function(nodeId) {
+            console.log('[DistributionsComm] locateNode called directly:', nodeId);
+            self.locateNode(nodeId);
+        };
+
         console.log('[DistributionsComm] Setup complete, global functions exposed');
     },
 
@@ -259,23 +263,26 @@ const DistributionsComm = {
 
         // Try cosmos.gl renderer first
         if (renderer && typeof renderer.zoomToNode === 'function') {
-            // Check if node exists in renderer
-            const nodeData = renderer.nodeDataMap ? renderer.nodeDataMap.get(nodeId) : null;
-            if (!nodeData) {
-                console.warn(`[DistributionsComm] Node not found in cosmos.gl: ${nodeId}`);
+            // Use findNodeId for flexible matching (handles prefixes, case variations)
+            const actualId = (typeof renderer.findNodeId === 'function')
+                ? renderer.findNodeId(nodeId)
+                : nodeId;
+
+            if (!actualId) {
+                console.warn(`[DistributionsComm] Node not found: ${nodeId}`);
                 updateStatus(`Node ${nodeId} not found`, 'error');
                 return;
             }
 
             // Zoom to the node
-            renderer.zoomToNode(nodeId, 2, 500);
+            renderer.zoomToNode(actualId, 2, 500);
 
             // Select the node if renderer supports selection
             if (typeof renderer.selectNodes === 'function') {
-                renderer.selectNodes([nodeId]);
+                renderer.selectNodes([actualId]);
             }
 
-            console.log(`[DistributionsComm] Located node via cosmos.gl: ${nodeId}`);
+            console.log(`[DistributionsComm] Located node: ${actualId} (requested: ${nodeId})`);
         } else if (cy) {
             // Fallback to Cytoscape
             const node = cy.getElementById(nodeId);

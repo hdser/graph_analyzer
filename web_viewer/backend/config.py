@@ -152,6 +152,9 @@ class Settings:
     DB_HOST: str = os.getenv("DB_HOST", "localhost")
     DB_PORT: str = os.getenv("DB_PORT", "5432")
     DB_NAME: str = os.getenv("DB_NAME", "circles")
+    POSTGRES_RETRY_ATTEMPTS: int = int(os.getenv("POSTGRES_RETRY_ATTEMPTS", "3"))
+    POSTGRES_RETRY_BASE_DELAY_S: float = float(os.getenv("POSTGRES_RETRY_BASE_DELAY_S", "2.0"))
+    POSTGRES_LOAD_DUCKDB_THREADS: int = int(os.getenv("POSTGRES_LOAD_DUCKDB_THREADS", "1"))
     
     # Metrics settings
     DEFAULT_METRICS_MODE: str = os.getenv("DEFAULT_METRICS_MODE", "essential")
@@ -170,6 +173,13 @@ class Settings:
             "cached,cytoscape_desktop,igraph,fa2,local_spring,circular"
         ).split(",") if p.strip() and p.strip() != "layout_service"
     ]
+
+    # If False, cold-start graph loads do not compute a backend layout.
+    # Cached layouts are still used when available; otherwise the frontend
+    # renderer is responsible for generating the initial layout.
+    BACKEND_LAYOUT_ON_LOAD: bool = os.getenv(
+        "BACKEND_LAYOUT_ON_LOAD", "true"
+    ).lower() == "true"
     
     # igraph settings
     IGRAPH_DEFAULT_ALGORITHM: str = os.getenv("IGRAPH_DEFAULT_ALGORITHM", "auto")
@@ -365,6 +375,17 @@ class Settings:
     UNIFIED_LAYOUT_PERSIST_ON_SYNC: bool = os.getenv(
         "UNIFIED_LAYOUT_PERSIST_ON_SYNC", "true"
     ).lower() == "true"
+
+    # Debounce live cosmos persistence to keep blocking parquet writes off the
+    # request path while still capturing the latest static restore state.
+    COSMOS_PERSIST_DEBOUNCE_S: float = float(os.getenv(
+        "COSMOS_PERSIST_DEBOUNCE_S", "3.0"
+    ))
+
+    # Minimum cumulative dirty updates before persisting the current live view.
+    COSMOS_PERSIST_MIN_DIRTY: int = int(os.getenv(
+        "COSMOS_PERSIST_MIN_DIRTY", "50"
+    ))
 
     # ==========================================================================
     # DIFF-BASED SNAPSHOTS CONFIGURATION

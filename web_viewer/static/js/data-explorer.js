@@ -1,33 +1,32 @@
 /**
  * Data Explorer
- * 
- * Opens a detached window for exploring all node data.
- * Communication with main window via postMessage.
+ *
+ * Opens data explorer inline in the analysis panel tab, or falls back
+ * to a detached window if the analysis panel is not available.
  */
 
 const DataExplorer = {
     window: null,
+    url: '/data-explorer?v=locate-fix-20260227',
 
     /**
-     * Initialize - just setup the button
-     */
-    init() {
-        document.getElementById('data-explorer-btn')?.addEventListener('click', () => this.open());
-    },
-
-    /**
-     * Open data explorer in new window
+     * Open data explorer — prefer inline analysis panel tab
      */
     open() {
-        // If window exists and is open, focus it
+        // Prefer inline tab in analysis panel
+        if (typeof AnalysisPanel !== 'undefined') {
+            AnalysisPanel.open('data-explorer-tab');
+            return;
+        }
+
+        // Fallback: open in new window
         if (this.window && !this.window.closed) {
             this.window.focus();
             return;
         }
 
-        // Open new window
         this.window = window.open(
-            '/data-explorer',
+            this.url,
             'dataExplorer',
             'width=1400,height=800,menubar=no,toolbar=no,location=no,status=no'
         );
@@ -37,8 +36,3 @@ const DataExplorer = {
         }
     }
 };
-
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    DataExplorer.init();
-});

@@ -98,6 +98,11 @@ async def lifespan(app: FastAPI):
     yield
     
     print("[SHUTDOWN] Graph Analyzer shutting down...")
+    try:
+        from .services.network_service import network_service
+        network_service.flush_all_cosmos_positions()
+    except Exception as e:
+        print(f"[SHUTDOWN] Failed to flush cosmos positions: {e}")
 
 
 # Startup status tracking for SSE
@@ -141,6 +146,12 @@ STATIC_DIR = settings.STATIC_DIR
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+NO_CACHE_HTML_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 
 # Register routers
 app.include_router(network_router)
@@ -163,7 +174,7 @@ async def root():
     """Serve the main application page."""
     index_path = STATIC_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers=NO_CACHE_HTML_HEADERS)
     return {"message": "Graph Analyzer API", "docs": "/docs"}
 
 
@@ -172,7 +183,7 @@ async def distributions():
     """Serve the distributions analysis page."""
     dist_path = STATIC_DIR / "distributions.html"
     if dist_path.exists():
-        return FileResponse(dist_path)
+        return FileResponse(dist_path, headers=NO_CACHE_HTML_HEADERS)
     return {"error": "distributions.html not found"}
 
 
@@ -181,7 +192,7 @@ async def data_explorer():
     """Serve the data explorer page."""
     explorer_path = STATIC_DIR / "data-explorer.html"
     if explorer_path.exists():
-        return FileResponse(explorer_path)
+        return FileResponse(explorer_path, headers=NO_CACHE_HTML_HEADERS)
     return {"error": "data-explorer.html not found"}
 
 
@@ -190,7 +201,7 @@ async def sql_explorer():
     """Serve the SQL explorer page."""
     sql_path = STATIC_DIR / "sql-explorer.html"
     if sql_path.exists():
-        return FileResponse(sql_path)
+        return FileResponse(sql_path, headers=NO_CACHE_HTML_HEADERS)
     return {"error": "sql-explorer.html not found"}
 
 

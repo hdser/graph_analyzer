@@ -64,6 +64,24 @@ class UnifiedLayoutService:
     # Position Resolution (Read Operations)
     # =========================================================================
 
+    def _ensure_hydrated(self, graph_id: str) -> None:
+        """Hydrate in-memory live positions from persisted cosmos state on demand."""
+        if graph_id in self._live_positions and self._live_positions[graph_id]:
+            return
+
+        persisted = self.cache.get_cosmos_live_layout(graph_id)
+        if not persisted:
+            return
+
+        self._live_positions[graph_id] = persisted
+        self._sync_metadata[graph_id] = {
+            'last_sync': datetime.utcnow(),
+            'source': 'cosmos_hydrated',
+            'count': len(persisted),
+            'total_nodes': len(persisted)
+        }
+        print(f"[UNIFIED_LAYOUT] Hydrated {len(persisted)} persisted cosmos positions for {graph_id}")
+
     def get_position(
         self,
         graph_id: str,
@@ -84,6 +102,8 @@ class UnifiedLayoutService:
         Returns:
             Position dict {x, y} or None if not found
         """
+        self._ensure_hydrated(graph_id)
+
         # 1. Check live positions
         if graph_id in self._live_positions:
             live = self._live_positions[graph_id]
@@ -118,6 +138,8 @@ class UnifiedLayoutService:
         Returns:
             Dict mapping node_id -> {x, y} (only for found nodes)
         """
+        self._ensure_hydrated(graph_id)
+
         result: Dict[str, Dict[str, float]] = {}
         remaining = set(node_ids)
 
@@ -174,6 +196,8 @@ class UnifiedLayoutService:
         Returns:
             Dict mapping node_id -> {x, y}
         """
+        self._ensure_hydrated(graph_id)
+
         result: Dict[str, Dict[str, float]] = {}
 
         # Start with master (lowest priority)
@@ -443,12 +467,20 @@ class UnifiedLayoutService:
         if not unknown_nodes:
             return known_positions, []
 
-        # Use spring layout for unknown nodes
-        new_positions = self.spring_layout.position_unknown_nodes(
-            edges=edges,
-            fixed_positions=known_positions,
-            free_nodes=unknown_nodes
-        )
+        # Use the fast igraph-based positioning path when available.
+        try:
+            new_positions = self.spring_layout.position_unknown_nodes_fast(
+                edges=edges,
+                fixed_positions=known_positions,
+                free_nodes=unknown_nodes,
+                algorithm=getattr(settings, 'SNAPSHOT_LAYOUT_ALGORITHM', 'auto')
+            )
+        except Exception:
+            new_positions = self.spring_layout.position_unknown_nodes(
+                edges=edges,
+                fixed_positions=known_positions,
+                free_nodes=unknown_nodes
+            )
 
         # Combine all positions
         layout = dict(known_positions)
@@ -523,11 +555,19 @@ class UnifiedLayoutService:
 
         # Use shorter iterations for speed (continuous mode needs to be fast)
         quick_spring = SnapshotLayout(iterations=25)
-        new_positions = quick_spring.position_unknown_nodes(
-            edges=relevant_edges,
-            fixed_positions=fixed_positions,
-            free_nodes=unknown_nodes
-        )
+        try:
+            new_positions = quick_spring.position_unknown_nodes_fast(
+                edges=relevant_edges,
+                fixed_positions=fixed_positions,
+                free_nodes=unknown_nodes,
+                algorithm='auto'
+            )
+        except Exception:
+            new_positions = quick_spring.position_unknown_nodes(
+                edges=relevant_edges,
+                fixed_positions=fixed_positions,
+                free_nodes=unknown_nodes
+            )
 
         # Combine known and computed
         result = dict(known_positions)

@@ -8,8 +8,7 @@
    ========================================================================== */
 
 #panel-subgraph .button-group {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
+    display: inline-flex !important;
     gap: 8px !important;
     margin-top: 12px !important;
 }

@@ -9,12 +9,15 @@ with zero-copy on the frontend using Apache Arrow JS.
 """
 
 import io
+import logging
 from typing import Dict, List, Any, Optional
 
 import pandas as pd
 import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
+
+logger = logging.getLogger(__name__)
 
 
 class ArrowService:
@@ -73,8 +76,38 @@ class ArrowService:
             ])
             table = pa.table({"id": [], "x": [], "y": []}, schema=schema)
         else:
-            df = pd.DataFrame(records)
-            table = pa.Table.from_pandas(df, preserve_index=False)
+            try:
+                df = pd.DataFrame(records)
+                # Coerce mixed-type columns to avoid Arrow serialization errors.
+                # Columns with inconsistent types (e.g. str + NaN) fail in
+                # pa.Table.from_pandas, so cast object columns with mixed
+                # numeric/string values to string.
+                for col in df.columns:
+                    if col in ("id", "x", "y"):
+                        continue
+                    if df[col].dtype == object:
+                        # Check if the column has mixed types
+                        non_null = df[col].dropna()
+                        if len(non_null) > 0:
+                            types = set(type(v).__name__ for v in non_null)
+                            if len(types) > 1:
+                                df[col] = df[col].astype(str)
+                            elif types == {"str"}:
+                                df[col] = df[col].fillna("")
+                            else:
+                                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+                        else:
+                            df[col] = df[col].fillna(0.0)
+                table = pa.Table.from_pandas(df, preserve_index=False)
+            except Exception:
+                # Fallback: return only id + positions (guaranteed safe)
+                logger.warning(
+                    "[ARROW] Full DataFrame conversion failed, falling back to id/x/y only",
+                    exc_info=True,
+                )
+                safe_records = [{"id": r["id"], "x": r["x"], "y": r["y"]} for r in records]
+                df = pd.DataFrame(safe_records)
+                table = pa.Table.from_pandas(df, preserve_index=False)
 
         return self._table_to_ipc(table)
 

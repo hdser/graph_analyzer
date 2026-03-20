@@ -144,6 +144,12 @@ body {
     flex-shrink: 0;
 }
 
+.nav-divider {
+    height: 1px;
+    background: #333;
+    margin: 4px 6px;
+}
+
 .nav-btn-label {
     font-size: 7px;
     font-weight: 600;
@@ -3608,63 +3614,6 @@ input[type="range"]::-moz-range-thumb:hover {
     padding: 8px 12px !important;
 }
 
-/* Button group for flow panel (matching path panel) */
-#panel-flow .button-group {
-    display: flex !important;
-    gap: 8px !important;
-    margin: 12px 0 0 0 !important;
-    padding: 0 !important;
-    width: 100% !important;
-}
-
-#panel-flow .button-group button,
-#panel-flow .button-group .primary-btn,
-#panel-flow .button-group .secondary-btn {
-    flex: 1 1 0 !important;
-    width: auto !important;
-    min-width: 0 !important;
-    height: 42px !important;
-    margin: 0 !important;
-    padding: 8px 12px !important;
-    font-size: 13px !important;
-    font-weight: 600 !important;
-    border-radius: 6px !important;
-    cursor: pointer !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    box-sizing: border-box !important;
-    transform: none !important;
-}
-
-#panel-flow .button-group .primary-btn {
-    background: #4A90E2 !important;
-    border: none !important;
-    color: #fff !important;
-}
-
-#panel-flow .button-group .primary-btn:hover:not(:disabled) {
-    background: #357ABD !important;
-}
-
-#panel-flow .button-group .primary-btn:disabled {
-    background: #3a5a7a !important;
-    color: #aaa !important;
-    cursor: wait !important;
-}
-
-#panel-flow .button-group .secondary-btn {
-    background: #2a2a2a !important;
-    border: 1px solid #444 !important;
-    color: #ccc !important;
-}
-
-#panel-flow .button-group .secondary-btn:hover {
-    background: #333 !important;
-    border-color: #555 !important;
-    color: #fff !important;
-}
-
 /* =============================================================================
    PATH ENDPOINTS - Consistent with Flow panel
    ============================================================================= */
@@ -3853,4 +3802,590 @@ input[type="range"]::-moz-range-thumb:hover {
 .cosmos-snapshot-grid button {
     padding: 6px 10px;
     font-size: 11px;
+}
+
+/* =============================================================================
+   BOTTOM ANALYSIS PANEL (IDE-style)
+   ============================================================================= */
+
+.analysis-panel {
+    display: none;
+    flex-direction: column;
+    background: #1a1a1a;
+    border-top: 1px solid #333;
+    height: 300px;
+    min-height: 40px;
+    max-height: 70vh;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 50;
+}
+
+.analysis-panel.open {
+    display: flex;
+}
+
+/* Resize handle */
+.analysis-resize-handle {
+    display: none;
+    height: 4px;
+    background: #333;
+    cursor: ns-resize;
+    flex-shrink: 0;
+    transition: background 0.2s;
+    position: relative;
+    z-index: 51;
+}
+
+.analysis-resize-handle:hover,
+.analysis-resize-handle.dragging {
+    background: #4A90E2;
+}
+
+.analysis-resize-handle.visible {
+    display: block;
+}
+
+/* Tab bar */
+.analysis-tab-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #141414;
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+    height: 36px;
+    padding: 0 8px 0 0;
+}
+
+.analysis-tabs {
+    display: flex;
+    gap: 0;
+    height: 100%;
+}
+
+.analysis-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 16px;
+    height: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #808080;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+    white-space: nowrap;
+}
+
+.analysis-tab:hover {
+    color: #c0c0c0;
+    background: #1e1e1e;
+}
+
+.analysis-tab.active {
+    color: #4A90E2;
+    border-bottom-color: #4A90E2;
+    background: #1a1a1a;
+}
+
+.analysis-tab svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.analysis-tab-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.analysis-action-btn {
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #707070;
+    transition: all 0.2s;
+}
+
+.analysis-action-btn:hover {
+    background: #2a2a2a;
+    color: #e0e0e0;
+}
+
+/* Tab contents */
+.analysis-tab-contents {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    min-height: 0;
+}
+
+.analysis-tab-content {
+    display: none;
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px 16px;
+}
+
+.analysis-tab-content.active {
+    display: block;
+}
+
+/* =============================================================================
+   ANALYSIS PANEL — RESPONSIVE HORIZONTAL LAYOUT
+   Controls flow inline side-by-side, wrapping when space is limited.
+   ============================================================================= */
+
+/* --- Form rows: inline-flex for horizontal flow --- */
+.analysis-tab-content .style-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 16px;
+    margin-bottom: 10px;
+    vertical-align: top;
+    flex-wrap: wrap;
+}
+
+.analysis-tab-content .style-row > label:first-child {
+    min-width: 55px;
+    font-size: 12px;
+    color: #999;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.analysis-tab-content .option-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 16px;
+    margin-bottom: 10px;
+    vertical-align: top;
+    flex-wrap: wrap;
+}
+
+.analysis-tab-content .option-row > label:first-child {
+    min-width: 55px;
+    font-size: 12px;
+    color: #999;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+/* --- Inputs: modern styling with no max-width --- */
+.analysis-tab-content select,
+.analysis-tab-content input[type="text"],
+.analysis-tab-content input[type="number"] {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 8px 12px;
+    font-size: 13px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    min-width: 120px;
+}
+
+.analysis-tab-content select:hover,
+.analysis-tab-content input[type="text"]:hover,
+.analysis-tab-content input[type="number"]:hover {
+    border-color: #3a3a3a;
+}
+
+.analysis-tab-content select:focus,
+.analysis-tab-content input[type="text"]:focus,
+.analysis-tab-content input[type="number"]:focus {
+    border-color: #4A90E2;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.15);
+    outline: none;
+}
+
+/* Prevent selects from stretching infinitely in inline-flex rows.
+   Base rule (.style-row > select { flex: 1 }) makes them fill parent,
+   which breaks inline-flex layout where parent width is unbounded. */
+.analysis-tab-content .style-row > select {
+    flex: 0 1 auto;
+    min-width: 180px;
+}
+
+.analysis-tab-content .option-row > select {
+    flex: 0 1 auto;
+    min-width: 180px;
+}
+
+/* --- Button groups: inline, fluid --- */
+.analysis-tab-content .button-group {
+    display: inline-flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    vertical-align: top;
+}
+
+/* --- Modern button styling --- */
+.analysis-tab-content .primary-btn {
+    background: #4A90E2;
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    padding: 8px 20px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    white-space: nowrap;
+}
+
+.analysis-tab-content .primary-btn:hover:not(:disabled) {
+    background: #357ABD;
+}
+
+.analysis-tab-content .primary-btn:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.analysis-tab-content .primary-btn:disabled {
+    background: #2a3a4a;
+    color: #666;
+    cursor: not-allowed;
+}
+
+.analysis-tab-content .secondary-btn {
+    background: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #ccc;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.analysis-tab-content .secondary-btn:hover {
+    background: #2a2a2a;
+    border-color: #505050;
+    color: #fff;
+}
+
+/* --- Result cards: bordered, modern --- */
+.analysis-tab-content .flow-results,
+.analysis-tab-content .subgraph-results-section {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 12px;
+}
+
+/* =============================================================================
+   METRICS TAB — flex column for tree + inline actions
+   ============================================================================= */
+
+.analysis-tab-content[data-analysis-tab="metrics-tab"] {
+    display: none;
+    flex-direction: column;
+}
+.analysis-tab-content[data-analysis-tab="metrics-tab"].active {
+    display: flex;
+}
+
+/* Metrics action row: inline */
+.analysis-tab-content[data-analysis-tab="metrics-tab"] #distributions-btn {
+    width: auto;
+    padding: 8px 16px;
+    margin-left: 8px;
+}
+
+/* =============================================================================
+   SNAPSHOTS TAB — compact sub-tab layout
+   ============================================================================= */
+
+/* Keep analysis-columns / analysis-column for backward compat if used elsewhere */
+.analysis-columns {
+    display: flex;
+    gap: 24px;
+}
+
+.analysis-column {
+    min-width: 250px;
+}
+
+.analysis-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #4A90E2;
+    margin: 0 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+/* =============================================================================
+   OVERRIDES
+   ============================================================================= */
+
+/* Override panel-content max-height when inside analysis panel */
+#analysis-panel .panel-content {
+    max-height: none;
+    overflow: hidden;
+}
+
+/* Data explorer tab: full bleed iframe */
+.analysis-tab-content[data-analysis-tab="data-explorer-tab"] {
+    padding: 0 !important;
+}
+
+/* =============================================================================
+   QUERY TAB (inline SQL editor)
+   ============================================================================= */
+
+.query-tab-layout {
+    display: flex;
+    height: 100%;
+    gap: 0;
+    position: absolute;
+    inset: 0;
+}
+
+.query-tables-sidebar {
+    width: 200px;
+    min-width: 160px;
+    border-right: 1px solid #2a2a2a;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.query-tables-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #888;
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+}
+
+.query-tables-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+
+.query-table-item {
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #c0c0c0;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.15s;
+}
+
+.query-table-item:hover {
+    background: #252525;
+    color: #e0e0e0;
+}
+
+.query-table-item .table-rows {
+    font-size: 10px;
+    color: #666;
+}
+
+.query-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.query-editor-area {
+    padding: 8px 12px;
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+}
+
+.query-examples {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.query-example-chip {
+    padding: 3px 8px;
+    background: #252525;
+    border: 1px solid #333;
+    border-radius: 3px;
+    color: #aaa;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.query-example-chip:hover {
+    background: #1a3a5c;
+    border-color: #4A90E2;
+    color: #8BB8E8;
+}
+
+.query-editor-controls {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+.query-sql-editor {
+    flex: 1;
+    min-height: 80px;
+    max-height: 300px;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 8px 12px;
+    resize: vertical;
+    tab-size: 2;
+}
+
+.query-sql-editor:focus {
+    outline: none;
+    border-color: #4A90E2;
+}
+
+.query-editor-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.query-btn {
+    padding: 5px 12px;
+    background: #2a2a2a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #c0c0c0;
+    cursor: pointer;
+    font-size: 11px;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+
+.query-btn:hover {
+    background: #363636;
+}
+
+.query-btn-primary {
+    background: #1a3a5c;
+    border-color: #4A90E2;
+    color: #8BB8E8;
+}
+
+.query-btn-primary:hover {
+    background: #1f4570;
+}
+
+.query-status-bar {
+    padding: 4px 12px;
+    font-size: 11px;
+    color: #888;
+    background: #141414;
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+}
+
+.query-status-bar .success { color: #4CAF50; }
+.query-status-bar .error { color: #f44336; }
+
+.query-results-area {
+    flex: 1;
+    overflow: hidden;
+}
+
+.query-results-wrapper {
+    height: 100%;
+    overflow: auto;
+    flex: 1;
+}
+
+.query-results-wrapper table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.query-results-wrapper thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.query-results-wrapper th {
+    background: #1e1e1e;
+    color: #aaa;
+    font-weight: 600;
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid #333;
+    white-space: nowrap;
+    font-size: 11px;
+}
+
+.query-results-wrapper th .col-type {
+    display: block;
+    font-size: 9px;
+    font-weight: 400;
+    color: #666;
+}
+
+.query-results-wrapper td {
+    padding: 4px 10px;
+    border-bottom: 1px solid #1e1e1e;
+    color: #c0c0c0;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.query-results-wrapper tr:hover td {
+    background: #1e1e1e;
+}
+
+.query-results-wrapper td.null {
+    color: #555;
+    font-style: italic;
+}
+
+.query-empty-state {
+    padding: 20px;
+    text-align: center;
+    color: #555;
+    font-size: 13px;
+}
+
+/* Override: analysis-tab-content for query tab needs no padding (layout fills it) */
+.analysis-tab-content[data-analysis-tab="query-tab"] {
+    padding: 0;
 }

@@ -17,6 +17,9 @@ Two connection modes:
 """
 
 import io
+import os
+import re
+import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -25,8 +28,67 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.ipc as ipc
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 from ..config import settings
+
+
+class DuckDBSession:
+    """Reusable DuckDB session for multi-step analytical workflows."""
+
+    def __init__(self, service: "DuckDBService"):
+        self._service = service
+        self._conn: Optional[duckdb.DuckDBPyConnection] = None
+        self._postgres_attached = False
+
+    def __enter__(self) -> "DuckDBSession":
+        self._conn = duckdb.connect(database=':memory:')
+        self._conn.execute(f"SET memory_limit = '{settings.DUCKDB_MEMORY_LIMIT}'")
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+        self._postgres_attached = False
+
+    @property
+    def conn(self) -> duckdb.DuckDBPyConnection:
+        if self._conn is None:
+            raise RuntimeError("DuckDBSession is not open")
+        return self._conn
+
+    def attach_postgres(self, connection_uri: Optional[str] = None) -> "DuckDBSession":
+        if self._postgres_attached:
+            return self
+
+        uri = connection_uri or settings.database_url
+        self.conn.install_extension("postgres_scanner")
+        self.conn.load_extension("postgres_scanner")
+        self.conn.execute(f"ATTACH '{uri}' AS pg (TYPE POSTGRES, READ_ONLY)")
+        self.conn.execute("USE pg")
+        self._postgres_attached = True
+        return self
+
+    def execute(self, sql: str):
+        return self.conn.execute(sql)
+
+    def read_parquet(self, path: Path) -> pd.DataFrame:
+        return self.conn.execute(
+            f"SELECT * FROM read_parquet('{path}')"
+        ).fetchdf()
+
+    def read_positions(self, path: Path) -> Dict[str, Dict[str, float]]:
+        result = self.conn.execute(
+            f"SELECT CAST(node_id AS VARCHAR) AS node_id, "
+            f"CAST(x AS DOUBLE) AS x, CAST(y AS DOUBLE) AS y "
+            f"FROM read_parquet('{path}')"
+        ).fetchall()
+        return {
+            row[0]: {'x': row[1], 'y': row[2]}
+            for row in result
+        }
 
 
 class DuckDBService:
@@ -35,6 +97,7 @@ class DuckDBService:
     def __init__(self):
         self.data_dir = settings.DATA_CACHE_DIR
         self.layouts_dir = settings.LAYOUTS_DIR
+        self._native_engine: Optional[Engine] = None
 
     # =========================================================================
     # Internal Connection (for data pipeline)
@@ -45,6 +108,21 @@ class DuckDBService:
         conn = duckdb.connect(database=':memory:')
         conn.execute(f"SET memory_limit = '{settings.DUCKDB_MEMORY_LIMIT}'")
         return conn
+
+    def session(self) -> DuckDBSession:
+        """Create a reusable DuckDB session for multi-step operations."""
+        return DuckDBSession(self)
+
+    def _get_native_postgres_engine(self) -> Engine:
+        """Create or reuse a direct PostgreSQL engine for fallback execution."""
+        if self._native_engine is None:
+            self._native_engine = create_engine(
+                settings.database_url,
+                pool_pre_ping=True,
+                pool_size=1,
+                max_overflow=0,
+            )
+        return self._native_engine
 
     # =========================================================================
     # Parquet I/O
@@ -60,13 +138,8 @@ class DuckDBService:
         Returns:
             Pandas DataFrame
         """
-        conn = self._create_internal_connection()
-        try:
-            return conn.execute(
-                f"SELECT * FROM read_parquet('{path}')"
-            ).fetchdf()
-        finally:
-            conn.close()
+        with self.session() as session:
+            return session.read_parquet(path)
 
     def read_parquet_arrow(self, path: Path) -> pa.Table:
         """
@@ -148,6 +221,18 @@ class DuckDBService:
         finally:
             conn.close()
 
+    def write_parquet_atomic(self, df: pd.DataFrame, path: Path) -> None:
+        """Write Parquet via a temp file and atomic replace."""
+        tmp_path = path.with_name(
+            f"{path.name}.tmp-{os.getpid()}-{threading.get_ident()}"
+        )
+        try:
+            self.write_parquet(df, tmp_path)
+            tmp_path.replace(path)
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+
     # =========================================================================
     # Layout-specific I/O (optimized)
     # =========================================================================
@@ -164,19 +249,8 @@ class DuckDBService:
         Returns:
             Dict of {node_id: {x, y}}
         """
-        conn = self._create_internal_connection()
-        try:
-            result = conn.execute(
-                f"SELECT CAST(node_id AS VARCHAR) AS node_id, "
-                f"CAST(x AS DOUBLE) AS x, CAST(y AS DOUBLE) AS y "
-                f"FROM read_parquet('{path}')"
-            ).fetchall()
-            return {
-                row[0]: {'x': row[1], 'y': row[2]}
-                for row in result
-            }
-        finally:
-            conn.close()
+        with self.session() as session:
+            return session.read_positions(path)
 
     def write_positions(
         self,
@@ -197,6 +271,18 @@ class DuckDBService:
         df = pd.DataFrame(rows)
         self.write_parquet(df, path)
 
+    def write_positions_atomic(
+        self,
+        positions: Dict[str, Dict[str, float]],
+        path: Path
+    ) -> None:
+        """Write layout positions atomically to avoid partial parquet files."""
+        rows = [
+            {'node_id': node_id, 'x': pos['x'], 'y': pos['y']}
+            for node_id, pos in positions.items()
+        ]
+        self.write_parquet_atomic(pd.DataFrame(rows), path)
+
     # =========================================================================
     # SQL Database Reads (via postgres_scanner)
     # =========================================================================
@@ -216,19 +302,56 @@ class DuckDBService:
         Returns:
             Pandas DataFrame with query results
         """
-        uri = connection_uri or settings.database_url
-        conn = self._create_internal_connection()
-        try:
-            conn.install_extension("postgres_scanner")
-            conn.load_extension("postgres_scanner")
-            conn.execute(f"ATTACH '{uri}' AS pg (TYPE POSTGRES, READ_ONLY)")
-            # Set default catalog to attached postgres so unqualified table
-            # references resolve correctly (SQL templates written for postgres)
-            conn.execute("USE pg")
-            result = conn.execute(sql_query).fetchdf()
-            return result
-        finally:
-            conn.close()
+        with self.session() as session:
+            session.attach_postgres(connection_uri)
+            return session.execute(sql_query).fetchdf()
+
+    def execute_postgres_sql_native(self, sql_query: str) -> pd.DataFrame:
+        """Execute SQL directly in PostgreSQL for Postgres-specific functions."""
+        engine = self._get_native_postgres_engine()
+        with engine.connect() as conn:
+            return pd.read_sql_query(text(sql_query), conn)
+
+    def get_postgres_columns(
+        self,
+        table_name: str,
+        schema_name: str = "public"
+    ) -> List[str]:
+        """Return column names for a PostgreSQL table."""
+        engine = self._get_native_postgres_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = :schema_name
+                  AND table_name = :table_name
+                ORDER BY ordinal_position
+            """), {
+                "schema_name": schema_name,
+                "table_name": table_name,
+            })
+            return [row[0] for row in rows]
+
+    def rewrite_crc_v1_transfer_value_column(self, sql_query: str) -> Optional[str]:
+        """
+        Rewrite legacy `value` references in crc v1 transfer queries to the
+        actual amount column present in the current PostgreSQL schema.
+        """
+        if '"CrcV1_Transfer"' not in sql_query or re.search(r'(?<!")\bvalue\b(?!")', sql_query) is None:
+            return None
+
+        columns = self.get_postgres_columns("CrcV1_Transfer")
+        for candidate in ("value", "amount", "wad"):
+            if candidate in columns:
+                if candidate == "value":
+                    return None
+                rewritten = re.sub(
+                    r'(?<!")\bvalue\b(?!")',
+                    f'"{candidate}"',
+                    sql_query,
+                )
+                return rewritten
+        return None
 
     # =========================================================================
     # Parquet Joins (faster than pd.merge)

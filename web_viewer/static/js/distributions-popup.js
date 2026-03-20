@@ -355,12 +355,21 @@ function initializeMetrics() {
         return;
     }
 
-    // Extract numeric metrics from first node
-    const firstNode = nodeData[0];
-    allMetrics = Object.keys(firstNode).filter(key => {
-        if (['id', 'label', 'isNew', 'x', 'y'].includes(key)) return false;
-        return typeof firstNode[key] === 'number';
-    }).sort();
+    // Collect all numeric metric keys across a sample of nodes
+    // (not just the first — some nodes may lack certain metrics due to NaN/null filtering)
+    const metricKeys = new Set();
+    const skipKeys = new Set(['id', 'label', 'isNew', 'x', 'y']);
+    const sampleSize = Math.min(nodeData.length, 200);
+    for (let i = 0; i < sampleSize; i++) {
+        const node = nodeData[i];
+        for (const key of Object.keys(node)) {
+            if (skipKeys.has(key) || metricKeys.has(key)) continue;
+            if (typeof node[key] === 'number') {
+                metricKeys.add(key);
+            }
+        }
+    }
+    allMetrics = Array.from(metricKeys).sort();
 
     updateMetricsList();
     populateScatterSelects();

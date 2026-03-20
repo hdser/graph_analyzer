@@ -237,7 +237,7 @@ class SnapshotStorage:
             })
 
         df = pd.DataFrame(rows)
-        _db.write_parquet(df, path)
+        _db.write_parquet_atomic(df, path)
 
         print(f"[SNAPSHOT] Saved master layout: {len(layout)} nodes to {path.name}")
     

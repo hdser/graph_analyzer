@@ -252,15 +252,23 @@ class SnapshotAnalysisService:
     
     def _build_graph(self, edges_df: pd.DataFrame) -> nx.DiGraph:
         """Build NetworkX DiGraph from edges DataFrame."""
-        G = nx.DiGraph()
-        
-        for _, row in edges_df.iterrows():
-            source = str(row.get('source', row.get('truster', '')))
-            target = str(row.get('target', row.get('trustee', '')))
-            if source and target:
-                G.add_edge(source, target)
-        
-        return G
+        df = edges_df.copy()
+        if 'source' not in df.columns and 'truster' in df.columns:
+            df = df.rename(columns={'truster': 'source', 'trustee': 'target'})
+
+        if 'source' not in df.columns or 'target' not in df.columns:
+            return nx.DiGraph()
+
+        df['source'] = df['source'].fillna('').astype(str)
+        df['target'] = df['target'].fillna('').astype(str)
+        df = df[(df['source'] != '') & (df['target'] != '')]
+
+        return nx.from_pandas_edgelist(
+            df,
+            source='source',
+            target='target',
+            create_using=nx.DiGraph,
+        )
     
     def _compute_metrics(
         self,

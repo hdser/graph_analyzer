@@ -12,6 +12,7 @@ API endpoints for network/graph management:
 - Layout management
 """
 
+import logging
 from typing import Optional, List
 
 import numpy as np
@@ -31,6 +32,8 @@ if HAS_ANOMALY:
     from engines.anomaly_engine import AnomalyEngine
     from engines.composite_engine import CompositeMetricEngine
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["network"])
 
@@ -134,6 +137,7 @@ async def get_config():
         # Layout backends info
         "layout_backends": network_service.layout_service.get_available_backends(),
         "layout_backend_priority": settings.LAYOUT_BACKEND_PRIORITY,
+        "backend_layout_on_load": settings.BACKEND_LAYOUT_ON_LOAD,
         
         # Renderer configuration
         "renderer_config": settings.get_renderer_config(),
@@ -228,6 +232,7 @@ def get_graph_elements_arrow(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.exception("[ARROW] Failed to build Arrow IPC for graph '%s'", graph_id)
         raise HTTPException(status_code=500, detail=str(e))
 
 

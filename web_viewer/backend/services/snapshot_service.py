@@ -147,8 +147,10 @@ class SnapshotService:
             raise ValueError(f"No edges found for block {request.block_number}")
         
         # Extract unique nodes
-        snapshot_nodes = self._extract_nodes(edges_df)
-        edges_list = [(str(row['source']), str(row['target'])) for _, row in edges_df.iterrows()]
+        source_nodes = edges_df['source'].astype(str)
+        target_nodes = edges_df['target'].astype(str)
+        snapshot_nodes = set(source_nodes) | set(target_nodes)
+        edges_list = list(zip(source_nodes.tolist(), target_nodes.tolist()))
         
         print(f"[SNAPSHOT] Loaded {len(edges_df)} edges, {len(snapshot_nodes)} nodes")
         
@@ -207,7 +209,7 @@ class SnapshotService:
             report_progress("metrics", 70, "Computing metrics...")
             
             metrics_df, metrics_computed = self._compute_snapshot_metrics(
-                edges_df, request.metrics_mode
+                edges_df, request.metrics_mode, snapshot_nodes=snapshot_nodes
             )
         
         report_progress("saving", 90, "Saving snapshot...")
@@ -559,34 +561,14 @@ class SnapshotService:
         if self.storage.master_layout_exists(base_sql_file):
             return self.storage.load_master_layout(base_sql_file)
         
-        # Try to load from live layout cache
-        live_layout_path = settings.LAYOUTS_DIR / f"{base_sql_file}.parquet"
-        
-        if live_layout_path.exists():
-            print(f"[SNAPSHOT] Initializing master from live layout: {live_layout_path}")
-            
-            try:
-                df = pd.read_parquet(live_layout_path)
-                live_layout = {}
-                
-                # Determine column names
-                id_col = 'id' if 'id' in df.columns else df.columns[0]
-                x_col = 'x' if 'x' in df.columns else 'position_x'
-                y_col = 'y' if 'y' in df.columns else 'position_y'
-                
-                for _, row in df.iterrows():
-                    node_id = str(row[id_col])
-                    live_layout[node_id] = {
-                        'x': float(row[x_col]),
-                        'y': float(row[y_col])
-                    }
-                
-                return self.storage.initialize_master_from_live(
-                    base_sql_file, live_layout, "initial"
-                )
-                
-            except Exception as e:
-                print(f"[SNAPSHOT] Warning: Could not load live layout: {e}")
+        # Try to load from resume layout cache
+        live_layout = self._cache_service.get_resume_layout(base_sql_file) if self._cache_service else None
+
+        if live_layout:
+            print(f"[SNAPSHOT] Initializing master from resume layout cache for {base_sql_file}")
+            return self.storage.initialize_master_from_live(
+                base_sql_file, live_layout, "initial"
+            )
         
         # No master, no live layout - return empty
         print(f"[SNAPSHOT] Warning: No layout available for {base_sql_file}")
@@ -595,7 +577,8 @@ class SnapshotService:
     def _compute_snapshot_metrics(
         self,
         edges_df: pd.DataFrame,
-        metrics_mode: MetricsMode
+        metrics_mode: MetricsMode,
+        snapshot_nodes: Optional[Set[str]] = None
     ) -> Tuple[Optional[pd.DataFrame], List[str]]:
         """
         Compute metrics for snapshot graph.
@@ -610,10 +593,17 @@ class SnapshotService:
         if not HAS_METRICS:
             return None, []
         
-        # Build NetworkX graph
-        G = nx.DiGraph()
-        for _, row in edges_df.iterrows():
-            G.add_edge(str(row['source']), str(row['target']))
+        df = edges_df[['source', 'target']].copy()
+        df['source'] = df['source'].astype(str)
+        df['target'] = df['target'].astype(str)
+        G = nx.from_pandas_edgelist(
+            df,
+            source='source',
+            target='target',
+            create_using=nx.DiGraph,
+        )
+        if snapshot_nodes is not None:
+            G.add_nodes_from(str(node_id) for node_id in snapshot_nodes)
         
         print(f"[SNAPSHOT] Computing metrics for {G.number_of_nodes()} nodes")
         
@@ -717,36 +707,112 @@ class SnapshotService:
             Dict with comparison results
         """
         print(f"[SNAPSHOT] Comparing {base_sql_file}: block {from_block} -> {to_block}")
-        
-        # Load node sets from both snapshots
-        from_nodes = self.storage.load_snapshot_node_ids(base_sql_file, from_block)
-        to_nodes = self.storage.load_snapshot_node_ids(base_sql_file, to_block)
-        
-        # Load edge sets
-        from_edges = self.storage.load_snapshot_edge_set(base_sql_file, from_block)
-        to_edges = self.storage.load_snapshot_edge_set(base_sql_file, to_block)
-        
-        # Compute differences
-        added_nodes = to_nodes - from_nodes
-        removed_nodes = from_nodes - to_nodes
-        retained_nodes = from_nodes & to_nodes
-        
-        added_edges = to_edges - from_edges
-        removed_edges = from_edges - to_edges
-        
-        # Load layouts for positioning comparison view
-        from_layout = self.storage.load_snapshot_layout_dict(base_sql_file, from_block)
-        to_layout = self.storage.load_snapshot_layout_dict(base_sql_file, to_block)
-        
-        # Merge layouts: use 'to' positions for added/retained, 'from' for removed
+
+        from_dir = self.storage.get_snapshot_dir(base_sql_file, from_block)
+        to_dir = self.storage.get_snapshot_dir(base_sql_file, to_block)
+        from_edges_path = from_dir / "edges.parquet"
+        to_edges_path = to_dir / "edges.parquet"
+        from_layout_path = from_dir / "layout.parquet"
+        to_layout_path = to_dir / "layout.parquet"
+
+        with _db.session() as session:
+            if from_edges_path.exists():
+                session.execute(f"""
+                    CREATE TEMP TABLE from_edges AS
+                    SELECT CAST(source AS VARCHAR) AS source,
+                           CAST(target AS VARCHAR) AS target
+                    FROM read_parquet('{from_edges_path}')
+                """)
+            else:
+                self._materialize_snapshot_edges_temp(
+                    session, "from_edges", base_sql_file, from_block
+                )
+
+            if to_edges_path.exists():
+                session.execute(f"""
+                    CREATE TEMP TABLE to_edges AS
+                    SELECT CAST(source AS VARCHAR) AS source,
+                           CAST(target AS VARCHAR) AS target
+                    FROM read_parquet('{to_edges_path}')
+                """)
+            else:
+                self._materialize_snapshot_edges_temp(
+                    session, "to_edges", base_sql_file, to_block
+                )
+
+            added_edges_df = session.execute("""
+                SELECT source, target FROM to_edges
+                EXCEPT
+                SELECT source, target FROM from_edges
+            """).fetchdf()
+            removed_edges_df = session.execute("""
+                SELECT source, target FROM from_edges
+                EXCEPT
+                SELECT source, target FROM to_edges
+            """).fetchdf()
+
+            node_diff_df = session.execute(f"""
+                WITH from_nodes AS (
+                    SELECT CAST(node_id AS VARCHAR) AS node_id,
+                           CAST(x AS DOUBLE) AS x,
+                           CAST(y AS DOUBLE) AS y
+                    FROM read_parquet('{from_layout_path}')
+                ),
+                to_nodes AS (
+                    SELECT CAST(node_id AS VARCHAR) AS node_id,
+                           CAST(x AS DOUBLE) AS x,
+                           CAST(y AS DOUBLE) AS y
+                    FROM read_parquet('{to_layout_path}')
+                )
+                SELECT
+                    COALESCE(f.node_id, t.node_id) AS node_id,
+                    f.x AS from_x,
+                    f.y AS from_y,
+                    t.x AS to_x,
+                    t.y AS to_y,
+                    CASE
+                        WHEN f.node_id IS NULL THEN 'added'
+                        WHEN t.node_id IS NULL THEN 'removed'
+                        ELSE 'retained'
+                    END AS diff_type
+                FROM from_nodes f
+                FULL OUTER JOIN to_nodes t
+                    ON f.node_id = t.node_id
+            """).fetchdf()
+
+        added_nodes = set(
+            node_diff_df.loc[node_diff_df['diff_type'] == 'added', 'node_id'].astype(str).tolist()
+        )
+        removed_nodes = set(
+            node_diff_df.loc[node_diff_df['diff_type'] == 'removed', 'node_id'].astype(str).tolist()
+        )
+        retained_nodes = set(
+            node_diff_df.loc[node_diff_df['diff_type'] == 'retained', 'node_id'].astype(str).tolist()
+        )
+
+        added_edges = set(zip(
+            added_edges_df['source'].astype(str).tolist(),
+            added_edges_df['target'].astype(str).tolist(),
+        ))
+        removed_edges = set(zip(
+            removed_edges_df['source'].astype(str).tolist(),
+            removed_edges_df['target'].astype(str).tolist(),
+        ))
+
         merged_layout = {}
-        for node_id in retained_nodes | added_nodes:
-            if node_id in to_layout:
-                merged_layout[node_id] = to_layout[node_id]
-        for node_id in removed_nodes:
-            if node_id in from_layout:
-                merged_layout[node_id] = from_layout[node_id]
-        
+        for record in node_diff_df.to_dict(orient='records'):
+            node_id = str(record['node_id'])
+            if record['diff_type'] == 'removed':
+                merged_layout[node_id] = {
+                    'x': float(record['from_x']),
+                    'y': float(record['from_y'])
+                }
+            else:
+                merged_layout[node_id] = {
+                    'x': float(record['to_x']),
+                    'y': float(record['to_y'])
+                }
+
         # Get metadata
         from_meta = self.storage.load_snapshot_metadata(base_sql_file, from_block)
         to_meta = self.storage.load_snapshot_metadata(base_sql_file, to_block)
@@ -756,15 +822,15 @@ class SnapshotService:
                 "snapshot_id": f"{base_sql_file}_block_{from_block}",
                 "block_number": from_block,
                 "block_timestamp": from_meta.block_timestamp.isoformat() if from_meta and from_meta.block_timestamp else None,
-                "node_count": len(from_nodes),
-                "edge_count": len(from_edges)
+                "node_count": from_meta.node_count if from_meta else len(retained_nodes | removed_nodes),
+                "edge_count": from_meta.edge_count if from_meta else 0
             },
             "to_snapshot": {
                 "snapshot_id": f"{base_sql_file}_block_{to_block}",
                 "block_number": to_block,
                 "block_timestamp": to_meta.block_timestamp.isoformat() if to_meta and to_meta.block_timestamp else None,
-                "node_count": len(to_nodes),
-                "edge_count": len(to_edges)
+                "node_count": to_meta.node_count if to_meta else len(retained_nodes | added_nodes),
+                "edge_count": to_meta.edge_count if to_meta else 0
             },
             "diff": {
                 "added_nodes": list(added_nodes),
@@ -785,6 +851,40 @@ class SnapshotService:
                 "removed_truncated": len(removed_edges) > 1000
             }
         }
+
+    def _materialize_snapshot_edges_temp(
+        self,
+        session,
+        table_name: str,
+        base_sql_file: str,
+        block_number: int
+    ) -> None:
+        """Load reconstructed snapshot edges into a DuckDB temp table."""
+        snapshot = self.storage.load_snapshot_with_diff(base_sql_file, block_number)
+        if snapshot is None:
+            raise ValueError(
+                f"Could not reconstruct snapshot {base_sql_file}_block_{block_number}"
+            )
+
+        rows = []
+        for edge in snapshot.edges:
+            if isinstance(edge, dict):
+                rows.append({
+                    'source': str(edge.get('source', '')),
+                    'target': str(edge.get('target', ''))
+                })
+            else:
+                source, target = edge
+                rows.append({'source': str(source), 'target': str(target)})
+
+        edges_df = pd.DataFrame(rows, columns=['source', 'target'])
+        session.conn.register(f"{table_name}_df", edges_df)
+        session.execute(f"""
+            CREATE TEMP TABLE {table_name} AS
+            SELECT CAST(source AS VARCHAR) AS source,
+                   CAST(target AS VARCHAR) AS target
+            FROM {table_name}_df
+        """)
     
     # =========================================================================
     # Animation Methods

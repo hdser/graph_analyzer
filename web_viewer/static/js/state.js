@@ -243,6 +243,9 @@ const State = {
     }
 };
 
+// Expose State globally so iframes (data-explorer) can access via window.parent.State
+window.State = State;
+
 /**
  * DOM element cache for performance
  */
